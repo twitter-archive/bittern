@@ -1,0 +1,41 @@
+#!/bin/bash
+#
+# chkconfig: 12345 99 74
+# description: pre-stop bittern cache. needs to be done before blk-availability stop.
+#
+#
+# Copyright (C) 2014 Fio Cattaneo <fio@twitter.com> <fio@cattaneo.us>, Twitter, Inc. All Rights Reserved.
+#
+# This file is released under the GPLv2 license.
+#
+
+. /etc/init.d/functions
+
+LOCK_FILE=/var/lock/subsys/bittern_cache_stop
+
+logmessage() {
+        logger -is -p syslog.info -- $0: $*
+}
+
+start() {
+	touch $LOCK_FILE
+}
+
+stop() {
+	logmessage /etc/init.d/bittern_cache stop
+        /etc/init.d/bittern_cache stop
+	rm -f $LOCK_FILE
+}
+
+case "$1" in
+start)
+	start
+	;;
+stop)
+	stop
+	;;
+*)
+	;;
+esac
+
+exit 0

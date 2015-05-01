@@ -1,0 +1,1456 @@
+/*
+ * Bittern Cache.
+ *
+ * Copyright(c) 2013, 2014, 2015, Twitter, Inc., All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ */
+
+/*! \file */
+
+#ifndef BITTERN_CACHE_H
+#define BITTERN_CACHE_H
+
+#include <linux/bio.h>
+#include <linux/bitops.h>
+#include <linux/blkdev.h>
+#include <linux/buffer_head.h>
+#include <linux/delay.h>
+#include <linux/device-mapper.h>
+#include <linux/dm-io.h>
+#include <linux/fs.h>
+#include <linux/init.h>
+#include <linux/kobject.h>
+#include <linux/kthread.h>
+#include <linux/module.h>
+#include <linux/random.h>
+#include <linux/rbtree.h>
+#include <linux/slab.h>
+#include <linux/spinlock.h>
+#include <linux/stringify.h>
+#include <linux/uuid.h>
+#include <linux/workqueue.h>
+#include <linux/interrupt.h>
+
+/* this must be first */
+#include "bittern_cache_config.h"
+
+#include "math128.h"
+#include "murmurhash3.h"
+
+#include "bittern_cache_list_debug.h"
+
+#include "bittern_cache_linux.h"
+
+/*!
+ * Release string format is "major.minor.sub-minor"
+ * major = major number
+ * minor = minor number
+ * codename = release codename.
+ *
+ * 0.20 version = Grays Harbor release
+ * 0.22 version = Ridgefield release
+ * 0.23 version = Julia Butlen Hansen (JBH) release
+ * 0.24 version = Julia Butlen Hansen (JBH) release (Coldvirus Series)
+ * 0.25 version = Bosque Del Apache release (DAX, LVM)
+ *
+ * Release codenames are National Wildlife Refuges wetlands where the Bittern
+ * can be found.
+ */
+#define BITTERN_CACHE_VERSION "0.25.10"
+#define BITTERN_CACHE_CODENAME "bosque_del_apache"
+
+#include "bittern_cache_todo.h"
+
+/*! sectors per cache block -- right now PAGE_SIZE is the cache block size */
+#define SECTORS_PER_CACHE_BLOCK ((sector_t)(PAGE_SIZE / SECTOR_SIZE))
+
+/*!
+ * Cache block size is PAGE_SIZE by definition, so this constant cannot be
+ * changed until we allow multiples of PAGE_SIZE cache blocks.
+ */
+#define MAX_IO_LEN_PAGES	1
+#define MAX_IO_LEN_SECTORS	((PAGE_SIZE * MAX_IO_LEN_PAGES) / SECTOR_SIZE)
+
+/*! invalid sector number */
+#define SECTOR_NUMBER_INVALID ((sector_t)-1)
+/*! any non-negative number is valid */
+#define is_sector_number_valid(__sector) ((int64_t)(__sector) >= 0)
+/*! any negative number is invalid */
+#define is_sector_number_invalid(__sector) (!is_sector_number_valid(__sector))
+
+/*
+ * all the tunables are in the tunables file.
+ */
+#include "bittern_cache_tunables.h"
+
+#include "bittern_cache_timer.h"
+
+#include "bittern_cache_pmem_api.h"
+
+#include "bittern_cache_states.h"
+
+/*
+ * intel x86-sse memcpy_nt
+ */
+#include "memcpy_nt.h"
+
+#define CACHE_REPLACEMENT_MODE_FIFO 1
+#define CACHE_REPLACEMENT_MODE_LRU 2
+#define CACHE_REPLACEMENT_MODE_RANDOM 3
+#define CACHE_REPLACEMENT_MODE_DEFAULT CACHE_REPLACEMENT_MODE_RANDOM
+/* made it tunable --- #define CACHE_REPLACEMENT_MODE_RANDOM_MAX_SCANS 10 */
+
+#define ASSERT_CACHE_REPLACEMENT_MODE(__mode) \
+	ASSERT((__mode) == CACHE_REPLACEMENT_MODE_FIFO || \
+		(__mode) == CACHE_REPLACEMENT_MODE_LRU || \
+		(__mode) == CACHE_REPLACEMENT_MODE_RANDOM)
+
+/* \todo move out from include and into a .c file (_subr.c ?) */
+static inline const char *cache_replacement_mode_to_str(int mode)
+{
+	ASSERT_CACHE_REPLACEMENT_MODE(mode);
+	if (mode == CACHE_REPLACEMENT_MODE_FIFO)
+		return "fifo";
+	else if (mode == CACHE_REPLACEMENT_MODE_LRU)
+		return "lru";
+	else
+		return "random";
+}
+
+/*! returns true if sector is cache aligned */
+static inline int is_sector_cache_aligned(sector_t s)
+{
+	/* is the request cache aligned? */
+	return (s % SECTORS_PER_CACHE_BLOCK) == 0;
+}
+
+/*!
+ * returns true if the request a perfect cache block,
+ * that is cache-aligned and cache-multiple.
+ */
+static inline int is_request_cache_block(sector_t s, unsigned int len)
+{
+	return is_sector_cache_aligned(s) && (len == PAGE_SIZE);
+}
+
+/*!
+ * returns true if the request completely fits within a cache block even
+ * though is not aligned or a full cache block size
+ */
+static inline int is_request_single_cache_block(sector_t s, unsigned int len)
+{
+	sector_t s_end = s + (len / SECTOR_SIZE) - 1;
+	sector_t cache_block = s / SECTORS_PER_CACHE_BLOCK;
+	sector_t cache_block_end = s_end / SECTORS_PER_CACHE_BLOCK;
+	return cache_block == cache_block_end;
+}
+
+/*! convert sector number to cache block sector number */
+static inline sector_t sector_to_cache_block_sector(sector_t s)
+{
+	return s & ~(SECTORS_PER_CACHE_BLOCK - 1);
+}
+
+/*! bio equivalent of @ref is_sector_cache_aligned */
+#define bio_is_sector_cache_aligned(__bio) \
+	is_sector_cache_aligned((__bio)->bi_iter.bi_sector)
+/*! bio equivalent of @ref is_request_cache_block */
+#define bio_is_request_cache_block(__bio) \
+	is_request_cache_block((__bio)->bi_iter.bi_sector, (__bio)->bi_iter.bi_size)
+/*! bio equivalent of @ref is_request_single_cache_block */
+#define bio_is_request_single_cache_block(__bio) \
+	is_request_single_cache_block((__bio)->bi_iter.bi_sector, (__bio)->bi_iter.bi_size)
+/*! bio equivalent of @ref sector_to_cache_block_sector */
+#define bio_sector_to_cache_block_sector(__bio) \
+	sector_to_cache_block_sector((__bio)->bi_iter.bi_sector)
+
+#define WI_MAGIC1 0xf10ca593
+#define WI_MAGIC2 0xf10ca594
+#define WI_MAGIC3 0xf10ca595
+
+/*! @defgroup wi_flags_bitvalues work_item wi_flags bitmask values
+ * @{
+ */
+/*! @ref wi_flags : io initiated by @ref cache_map map (block i/o request) */
+#define WI_FLAG_MAP_IO 0x0001
+/*! @ref wi_flags : io initiated by @ref cache_bgwriter_kthread bgwriter kthread */
+#define WI_FLAG_WRITEBACK_IO 0x0002
+/*! @ref wi_flags : io initiated by @ref cache_invalidator_kthread invalidator kthread */
+#define WI_FLAG_INVALIDATE_IO 0x0004
+/*!
+ * @ref wi_flags : if set, bio struct has been cloned -- obsolete value
+ * WI_FLAG_BIO_NOT_CLONED was set if this was not set.
+ */
+/*! @ref wi_flags : indicates write cloning */
+#define WI_FLAG_WRITE_CLONING 0x0010
+/*! @ref wi_flags : indicates request bio has been cloned */
+#define WI_FLAG_BIO_CLONED 0x0020
+/*!
+ * @ref wi_flags : indicates request bio has not been cloned.
+ * \todo should probably just use (WI_FLAG_BIO_CLONED == 0) instead of this.
+ */
+#define WI_FLAG_BIO_NOT_CLONED 0x0040
+/*! @ref wi_flags : if set, use a new XID */
+#define WI_FLAG_XID_NEW 0x0100
+/*! @ref wi_flags : if set, use the XID from the cache_block */
+#define WI_FLAG_XID_USE_CACHE_BLOCK 0x0200
+/*! @ref wi_flags : if set, call endio function instead of the main state machine */
+#define WI_FLAG_HAS_ENDIO 0x1000
+/*! @ref wi_flags : mask of all possible legal values for wi_flag */
+#define WI_FLAG_MASK (WI_FLAG_MAP_IO |        \
+		WI_FLAG_WRITEBACK_IO |        \
+		WI_FLAG_INVALIDATE_IO |       \
+		WI_FLAG_WRITE_CLONING |       \
+		WI_FLAG_BIO_CLONED |          \
+		WI_FLAG_BIO_NOT_CLONED |      \
+		WI_FLAG_XID_NEW |             \
+		WI_FLAG_XID_USE_CACHE_BLOCK | \
+		WI_FLAG_HAS_ENDIO)
+/*! @} */
+
+/*! \todo add an initializer for @ref data_buffer_info */
+/*
+ * data buffer info holds virtual address and page struct pointer to cache data
+ * being transferred.  if the pmem hardware does not support direct dma access
+ * and/or direct memory access, then we allocate a page buffer to do double
+ * buffering during memory copies.
+ */
+struct data_buffer_info {
+	/*! pointer to vmalloc'ed buffer, if needed */
+	void *di_buffer_vmalloc_buffer;
+	/*! pointer to vmalloc'ed buffer page, if needed */
+	struct page *di_buffer_vmalloc_page;
+	/*!
+	 * buffer pool used to allocate the vmalloc buffer
+	 * (valid if vmalloc buffer has been allocated)
+	 */
+	int di_buffer_vmalloc_pool;
+	/*! buffer pointer used for PMEM accesses by bittern */
+	void *di_buffer;
+	/*! page pointer used for PMEM accesses by bittern */
+	struct page *di_page;
+	/*! pmem flags */
+	int di_flags;
+	/*! 1 if buffer is in use, 0 otherwise */
+	atomic_t di_busy;
+};
+
+/*! @defgroup di_flags_bitvalues data_buffer_info di_flags bitmask values
+ * @{
+ */
+/*! doing double buffering (vmalloc buffer is in use) */
+#define CACHE_DI_FLAGS_DOUBLE_BUFFERING 0x1
+/*! we are reading from PMEM into memory */
+#define CACHE_DI_FLAGS_PMEM_READ 0x2
+/*! we are writing from memory to PMEM */
+#define CACHE_DI_FLAGS_PMEM_WRITE 0x4
+/*! we are reading and writing from memory to PMEM and viceversa */
+#define CACHE_DI_FLAGS_PMEM_READWRITE (CACHE_DI_FLAGS_PMEM_READ | \
+		CACHE_DI_FLAGS_PMEM_WRITE)
+/*! @} */
+
+/*forward*/ struct work_item;
+typedef void (*wi_io_endio_f)(struct bittern_cache *,
+			      struct work_item *,
+			      struct cache_block *);
+struct work_item {
+	int wi_magic1;
+	/*! @ref wi_flags_bitvalues */
+	int wi_flags;
+	/*
+	 * access to this member is serialized with global relevant deferred
+	 * io lock
+	 */
+	struct list_head wi_deferred_io_list;
+	/* access to this member is serialized with global spinlock */
+	struct list_head wi_pending_io_list;
+	/* workstruct and workqueues used when a thread context is required */
+	struct work_struct wi_work;
+	/* pointer to original bio (if any) */
+	struct bio *wi_original_bio;
+	/* pointer to cloned bio (if any) */
+	struct bio *wi_cloned_bio;
+	/* 1 if cache mode writeback, 0 if cache mode write-through */
+	int wi_cache_mode_writeback;
+	/* pointer to bittern_cache */
+	struct bittern_cache *wi_cache;
+	/* pointer to bittern cache block being worked on */
+	struct cache_block *wi_cache_block;
+	/*
+	 * if we are handling a write-hit, we need to clone the cache block and update the clone.
+	 * after update is complete, then we can delete the original cache block.
+	 */
+	struct cache_block *wi_original_cache_block;
+	/*
+	 * data buffer info holds virtual address and page struct pointer to
+	 * cache data being transferred.  if the pmem hardware does not support
+	 * direct dma access and/or direct memory access, then we allocate a
+	 * page buffer to do double buffering during memory copies.
+	 */
+	struct data_buffer_info wi_cache_data;
+	/* transaction id */
+	uint64_t wi_io_xid;
+	/*
+	 * if NULL, I/O will be completed by calling bio_endio and counters
+	 * won't be affected.
+	 */
+	wi_io_endio_f wi_io_endio;
+	/* bypass cache for this workitem */
+	int wi_bypass;
+	/*
+	 * keep track here of the request type and block information.  we mainly
+	 * use this for tracking pending operations and it's on purpose
+	 * kept completely separate from everything else for debugging
+	 * reasons
+	 *
+	 * wi_op_type == 'm': _map() request
+	 * wi_op_type == 'w': writeback request
+	 * wi_op_type == 'b': bypass request
+	 */
+	/* 'm', 'w', 'b' */
+	char wi_op_type;
+	sector_t wi_op_sector;
+	/* bio rw flags */
+	unsigned long wi_op_rw;
+	/* time in workqueue */
+	uint64_t wi_ts_workqueue;
+	/* io start time */
+	uint64_t wi_ts_queued;
+	/* io start time, excluding time spent in queued queue */
+	uint64_t wi_ts_started;
+	/* keeps track how long it stays in a wait queue */
+	uint64_t wi_ts_queue;
+	/* keeps track of physical io */
+	uint64_t wi_ts_physio;
+	/* pmem async context for cache operations */
+	int wi_magic2;
+	struct async_context wi_async_context;
+	int wi_magic3;
+};
+#define ASSERT_WORK_ITEM(__wi, __bc) ({                                                         \
+	__wi = (__wi); /* make sure it's an l-value; compiler will optimize this away */        \
+	ASSERT((__wi) != NULL);                                                                 \
+	ASSERT((__wi)->wi_magic1 == WI_MAGIC1);                                                 \
+	ASSERT((__wi)->wi_magic2 == WI_MAGIC2);                                                 \
+	ASSERT((__wi)->wi_magic3 == WI_MAGIC3);                                                 \
+	ASSERT(((__wi)->wi_flags & ~WI_FLAG_MASK) == 0);                                        \
+	ASSERT((__wi)->wi_cache == (__bc));                                                     \
+	ASSERT((__wi)->wi_cache_mode_writeback == 1 || (__wi)->wi_cache_mode_writeback == 0);   \
+})
+#define is_work_item_cache_mode_writeback(__wi) ((__wi)->wi_cache_mode_writeback)
+
+extern const char *transition_path_to_str(enum
+							transition_path
+							path);
+extern const char *cache_state_to_str(enum cache_state state);
+
+/*
+ * there are quite a few optimizations possible here, including compiling out magic numbers
+ * for production version, changing some fields to bitfields and so on ....
+ * we can also use one linked list field -- some assembly required.
+ */
+#define BCB_MAGIC1        0xf10c8f2b
+#define BCB_MAGIC3        0xf10c8f37
+struct cache_block {
+	int bcb_magic1;
+	int bcb_block_id;
+	spinlock_t bcb_spinlock;
+	/*!
+	 * a cache block with bcb_refcount == 0 is idle and un-owned
+	 * a cache block with bcb_refcount == 1 is busy and owned by the caller who got it
+	 * a cache block with bcb_refcount > 1 is busy and not owned by the caller who got it
+	 */
+	atomic_t bcb_refcount;
+	sector_t bcb_sector;
+	/*! the last xid for this cache block */
+	uint64_t bcb_xid;
+	/*!
+	 * last modify time, in seconds since boot. this will roll-over in
+	 * about 137 years, so you need to make sure to reboot your machine
+	 * before then.
+	 */
+	unsigned int bcb_last_modify;
+	/*!
+	 * for the most part this is only valid when state == VALID and refcount == 0
+	 * it's also valid during read hit handling
+	 */
+	uint128_t bcb_hash_data;
+	/* linked list for either valid (clean+dirty) or invalid blocks */
+	struct list_head bcb_entry;
+	/*! linked list for valid or dirty blocks */
+	struct list_head bcb_entry_cleandirty;
+	/*! red-black tree node */
+	struct rb_node bcb_rb_node;
+	enum cache_state bcb_state:8;
+	enum transition_path bcb_transition_path:8;
+	uint32_t bcb_magic3;
+};
+
+#define BC_MAGIC1 0xf10c7a93
+#define BC_MAGIC2 0xf10c754a
+#define BC_MAGIC3 0xf10ca793
+#define BC_MAGIC4 0xf10c85a7
+
+#define BC_NAMELEN 128
+
+#define BCSIO_MAGIC 0xf10c1234
+
+/*
+ * sequential i/o bypass
+ */
+
+struct seq_io_stream {
+	struct list_head list_entry;
+	int magic;
+	sector_t last_sector;
+	unsigned int sector_count;
+	pid_t stream_pid;
+	unsigned long timestamp_ms;
+};
+/*!
+ * This structure keeps track of a certain number of IO streams
+ * and it used to detect if any given stream is doing sequential access.
+ */
+struct seq_io_bypass {
+	/* counters */
+	atomic_t seq_io_count;
+	atomic_t non_seq_io_count;
+	atomic_t bypass_count;
+	atomic_t bypass_hit;
+	/* superuser tunables */
+	unsigned int bypass_threshold;
+	unsigned int bypass_timeout;
+	bool bypass_enabled;
+	/* internal stuff */
+	spinlock_t seq_lock;
+	unsigned int streams_count;
+	unsigned int streams_count_max;
+	/* sum and average (sum/count) of sequential streams length */
+	uint64_t s_streams_len_sum;
+	uint64_t s_streams_len_count;
+	unsigned int s_streams_len_max;
+	/* sum and average (sum/count) of non-sequential streams length */
+	uint64_t ns_streams_len_sum;
+	uint64_t ns_streams_len_count;
+	unsigned int ns_streams_len_max;
+	struct list_head streams_lru;
+	struct seq_io_stream streams_array[SEQ_IO_TRACK_DEPTH];
+	/*
+	 * Measure list traversal length for a hit. It tells us how good
+	 * (or bad) this lru is. We don't count misses because by definition
+	 * they need to traverse the full list.
+	 */
+	uint64_t lru_hit_depth_sum;
+	uint64_t lru_hit_depth_count;
+};
+
+#define BBR_MAGIC 0x1f0c337a
+#define BBR_BIO_STATE_INITIALIZED 1
+#define BBR_BIO_STATE_IO_IN_PROGRESS 2
+#define BBR_BIO_STATE_IO_DONE 3
+struct cache_bio_request {
+	int bbr_magic;
+	struct bittern_cache *bbr_bc;
+	sector_t bbr_sector;
+	void *bbr_vmalloc_buffer_page;
+	struct bio *bbr_bio;
+	int bbr_datadir;
+	struct semaphore bbr_sema;
+	int bbr_state;
+};
+#define cache_bio_request_get_buffer(__bbr) ({          \
+	struct cache_bio_request *___bbr = (__bbr);     \
+	ASSERT(___bbr != NULL);                                 \
+	ASSERT(___bbr->bbr_magic == BBR_MAGIC);                 \
+	___bbr->bbr_vmalloc_buffer_page;                        \
+})
+
+struct deferred_queue {
+	/*
+	 * task ptr
+	 */
+	struct task_struct *bc_defer_task;
+	/*
+	 * generation number (not used in busy queues)
+	 */
+	atomic_t bc_defer_gennum;
+	/*
+	 * deferred thread waits on this queue for deferred requests to
+	 * execute
+	 */
+	wait_queue_head_t bc_defer_wait;
+	/*
+	 * protects all struct members except the fields above
+	 */
+	spinlock_t bc_defer_lock;
+	struct list_head bc_defer_list;
+
+	volatile unsigned int bc_defer_curr_count;
+	unsigned int bc_defer_requeue_count;
+	unsigned int bc_defer_max_count;
+	unsigned int bc_defer_no_work_count;
+	unsigned int bc_defer_work_count;
+	unsigned int bc_defer_loop_count;
+	unsigned int bc_defer_nomem_count;
+	/*
+	 * when we queue requests, or we know there are resources,
+	 * we increment the gennum above. this gennum is the current gennum.
+	 * so we use this for the waiting condition which shows new work:
+	 *
+	 * bc_defer_curr_gennum != atomic_read(bc_defer_gennum)
+	 *
+	 */
+	unsigned int bc_defer_curr_gennum;
+	struct cache_timer bc_defer_timer;
+};
+
+/*!
+ * Page buffer pools.
+ *
+ * These pages are used during i/o requests if double buffering is required.
+ * They are also used by the pmem layer as part of normal i/o and during
+ * initialization.
+ *
+ * Three pools are used for normal operation, one for map_request from
+ * application or file system initiated i/o requests (PGPOOL_MAP),
+ * one for bgwriter (PGPOOL_BGWRITER),
+ * and one for the invalidator thread (PGPOOL_INVALIDATOR).
+ * These pools need to be accounted separately because we do not want to limit
+ * the the maximum number of buffers for either.
+ *
+ * Most importantly, the separate pools are needed to avoid resource deadlock.
+ * Imagine all buffers are used for normal request, and all requests are
+ * pending because all buffers are dirty. In such case the bgwriter would need
+ * to flush out dirty blocks, but with a single pool that wouldn't be possible
+ * because all buffers are allocated already.
+ * Deadlock would happen. QED.
+ */
+#define PGPOOL_MAP 0
+/*! bgwriter PGPOOL */
+#define PGPOOL_BGWRITER 1
+/*! invalidator PGPOOL */
+#define PGPOOL_INVALIDATOR 2
+/*! misc PGPOOL (used for instance during initialization) */
+#define PGPOOL_MISC 3
+/*! number of PGPOOL pools */
+#define PGPOOL_POOLS 4
+
+/*!
+ * This struct maintains a shared pool of page buffers which can be allocated
+ * in a non-blocking context. The non-blocking behavior is dictated by the need
+ * of avoiding a 3 microsecond vmalloc() overhead on each allocation -- consider
+ * that NVDIMM a read hit has about the same overhead, we would have double
+ * overhead in the most critical paths for NVDIMM caches.
+ * Note that the caller is responsible for not exceeding a maximum threshold
+ * when allocating resources.
+ * For more details on page pools and how they are used, see @ref PGPOOL__MAP.
+ */
+struct pagebuf {
+	/*!
+	 * We use just one spinlock for freelist syncronization and
+	 * one wait queue for all queues. this is basically by design
+	 * given we have a shared freelist.
+	 */
+	spinlock_t freelist_spinlock;
+	struct list_head freelist;
+	/*! current number of pages */
+	atomic_t pages;
+	/*! max ever reached of pages */
+	atomic_t max_pages;
+	/*! free page count */
+	atomic_t free_pages;
+	atomic_t stat_alloc_wait_count;
+	atomic_t stat_alloc_nowait_count;
+	atomic_t stat_free_count;
+	struct pool {
+		atomic_t in_use_pages;
+		atomic_t stat_alloc_wait_count;
+		atomic_t stat_alloc_nowait_count;
+		atomic_t stat_free_count;
+		atomic_t stat_alloc_nowait_nopage;
+		atomic_t stat_alloc_nowait_toomany;
+		atomic_t stat_alloc_wait_vmalloc;
+		struct cache_timer stat_wait_timer;
+	} pools[PGPOOL_POOLS];
+	atomic_t stat_vmalloc_count;
+	atomic_t stat_vfree_count;
+	struct cache_timer stat_vmalloc_timer;
+};
+
+struct pmem_api {
+	/*
+	 * per instance state
+	 * FIXME: should move to per instance
+	 */
+	struct block_device *papi_bdev;
+	struct workqueue_struct *papi_make_request_wq;
+	/* used size */
+	size_t papi_bdev_size_bytes;
+	size_t papi_bdev_actual_size_bytes;
+	/* pmem stats */
+	struct pmem_info papi_stats;
+	/* in memory copy of pmem header, always up-to-date */
+	struct pmem_header papi_hdr;
+	/* tells which copy (0 or 1) we updated last */
+	int papi_hdr_updated_last;
+	/* pmem_api context */
+	const struct cache_papi_interface *papi_interface;
+};
+
+struct bittern_cache {
+	int bc_magic1;
+
+	/*! /sys/fs/ kobject */
+	struct kobject bc_kobj;
+
+	/*! cache name, e.g. bitcache0 */
+	char bc_name[BC_NAMELEN];
+	/*! cached device path, e.g. /dev/mapper/hdd0 */
+	char bc_cached_device_name[BC_NAMELEN];
+	/*! cache device path, e.g. /dev/mapper/nvme0 */
+	char bc_cache_device_name[BC_NAMELEN];
+	/*! cache device type, e.g. "mem" or "block" */
+	char bc_cache_device_type[BC_NAMELEN];
+	/*! size of cached device in bytes */
+	uint64_t bc_cached_device_size_bytes;
+	/*! size of cached device in mbytes */
+	uint64_t bc_cached_device_size_mbytes;
+
+	/*! cache replacement mode (RANDOM, FIFO, LRU) */
+	int bc_replacement_mode;
+
+	/*! cache mode: writeback == 1, writethru == 0 */
+	volatile int bc_cache_mode_writeback;
+
+	/* total deferred requests - sum of queue lens in deferred thread */
+	atomic_t bc_total_deferred_requests;
+	/* current # of deferred requests - sum of queue lens in deferred thread */
+	atomic_t bc_deferred_requests;
+	/* highest deferred requests */
+	atomic_t bc_highest_deferred_requests;
+	/* total read requests */
+	atomic_t bc_read_requests;
+	/* total write requests */
+	atomic_t bc_write_requests;
+	/*
+	 * FIXME: "pending" is so overloaded here.
+	 */
+	/*!
+	 * current number of pending requests (read+write+readbypass+writeback)
+	 * note that we do not count invalidations in pending requests.
+	 */
+	atomic_t bc_pending_requests;
+	/* current # of pending read requests */
+	atomic_t bc_pending_read_requests;
+	/* current # of pending read bypass requests */
+	atomic_t bc_pending_read_bypass_requests;
+	/* current # of pending write requests */
+	atomic_t bc_pending_write_requests;
+	/* current # of pending write bypass requests */
+	atomic_t bc_pending_write_bypass_requests;
+	/* current # of pending writebacks */
+	atomic_t bc_pending_writeback_requests;
+	/* current # of pending writebacks */
+	atomic_t bc_pending_invalidate_requests;
+	/* highest # of pending requests */
+	atomic_t bc_highest_pending_requests;
+	/* total # of completed requests */
+	atomic_t bc_completed_requests;
+	/* total # of completed read requests */
+	atomic_t bc_completed_read_requests;
+	/* total # of completed write requests */
+	atomic_t bc_completed_write_requests;
+	/* total # of completed writebacks */
+	atomic_t bc_completed_writebacks;
+	/* total # of completed invalidations */
+	atomic_t bc_completed_invalidations;
+	/* total # of cached device read requests */
+	atomic_t bc_read_cached_device_requests;
+	/* total # of cached device write requests */
+	atomic_t bc_write_cached_device_requests;
+	/* current # of pending cached device requests */
+	atomic_t bc_pending_cached_device_requests;
+	/* highest # of pending cached device requests */
+	atomic_t bc_highest_pending_cached_device_requests;
+	/* highest # of pending cached device requests */
+	atomic_t bc_highest_pending_invalidate_requests;
+	/* total read misses */
+	atomic_t bc_total_read_misses;
+	/* total read hits */
+	atomic_t bc_total_read_hits;
+	/* total write misses */
+	atomic_t bc_total_write_misses;
+	/* total write hits */
+	atomic_t bc_total_write_hits;
+	/* clean read hits */
+	atomic_t bc_clean_read_hits;
+	/* read misses */
+	atomic_t bc_read_misses;
+	/* clean write hits */
+	atomic_t bc_clean_write_hits;
+	/* clean write hits - partial page */
+	atomic_t bc_clean_write_hits_rmw;
+	/* clean write misses */
+	atomic_t bc_clean_write_misses;
+	/* clean write misses - partial page */
+	atomic_t bc_clean_write_misses_rmw;
+	/* dirty read hits */
+	atomic_t bc_dirty_read_hits;
+	/* dirty write hits */
+	atomic_t bc_dirty_write_hits;
+	/* dirty write hits - partial page (need to do full clone copy) */
+	atomic_t bc_dirty_write_hits_rmw;
+	/* dirty write misses */
+	atomic_t bc_dirty_write_misses;
+	/* dirty write misses - partial page */
+	atomic_t bc_dirty_write_misses_rmw;
+	/* read hits on busy block */
+	atomic_t bc_read_hits_busy;
+	/* write hits on busy block */
+	atomic_t bc_write_hits_busy;
+	/* read misses - all blocks busy */
+	atomic_t bc_read_misses_busy;
+	/* write misses - all blocks busy */
+	atomic_t bc_write_misses_busy;
+	/* total # of writebacks */
+	atomic_t bc_writebacks;
+	/* total # of writebacks to clean */
+	atomic_t bc_writebacks_clean;
+	/* total # of writebacks to invalid */
+	atomic_t bc_writebacks_invalid;
+	/* writeback stalls (dirty block busy) */
+	atomic_t bc_writebacks_stalls;
+	/* invalidations */
+	atomic_t bc_invalidations;
+	/* idle invalidations */
+	atomic_t bc_idle_invalidations;
+	/* busy invalidations */
+	atomic_t bc_busy_invalidations;
+	/* could not invalidate, all blocks busy */
+	atomic_t bc_no_invalidations_all_blocks_busy;
+	atomic_t bc_invalidations_map;
+	atomic_t bc_invalidations_invalidator;
+	atomic_t bc_invalidations_writeback;
+	/* could not grab invalid block (busy) */
+	atomic_t bc_invalid_blocks_busy;
+	/* count of flush requests */
+	atomic_t bc_flush_requests;
+	/* count of pure flush requests */
+	atomic_t bc_pure_flush_requests;
+	/* count of discard requests */
+	atomic_t bc_discard_requests;
+	/* write clone allocation ok */
+	atomic_t bc_dirty_write_clone_alloc_ok;
+	/* write clone allocation fail */
+	atomic_t bc_dirty_write_clone_alloc_fail;
+
+	/* reads timer (pending i/o time only) */
+	struct cache_timer bc_timer_reads;
+	/* writes timer (pending i/o time only) */
+	struct cache_timer bc_timer_writes;
+	/* reads timer (includes initial queueing) */
+	struct cache_timer bc_timer_reads_elapsed;
+	/* reads timer (includes initial queueing) */
+	struct cache_timer bc_timer_writes_elapsed;
+	struct cache_timer bc_timer_read_hits;
+	struct cache_timer bc_timer_write_hits;
+	struct cache_timer bc_timer_read_misses;
+	struct cache_timer bc_timer_write_misses;
+	struct cache_timer bc_timer_write_dirty_misses;
+	struct cache_timer bc_timer_write_clean_misses;
+	struct cache_timer bc_timer_read_clean_hits;
+	struct cache_timer bc_timer_write_clean_hits;
+	struct cache_timer bc_timer_read_dirty_hits;
+	struct cache_timer bc_timer_write_dirty_hits;
+	struct cache_timer bc_timer_cached_device_reads;
+	struct cache_timer bc_timer_cached_device_writes;
+	struct cache_timer bc_timer_writebacks;
+	struct cache_timer bc_timer_invalidations;
+	struct cache_timer bc_timer_pending_queue;
+
+	/* requential access tracker for reads */
+	struct seq_io_bypass bc_seq_read;
+	/* requential access tracker for writes */
+	struct seq_io_bypass bc_seq_write;
+
+	int bc_magic2;
+	/*
+	 * PMEM state
+	 */
+	struct pmem_api bc_papi;
+
+	/*! runtime configurable option (enables extra hash checking) */
+	int bc_enable_extra_checksum_check;
+
+	int bc_magic3;
+
+	/*!
+	 * holds the transaction identifier.
+	 * we rely on this to be unique. at some point we need to handle
+	 * transaction id rollover (we can use the same scheme that tcp
+	 * uses for sequeuence rollover).
+	 */
+	atomic64_t bc_xid;
+
+	volatile unsigned int bc_max_pending_requests;
+
+	/*
+	 * each count of invalid, valid_clean and valid_dirty entries can never
+	 * be negative. the only relationship that holds true is that in a
+	 * qiuesced state the following holds true:
+	 *
+	 * bc_invalid_entries + bc_valid_entries_clean + bc_valid_entries_dirty
+	 *                          ==
+	 *                  bc_total_entries
+	 *
+	 * note however that because they are updated separately, one should
+	 * never test the above equality until removal time when everything is
+	 * quiesced
+	 * (in practice the above counts are accurate within 1 or 2 units).
+	 */
+	/*
+	 * this list contains all invalid(free) elements
+	 *
+	 * invariant:   state == INVALID
+	 */
+	atomic_t bc_invalid_entries;
+	struct list_head bc_invalid_entries_list;
+	/*
+	 * clean+dirty list contains all the valid and busy elements, and it's
+	 * used for LRU/FIFO replacement
+	 *
+	 * invariant:   state != INVALID
+	 */
+	atomic_t bc_valid_entries;
+	atomic_t bc_valid_entries_clean;
+	atomic_t bc_valid_entries_dirty;
+	/* clean + dirty */
+	struct list_head bc_valid_entries_list;
+	/* clean */
+	struct list_head bc_valid_entries_clean_list;
+	/* dirty */
+	struct list_head bc_valid_entries_dirty_list;
+	/*
+	 * the spinlock serializes access to invalid, valid/busy lists
+	 * and pending list. it also serializes access to the redblack tree.
+	 * FIXME: should split the gloabl lock into finer grain locks.
+	 * thus far we have not seen perf degradation because of this.
+	 */
+	/* total # of cache entries */
+	atomic_t bc_total_entries;
+	spinlock_t bc_entries_lock;
+	/*
+	 * pending requests
+	 */
+	struct list_head bc_pending_requests_list;
+
+	struct workqueue_struct *bc_make_request_wq;
+	struct cache_timer bc_make_request_wq_timer;
+
+#ifdef ENABLE_TRACK_CRC32C
+#define CACHE_TRACK_HASH_MAGIC0       UINT128_FROM_UINT(0xf10c6a4a)
+#define CACHE_TRACK_HASH_MAGIC1       UINT128_FROM_UINT(0xf10c78cb)
+#define CACHE_TRACK_HASH_MAGICN       UINT128_FROM_UINT(0xf10c5a4c)
+#define CACHE_TRACK_HASH_MAGICN1      UINT128_FROM_UINT(0xf10c873d)
+	/*
+	 * array format
+	 * array[0] = MAGIC0
+	 * array[1] = MAGIC2
+	 * array[N] = MAGICN
+	 * array[N+1] = MAGICN1
+	 */
+	uint128_t *bc_tracked_hashes;
+	/* cannot be larger than CACHE_MAX_TRACK_HASH_CHECKSUMS */
+	size_t bc_tracked_hashes_num;
+	/* goes from 0 to N-2 to make comparison easy */
+	atomic_t bc_tracked_hashes_set;
+	atomic_t bc_tracked_hashes_clear;
+	atomic_t bc_tracked_hashes_null;
+	atomic_t bc_tracked_hashes_ok;
+	atomic_t bc_tracked_hashes_bad;
+#endif /*ENABLE_TRACK_CRC32C */
+
+	atomic_t bc_transition_paths_counters[__CACHE_TRANSITION_PATHS_NUM];
+	atomic_t bc_cache_states_counters[__CACHE_STATES_NUM];
+
+	/*! deferred queue, cases 1 and 2. see @ref (doxy_deferredqueues.md) */
+	struct deferred_queue bc_deferred_wait_busy;
+	/*! deferred queue, cases 3 and 4. see @ref (doxy_deferredqueues.md) */
+	struct deferred_queue bc_deferred_wait_page;
+
+	/*
+	 * background writer kernel thread to writeback dirty blocks
+	 */
+	struct task_struct *bc_bgwriter_task;
+	wait_queue_head_t bc_bgwriter_wait;
+	unsigned int bc_bgwriter_no_work_count;
+	unsigned int bc_bgwriter_work_count;
+	/*
+	 * bgwriter specific stats
+	 */
+	unsigned int bc_bgwriter_stalls_count;
+	unsigned int bc_bgwriter_stalls_nowait_count;
+	unsigned int bc_bgwriter_cache_block_busy_count;
+	unsigned int bc_bgwriter_queue_full_count;
+	unsigned int bc_bgwriter_too_many_buffers_count;
+	unsigned int bc_bgwriter_too_young_count;
+	unsigned int bc_bgwriter_ready_count;
+	unsigned int bc_bgwriter_hint_block_clean_count;
+	unsigned int bc_bgwriter_hint_no_block_count;
+	/*
+	 * internal bgwriter state, related to bgwriter writeback machine.
+	 * and writeback parameters based on writeback policy.
+	 *
+	 * the policy plugin uses the general state of bittern
+	 * (more specifically, the cache blocks dirty/valid/invalid counts,
+	 * pending_requests and max_pending_pending requests)
+	 * and the configuration parameters to determine the writeback
+	 * parameters.
+	 *
+	 * the following are the writeback parameters which are calculated by
+	 * the writeback policies.
+	 */
+	unsigned int bc_bgwriter_curr_queue_depth;
+	unsigned int bc_bgwriter_curr_max_queue_depth;
+	unsigned int bc_bgwriter_curr_target_pct;
+	unsigned int bc_bgwriter_curr_rate_per_sec;
+	unsigned int bc_bgwriter_curr_min_age_secs;
+	/*
+	 * writeback block count for a specific writeback cycle, and sum
+	 * of said writeback block count.
+	 * also the cluster counts and sums.
+	 */
+	unsigned int bc_bgwriter_curr_block_count;
+	unsigned int bc_bgwriter_curr_block_count_sum;
+	unsigned int bc_bgwriter_curr_cluster_count;
+	unsigned int bc_bgwriter_curr_cluster_count_sum;
+	unsigned int bc_bgwriter_curr_msecs_elapsed_start_io;
+	unsigned int bc_bgwriter_curr_msecs_slept_start_io;
+	/*
+	 * policy specific internal state.
+	 * each policy engine uses these as it sees git.
+	 * this state is reset to all zeros when policy is changed.
+	 */
+	unsigned long bc_bgwriter_curr_policy[8];
+	/*
+	 * bgwriter policy.
+	 * if the default is not modified, the writeback behaviour is
+	 * exactly the same as the previous fixed behavior
+	 * (standard / default).
+	 * conf_policy is the policy configured via bc_control,
+	 * active_policy is the currently applied policy. this
+	 * mechanism allows for a lock-free policy update by bgwriter
+	 * when it is safe to do so.
+	 */
+	volatile unsigned int bc_bgwriter_conf_policy;
+	volatile unsigned int bc_bgwriter_active_policy;
+	/*
+	 * flush dirty blocks on exit.
+	 * used by writeback policy
+	 */
+	volatile unsigned int bc_bgwriter_conf_flush_on_exit;
+	/*
+	 * cluster size
+	 */
+	volatile unsigned int bc_bgwriter_conf_cluster_size;
+	/*
+	 * how greedy bgwriter is in flushing, default 0.
+	 * minimum -10 (least greedy)
+	 * maximum +20 (very very greedy)
+	 * used by writeback policy
+	 */
+	volatile int bc_bgwriter_conf_greedyness;
+	/*
+	 * maximum queue depth percentage which we'll dedicate to writebacks
+	 * used by writeback policy
+	 */
+	volatile unsigned int bc_bgwriter_conf_max_queue_depth_pct;
+
+	unsigned long bc_bgwriter_loop_count;
+
+	/*
+	 * invalidator kernel thread
+	 */
+	struct task_struct *bc_invalidator_task;
+	wait_queue_head_t bc_invalidator_wait;
+	unsigned int bc_invalidator_no_work_count;
+	unsigned int bc_invalidator_work_count;
+	/*
+	 * config variable.
+	 * tells how many invalid blocks the invalidator thread needs to
+	 * maintain.
+	 */
+	volatile unsigned int bc_invalidator_conf_min_invalid_count;
+
+	/*
+	 * kernel thread to handle miscellaenous periodic tasks
+	 */
+	struct task_struct *bc_daemon_task;
+	wait_queue_head_t bc_daemon_wait;
+	unsigned int bc_daemon_no_work_count;
+	unsigned int bc_daemon_work_count;
+
+	/*! array of in-memory cache block metadata */
+	struct cache_block *bc_cache_blocks;
+
+	/*! red-black tree index for metadata */
+	struct rb_root bc_rb_root;
+	uint64_t bc_rb_hit_loop_sum;
+	uint64_t bc_rb_miss_loop_sum;
+	uint64_t bc_rb_hit_loop_count;
+	uint64_t bc_rb_miss_loop_count;
+	uint64_t bc_rb_hit_loop_max;
+	uint64_t bc_rb_miss_loop_max;
+
+	/*! target info */
+	struct dm_target *bc_ti;
+
+	/*! device being cached */
+	struct dm_dev *bc_dev;
+	/*! device acting as the cache */
+	struct dm_dev *bc_cache_dev;
+
+	int bc_cache_block_verifier_running;
+	struct task_struct *bc_cache_block_verifier_task;
+	wait_queue_head_t bc_verifier_wait;
+	int bc_cache_block_verifier_blocks_verified;
+	int bc_cache_block_verifier_blocks_not_verified_dirty;
+	int bc_cache_block_verifier_blocks_not_verified_busy;
+	int bc_cache_block_verifier_blocks_not_verified_invalid;
+	int bc_cache_block_verifier_one_shot;
+	int bc_cache_block_verifier_scans;
+	unsigned long bc_cache_block_verifier_scan_started;
+	unsigned long bc_cache_block_verifier_scan_last_block;
+	unsigned long bc_cache_block_verifier_scan_completed;
+	int bc_cache_block_verifier_scan_delay_ms;
+	int bc_cache_block_verifier_verify_errors;
+	int bc_cache_block_verifier_verify_errors_cumulative;
+	int bc_cache_block_verifier_bug_on_verify_errors;
+
+	struct pagebuf bc_pagebuf;
+
+	int bc_magic4;
+};
+
+static inline int is_cache_mode_writeback(struct bittern_cache *bc)
+{
+	ASSERT(bc->bc_cache_mode_writeback == 0 ||
+	       bc->bc_cache_mode_writeback == 1);
+	return bc->bc_cache_mode_writeback != 0;
+}
+static inline int is_cache_mode_writethru(struct bittern_cache *bc)
+{
+	return !is_cache_mode_writeback(bc);
+}
+/*! \todo move out from include and into a .c file (_subr.c ?) */
+static inline const char *cache_mode_to_str(struct bittern_cache *bc)
+{
+	if (is_cache_mode_writeback(bc))
+		return "writeback";
+	else
+		return "writethrough";
+}
+
+#define ASSERT_CACHE_STATE(__bcb) ({                                                  \
+	/* make sure it's an l-value. compiler will optimize this away */                     \
+	__bcb = (__bcb);                                                                      \
+	ASSERT((__bcb) != NULL);                                                              \
+	ASSERT(CACHE_STATE_VALID((__bcb)->bcb_state));                                \
+})
+
+#define ASSERT_TRANSITION_PATH_VALID(__bcb) ({                                  \
+	/* make sure it's an l-value. compiler will optimize this away */                     \
+	__bcb = (__bcb);								      \
+	ASSERT((__bcb) != NULL);                                                              \
+	ASSERT(CACHE_TRANSITION_PATH_VALID((__bcb)->bcb_transition_path));            \
+})
+
+#define __ASSERT_CACHE_BLOCK(__bcb, __bc) ({                                          \
+	/* this makes sure __bcb is an l-value -- compiler will optimize this out */          \
+	__bcb = (__bcb);								      \
+	/* this makes sure __bc is an l-value -- compiler will optimize this out */           \
+	__bc = (__bc);                                                                        \
+	ASSERT((__bc) != NULL);                                                               \
+	ASSERT((__bcb) != NULL);                                                              \
+	ASSERT((__bcb)->bcb_magic1 == BCB_MAGIC1);                                            \
+	ASSERT((__bcb)->bcb_magic3 == BCB_MAGIC3);                                            \
+	ASSERT(atomic_read(&(__bcb)->bcb_refcount) >= 0);                                     \
+	ASSERT_CACHE_STATE(__bcb);                                                    \
+	ASSERT_TRANSITION_PATH_VALID(__bcb);                                    \
+	/* block_id starts from 1, array starts from 0 */                                     \
+	ASSERT(&(__bc)->bc_cache_blocks[(__bcb)->bcb_block_id - 1] == (__bcb));               \
+})
+
+#define ASSERT_CACHE_BLOCK(__bcb, __bc) ({                                            \
+	/* this makes sure __bcb is an l-value -- compiler will optimize this out */          \
+	__bcb = (__bcb);                                                                      \
+	/* this makes sure __bc is an l-value -- compiler will optimize this out */           \
+	__bc = (__bc);                                                                        \
+	ASSERT((__bc) != NULL);                                                               \
+	ASSERT((__bcb) != NULL);                                                              \
+	ASSERT((__bcb) >= &(__bc)->bc_cache_blocks[0] &&                                      \
+		(__bcb) < &(__bc)->bc_cache_blocks[atomic_read(&(__bc)->bc_total_entries)]);  \
+	ASSERT((__bcb)->bcb_block_id >= 1 &&                                                  \
+		(__bcb)->bcb_block_id <= atomic_read(&(__bc)->bc_total_entries));             \
+	__ASSERT_CACHE_BLOCK(__bcb, __bc);                                            \
+	ASSERT((__bcb) != NULL);                                                              \
+})
+
+#define __ASSERT_BITTERN_CACHE(__bc) ({                                                       \
+	/* this makes sure __bc is an l-value -- compiler will optimize this out */           \
+	__bc = (__bc);                                                                        \
+	ASSERT((__bc) != NULL);                                                               \
+	ASSERT((__bc)->bc_magic1 == BC_MAGIC1);                                               \
+	ASSERT((__bc)->bc_magic2 == BC_MAGIC2);                                               \
+	ASSERT((__bc)->bc_magic3 == BC_MAGIC3);                                               \
+	ASSERT((__bc)->bc_magic4 == BC_MAGIC4);                                               \
+	ASSERT((__bc)->bc_ti != NULL);                                                        \
+	ASSERT((__bc)->bc_dev != NULL);                                                       \
+	ASSERT_CACHE_REPLACEMENT_MODE((__bc)->bc_replacement_mode);                   \
+	ASSERT((__bc)->bc_cache_blocks != NULL);                                              \
+	ASSERT((__bc)->bc_cache_mode_writeback == 0 || (__bc)->bc_cache_mode_writeback == 1); \
+})
+
+#define ASSERT_BITTERN_CACHE(__bc) ({                                                               \
+	__ASSERT_BITTERN_CACHE(__bc);                                                               \
+	ASSERT(atomic_read(&(__bc)->bc_total_entries) == (__bc)->bc_papi.papi_hdr.lm_cache_blocks); \
+})
+
+#define __do_printk_in_loop(__count, __max_count) ({                        \
+	int ret;                                                            \
+	int ___max_count = (__max_count);                                   \
+	/* make sure it's an l-value. compiler will optimize this away */   \
+	__count = (__count);                                                \
+	if (___max_count > 1000000)                                         \
+		ret = (__count) < 100 || ((__count) % 50000) == 0;          \
+	else if (___max_count > 100000)                                     \
+		ret = (__count) < 100 || ((__count) % 5000) == 0;           \
+	else if (___max_count > 10000)                                      \
+		ret = (__count) < 50 || ((__count) % 100) == 0;             \
+	else                                                                \
+		ret = (__count) < 50 || ((__count) % 100) == 0;             \
+	ret;                                                                \
+})
+
+#define do_printk_in_loop(__bc, __count) ({                                         \
+	int ret;                                                                    \
+	/* make sure it's an l-value. compiler will optimize this away */           \
+	__bc = (__bc);                                                              \
+	/* make sure it's an l-value. compiler will optimize this away */           \
+	__count = (__count);                                                        \
+	ASSERT_BITTERN_CACHE(__bc);                                                 \
+	ret = __do_printk_in_loop(__count, atomic_read(&(__bc)->bc_total_entries)); \
+})
+
+#define __do_trace_in_loop(__count, __max_count) __do_printk_in_loop((__count), __max_count)
+#define do_trace_in_loop(__bc, __count) do_printk_in_loop((__bc), (__count))
+
+extern void seq_bypass_initialize(struct bittern_cache *bc);
+extern int seq_bypass_is_sequential(struct bittern_cache *bc, struct bio *bio);
+extern int seq_bypass_stats(struct bittern_cache *bc,
+			    char *result,
+			    size_t maxlen);
+
+int set_read_bypass_enabled(struct bittern_cache *bc, int value);
+int read_bypass_enabled(struct bittern_cache *bc);
+int set_read_bypass_threshold(struct bittern_cache *bc, int value);
+int read_bypass_threshold(struct bittern_cache *bc);
+int set_read_bypass_timeout(struct bittern_cache *bc, int value);
+int read_bypass_timeout(struct bittern_cache *bc);
+int set_write_bypass_enabled(struct bittern_cache *bc, int value);
+int write_bypass_enabled(struct bittern_cache *bc);
+int set_write_bypass_threshold(struct bittern_cache *bc, int value);
+int write_bypass_threshold(struct bittern_cache *bc);
+int set_write_bypass_timeout(struct bittern_cache *bc, int value);
+int write_bypass_timeout(struct bittern_cache *bc);
+
+static inline void cache_xid_set(struct bittern_cache *bc,
+				 uint64_t new_xid)
+{
+	atomic64_set(&bc->bc_xid, new_xid);
+}
+
+static inline uint64_t cache_xid_inc(struct bittern_cache *bc)
+{
+	return atomic64_inc_return(&bc->bc_xid);
+}
+
+static inline uint64_t cache_xid_get(struct bittern_cache *bc)
+{
+	return atomic64_read(&bc->bc_xid);
+}
+
+extern void *pagebuf_allocate_nowait(struct bittern_cache *bc,
+				     int pool,
+				     struct page **out_page);
+extern void *pagebuf_allocate_wait(struct bittern_cache *bc,
+				   int pool,
+				   struct page **out_page);
+extern void pagebuf_free(struct bittern_cache *bc, int pool, void *page_buf);
+extern int pagebuf_in_use(struct bittern_cache *bc, int pool);
+/*!
+ * pagebuf_max_bufs() changes dynamically and is
+ * tied to @ref bittern_cache::bc_max_pending_requests
+ */
+static inline int pagebuf_max_bufs(struct bittern_cache *bc)
+{
+	return bc->bc_max_pending_requests;
+}
+static inline bool pagebuf_can_allocate(struct bittern_cache *bc, int pool)
+{
+	return pagebuf_in_use(bc, pool) < pagebuf_max_bufs(bc);
+}
+extern void pagebuf_initialize(struct bittern_cache *bc);
+extern void pagebuf_deinitialize(struct bittern_cache *bc);
+extern void pagebuf_callout(struct bittern_cache *bc);
+
+/*
+ * red-black tree operations
+ *
+ * these functions do not grab any spinlock, caller is responsible for that
+ */
+extern struct cache_block *cache_rb_lookup(struct bittern_cache *bc,
+					   sector_t sector);
+extern void cache_rb_insert(struct bittern_cache *bc,
+			    struct cache_block *cache_block);
+extern void cache_rb_remove(struct bittern_cache *bc,
+			    struct cache_block *cache_block);
+extern struct cache_block *cache_rb_first(struct bittern_cache *bc);
+extern struct cache_block *cache_rb_next(struct bittern_cache *bc,
+					 struct cache_block *cache_block);
+extern struct cache_block *cache_rb_prev(struct bittern_cache *bc,
+					 struct cache_block *cache_block);
+extern struct cache_block *cache_rb_last(struct bittern_cache *bc);
+
+#include "bittern_cache_main.h"
+
+/*
+ * the cache_bio_request* primitives are not reentrant, i.e., they are
+ * meant to be used by a single thread. Later we might decide to change this.
+ *
+ * FIXME: should get rid of this and just use bio directly.
+ */
+extern int cache_bio_request_initialize(struct bittern_cache *bc,
+					struct cache_bio_request **bio_req);
+extern void cache_bio_request_deinitialize(struct bittern_cache *bc,
+					   struct cache_bio_request *bio_req);
+extern int cache_bio_request_start_async_page(
+    struct bittern_cache *bc, sector_t sector, int dir,
+    struct cache_bio_request *bio_req);
+extern int cache_bio_request_wait_page(struct bittern_cache *bc,
+				       struct cache_bio_request *bio_req);
+
+extern int cache_deferred_busy_kthread(void *__bc);
+extern int cache_deferred_page_kthread(void *__bc);
+extern int cache_daemon_kthread(void *__bc);
+extern int cache_bgwriter_kthread(void *__bc);
+extern int cache_invalidator_kthread(void *__bc);
+extern int cache_invalidator_has_work_schmitt(struct bittern_cache *bc);
+
+/*! return bgwriter current policy name */
+extern const char *cache_bgwriter_policy(struct bittern_cache *bc);
+extern ssize_t cache_bgwriter_op_show_policy(struct bittern_cache *bc,
+					     char *result);
+extern int cache_bgwriter_policy_set(struct bittern_cache *bc,
+				     const char *buf);
+extern void cache_bgwriter_policy_init(struct bittern_cache *bc);
+
+extern void cache_bgwriter_flush_dirty_blocks(struct bittern_cache *bc);
+extern void cache_bgwriter_compute_policy_slow(struct bittern_cache *bc);
+extern void cache_bgwriter_compute_policy_fast(struct bittern_cache *bc);
+
+/*! the main DM entry point for bittern */
+extern int bittern_cache_map(struct dm_target *ti, struct bio *bio);
+
+extern int cache_block_verifier_kthread(void *bc);
+extern void cache_invalidate_clean_block(struct bittern_cache *bc,
+					 struct cache_block *cache_block);
+extern void cache_invalidate_blocks(struct bittern_cache *bc);
+/* \todo should this be in cache_getput? */
+extern void cache_invalidate_block_io_end(struct bittern_cache *bc,
+					  struct work_item *wi,
+					  struct cache_block *cache_block);
+/* \todo should this be in cache_getput? */
+extern void cache_invalidate_block_io_start(struct bittern_cache *bc,
+					    struct cache_block *cache_block);
+extern void cache_zero_stats(struct bittern_cache *bc);
+extern int cache_dump_blocks(struct bittern_cache *bc,
+			     const char *dump_op,
+			     unsigned int dump_offset);
+extern void cache_walk(struct bittern_cache *bc);
+
+/* called by task timeout handler */
+extern void seq_bypass_timeout(struct bittern_cache *bc);
+
+#ifdef ENABLE_KMALLOC_DEBUG
+extern void *kmem_allocate(size_t size, int flags, int zero);
+#define kmem_alloc(__size, __flags) kmem_allocate((__size), (__flags), 0)
+#define kmem_zalloc(__size, __flags) kmem_allocate((__size), (__flags), 1)
+extern void kmem_free(void *buf, size_t size);
+extern unsigned int kmem_buffers_in_use(void);
+#else /*ENABLE_KMALLOC_DEBUG */
+#define kmem_alloc(__size, __flags) kmalloc((__size), (__flags))
+#define kmem_zalloc(__size, __flags) kzalloc((__size), (__flags))
+#define kmem_free(__buf, __size) kfree((__buf))
+#define kmem_buffers_in_use() (0)
+#endif /*ENABLE_KMALLOC_DEBUG */
+
+#define BT_LEVEL_ERROR 0
+#define BT_LEVEL_WARN 1
+#define BT_LEVEL_INFO 2
+#define BT_LEVEL_TRACE0         3
+#define BT_LEVEL_TRACE1         4
+#define BT_LEVEL_TRACE2         5
+#define BT_LEVEL_TRACE3         6
+#define BT_LEVEL_TRACE4         7
+#define BT_LEVEL_TRACE5         8
+
+#define BT_LEVEL_MIN BT_LEVEL_TRACE0
+#define BT_LEVEL_MAX BT_LEVEL_TRACE5
+
+extern int cache_trace_level;
+#define __CACHE_TRACE_LEVEL() ((cache_trace_level) & 0x0f)
+#define __CACHE_DEV_TRACE_LEVEL() ((cache_trace_level >> 8) & 0x0f)
+
+extern void
+__printf(9, 10) cache_trace(int level,
+			    struct bittern_cache *bc,
+			    struct work_item *wi,
+			    struct cache_block *cache_block,
+			    struct bio *original_bio,
+			    struct bio *cloned_bio,
+			    const char *file_name, int line,
+			    const char *fmt, ...);
+
+#ifdef DISABLE_BT_TRACE
+#define BT_TRACE(__level, __bc, __wi, __cache_block, __original_bio, __cloned_bio, __printf_args...) (void)0
+#else /*DISABLE_BT_TRACE */
+#define BT_TRACE(__level, __bc, __wi, __cache_block, __original_bio, __cloned_bio, __printf_args...) \
+({                                                                                              \
+	if ((__level) <= __CACHE_TRACE_LEVEL()) {                                       \
+		cache_trace((__level),                                                  \
+		(__bc), (__wi), (__cache_block), (__original_bio), (__cloned_bio),              \
+		__func__,                                                                       \
+		__LINE__,                                                                       \
+		__printf_args);                                                                 \
+	}                                                                                       \
+})
+#endif /*DISABLE_BT_TRACE */
+
+#ifdef DISABLE_BT_DEV_TRACE
+#define BT_DEV_TRACE(__level, __bc, __wi, __cache_block, __original_bio, __cloned_bio, __printf_args...) (void)0
+#else /*DISABLE_BT_DEV_TRACE */
+#define BT_DEV_TRACE(__level, __bc, __wi, __cache_block, __original_bio, __cloned_bio, __printf_args...) \
+({                                                                                              \
+	if ((__level) <= __CACHE_DEV_TRACE_LEVEL()) {                                   \
+		cache_trace((__level),                                                  \
+		(__bc), (__wi), (__cache_block), (__original_bio), (__cloned_bio),              \
+		__func__,                                                                       \
+		__LINE__,                                                                       \
+		__printf_args);                                                                 \
+	}                                                                                       \
+})
+#endif /*DISABLE_BT_DEV_TRACE */
+
+/* percent macro - this calculates _b% of _a% */
+#define B_PERCENT_OF_A(_a, _b) ({ ((_a) * 100) / (_b); })
+/* percent macro - it also calculates _a% percentage of %_b */
+#define A_PERCENT_OF_B(_a, _b) ({ ((_a) * (_b)) / 100; })
+
+/* __xop accessors */
+#define __xop_null(__x_value) (__x_value)
+#define __xop_atomic_read(__x_value) atomic_read(&(__x_value))
+/* gives integer percentage of __part over __total */
+#define __T_PCT__XOP(__total, __part, __xop) ({		\
+		uint64_t total = __xop(__total);	\
+		uint64_t part = __xop(__part);		\
+		uint64_t r = 0;				\
+		if (total) {				\
+			r = (part * 100) / (total);	\
+		}					\
+		r;					\
+})
+/* gives first two digits after decimal of percentage of __part over __total */
+#define __T_PCT_F100__XOP(__total, __part, __xop) ({\
+		uint64_t total = __xop(__total);		\
+		uint64_t part = __xop(__part);			\
+		uint64_t r = 0;					\
+		if (total) {					\
+			r = (part * 100 * 100) / (total);	\
+			r = r % 100;                            \
+		}						\
+		r;						\
+})
+/* gives integer percentage of __b over (__a + __b) */
+#define __S_PCT__XOP(__a, __b, __xop) ({                \
+		uint64_t a = __xop(__a);                \
+		uint64_t b = __xop(__b);                \
+		uint64_t r = 0;                         \
+		if (a + b) {                            \
+			r = (b * 100) / (a + b);        \
+		}                                       \
+		r;                                      \
+})
+/* gives first two digits after decimal of percentage of __b over (__a + __b) */
+#define __S_PCT_F100__XOP(__a, __b, __xop) ({           \
+		uint64_t a = __xop(__a);                \
+		uint64_t b = __xop(__b);                \
+		uint64_t r = 0;                         \
+		if (a + b) {                            \
+			r = (b * 100 * 100) / (a + b);  \
+			r = r % 100;                    \
+		}                                       \
+		r;                                      \
+})
+
+/* gives integer percentage of __part over __total */
+#define T_PCT__ATOMIC_READ(__total, __part) __T_PCT__XOP(__total, __part, __xop_atomic_read)
+/* gives first two digits after decimal of percentage of __part over __total */
+#define T_PCT_F100__ATOMIC_READ(__total, __part) __T_PCT_F100__XOP(__total, __part, __xop_atomic_read)
+/* gives integer percentage of __b over (__a + __b) */
+#define S_PCT__ATOMIC_READ(__a, __b) __S_PCT__XOP(__a, __b, __xop_atomic_read)
+/* gives first two digits after decimal of percentage of __b over (__a + __b) */
+#define S_PCT_F100__ATOMIC_READ(__a, __b)        __S_PCT__XOP(__a, __b, __xop_atomic_read)
+
+/* gives integer percentage of __part over __total */
+#define T_PCT(__total, __part) __T_PCT__XOP(__total, __part, __xop_null)
+/* gives first two digits after decimal of percentage of __part over __total */
+#define T_PCT_F100(__total, __part)              __T_PCT_F100__XOP(__total, __part, __xop_null)
+/* gives integer percentage of __b over (__a + __b) */
+#define S_PCT(__a, __b) __S_PCT__XOP(__a, __b, __xop_null)
+/* gives first two digits after decimal of percentage of __b over (__a + __b) */
+#define S_PCT_F100(__a, __b)                     __S_PCT__XOP(__a, __b, __xop_null)
+
+#ifdef ENABLE_TRACK_CRC32C
+
+extern void cache_track_hash_set(struct bittern_cache *bc,
+				 struct cache_block *cache_block,
+				 uint128_t hash_value);
+extern void cache_track_hash_check(struct bittern_cache *bc,
+				   struct cache_block *cache_block,
+				   uint128_t hash_value);
+extern void cache_track_hash_check_buffer(struct bittern_cache *bc,
+					  struct cache_block *cache_block,
+					  void *buffer);
+extern void cache_track_hash_clear(struct bittern_cache *bc,
+				   unsigned long sector);
+
+#else /*ENABLE_TRACK_CRC32C */
+
+#define cache_track_hash_set(__bc, __cache_block, __value) (void)0
+#define cache_track_hash_check(__bc, __cache_block, __value) (void)0
+#define cache_track_hash_check_buffer(__bc, __cache_block, __buffer) (void)0
+#define cache_track_hash_clear(__bc, __sector) (void)0
+
+#endif /*ENABLE_TRACK_CRC32C */
+
+#endif /* BITTERN_CACHE_H */

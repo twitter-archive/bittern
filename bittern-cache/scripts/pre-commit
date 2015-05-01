@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# http://blog.vmsplice.net/2011/03/how-to-automatically-run-checkpatchpl.html
+
+exec git diff --cached | bittern-cache/scripts/checkpatch.pl --no-signoff -q --no-tree -

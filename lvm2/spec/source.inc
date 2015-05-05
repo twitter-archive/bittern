@@ -5,13 +5,11 @@
 
 %global enable_profiling 0
 %global enable_testsuite 0
-%global enable_udev 1
+%global enable_udev 0
 %global enable_systemd 1
-%global enable_cmirror 1
+%global enable_cmirror 0
 
-%global buildreq_cluster corosync-devel >= 1.99.9-1, dlm-devel >= 3.99.1-1
-%global req_cluster corosync >= 1.99.9-1, dlm >= 3.99.2-1
-%with clvmd corosync
+%with clvmd none
 
 # TODO %global req_dm_persistent device-mapper-persistent-data >= 0.1.4
 %with cache internal
@@ -23,7 +21,21 @@
 %global buildreq_udev systemd-devel
 %global req_udev udev >= 181-1
 
-%service lvmetad 1
+%service lvmetad 0
+
+##################### RHEL 5 #################################
+
+%if %{rhel} == 5
+
+%global enable_systemd 0
+%global buildreq_udev %{nil}
+%global req_udev %{nil}
+%global buildreq_cluster %{nil}
+%global req_cluster %{nil}
+
+%with clvmd none
+
+%endif
 
 ##############################################################
 
@@ -31,13 +43,23 @@
 %global enable_systemd 0
 
 %global buildreq_udev libudev-devel
-%global buildreq_cluster openaislib-devel >= 1.1.1-1, clusterlib-devel >= 3.0.6-1, corosynclib-devel >= 1.2.0-1
+%global buildreq_cluster %{nil}
 
 %global req_udev udev >= 158-1
 %global req_cluster openais >= 1.1.1-1, cman >= 3.0.6-1, corosync >= 1.2.0-1
 
 %global _udevbasedir /lib/udev
 %global _udevdir %{_udevbasedir}/rules.d
+
+%endif
+
+%if %{rhel} == 6 || %{rhel} == 5
+
+%global _default_pid_dir /var/run
+%global _default_dm_run_dir /var/run
+%global _default_run_dir /var/run/lvm
+%global _default_locking_dir /var/lock/lvm
+
 %endif
 
 %if %{fedora} == 16
@@ -75,13 +97,13 @@
 %define device_mapper_version 1.02.75
 
 Summary: Userland logical volume management tools
-Name: lvm2
-Version: 2.02.96
-Release: 4%{?dist}
+Name: bittern-lvm2
+Version: 2.02.118
+Release: 0.t1%{?dist}
 License: GPLv2
 Group: System Environment/Base
 URL: http://sources.redhat.com/lvm2
-Source0: ftp://sources.redhat.com/pub/lvm2/LVM2.%{version}.tgz
+Source0: %{name}-%{version}.tar.gz
 Source91: source.inc
 Source92: build.inc
 Source93: packages.inc
@@ -93,6 +115,8 @@ BuildRequires: readline-devel
 BuildRequires: module-init-tools
 BuildRequires: pkgconfig
 
+BuildRoot: %{_tmppath}/%{name}-root
+
 # Expands to nothing unless at least 2 arguments are given
 %define maybe() \
 %if %(test -n "%{?2}" && echo 1 || echo 0) \
@@ -103,6 +127,8 @@ BuildRequires: pkgconfig
 
 %maybe BuildRequires: %{?buildreq_udev}
 %maybe BuildRequires: %{?buildreq_cluster}
+
+%global with_dmeventd 0
 
 %description
 LVM2 includes all of the support for handling read/write operations on

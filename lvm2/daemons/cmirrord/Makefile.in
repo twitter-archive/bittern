@@ -36,4 +36,4 @@ cmirrord: $(OBJECTS) $(top_builddir)/lib/liblvm-internal.a
 		$(LVMLIBS) $(LMLIBS) $(LIBS)
 
 install: $(TARGETS)
-	$(INSTALL_PROGRAM) -D cmirrord $(usrsbindir)/cmirrord
+	$(INSTALL_PROGRAM) -D cmirrord $(usrsbindir)/@LVM_PREFIX@cmirrord

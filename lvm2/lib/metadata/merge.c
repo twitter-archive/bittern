@@ -220,6 +220,9 @@ int check_lv_segments(struct logical_volume *lv, int complete_vg)
 					inc_error_count;
 				}
 
+				if (seg_is_bittern_pool(seg))
+					goto skip_metadata_lv;
+
 				if (!seg->metadata_lv) {
 					log_error("LV %s: %s segment %u is missing a pool metadata LV",
 						  lv->name, seg->segtype->name, seg_count);
@@ -230,6 +233,7 @@ int check_lv_segments(struct logical_volume *lv, int complete_vg)
 						  lv->name, seg->segtype->name, seg_count);
 					inc_error_count;
 				}
+skip_metadata_lv:
 
 				if (seg_is_pool(seg) &&
 				    !validate_pool_chunk_size(lv->vg->cmd, seg->segtype, seg->chunk_size)) {

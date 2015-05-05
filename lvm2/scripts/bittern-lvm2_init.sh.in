@@ -1,0 +1,51 @@
+#!/bin/bash
+#
+# Copyright (C) 2015 Twitter, Inc.
+#
+# This copyrighted material is made available to anyone wishing to use,
+# modify, copy, or redistribute it subject to the terms and conditions
+# of the GNU General Public License v.2.
+#
+# This file is part of Bittern-LVM2.
+#
+#
+# chkconfig: 2345 20 80
+# description: Loads Bittern LVM2 volumes
+#
+# For Red-Hat-based distributions such as Fedora, RHEL, CentOS.
+#	       
+### BEGIN INIT INFO
+# Provides: bittern-lvm2
+# Required-Start:
+# Required-Stop:
+# Default-Start: 2 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: Loads Bittern LVM2 volumes
+### END INIT INFO
+
+. /etc/init.d/functions
+
+exec_prefix=@exec_prefix@
+sbindir=@sbindir@
+
+LOCK_FILE="/var/lock/subsys/bittern-lvm2"
+
+
+rtrn=1
+
+case "$1" in
+  start)
+	touch $LOCK_FILE
+	action "Activating Bittern LVM2 volumes" $sbindir/@LVM_PREFIX@lvm vgchange -aay
+	;;
+
+  stop)
+	rm -f $LOCK_FILE
+	;;
+
+  status)
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|status}"
+	;;
+esac

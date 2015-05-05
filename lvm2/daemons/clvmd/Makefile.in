@@ -100,7 +100,7 @@ clvmd: $(OBJECTS) $(top_builddir)/lib/liblvm-internal.a
 .PHONY: install_clvmd
 
 install_clvmd: $(TARGETS)
-	$(INSTALL_PROGRAM) -D clvmd $(usrsbindir)/clvmd
+	$(INSTALL_PROGRAM) -D clvmd $(usrsbindir)/@LVM_PREFIX@clvmd
 
 install: $(INSTALL_TARGETS)
 

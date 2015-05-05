@@ -124,7 +124,7 @@ int validate_lv_cache_create_pool(const struct logical_volume *pool_lv)
 {
 	struct lv_segment *seg;
 
-	if (!lv_is_cache_pool(pool_lv)) {
+	if (!lv_is_cache_pool(pool_lv) && !lv_is_bittern_pool(pool_lv)) {
 		log_error("Logical volume %s is not a cache pool.",
 			  display_lvname(pool_lv));
 		return 0;
@@ -260,8 +260,14 @@ int lv_cache_remove(struct logical_volume *cache_lv)
 			return 0;
 		}
 		/* For inactive writethrough just drop cache layer */
-		if (first_seg(cache_seg->pool_lv)->feature_flags &
+		if (lv_is_bittern_pool(cache_seg->pool_lv) ||
+		    first_seg(cache_seg->pool_lv)->feature_flags &
 		    DM_CACHE_FEATURE_WRITETHROUGH) {
+			if (lv_is_bittern_pool(cache_seg->pool_lv)) {
+				log_warn("LV %s is Bittern; skipping attempt to sync dirty pages.",
+						cache_lv->name);
+				log_warn("If you are deleting the cache but not the dependent LV, your data is now gone.");
+			}
 			corigin_lv = seg_lv(cache_seg, 0);
 			if (!detach_pool_lv(cache_seg))
 				return_0;
@@ -281,6 +287,9 @@ int lv_cache_remove(struct logical_volume *cache_lv)
 			return 0;
 		}
 		cache_lv->status &= ~LV_TEMPORARY;
+	} else if (lv_is_bittern_pool(cache_seg->pool_lv)) {
+		log_error("Please deactivate a Bittern LV before removing.");
+		return_0;
 	}
 
 	/*
@@ -459,7 +468,7 @@ int wipe_cache_pool(struct logical_volume *cache_pool_lv)
 	int r;
 
 	/* Only unused cache-pool could be activated and wiped */
-	if (!lv_is_cache_pool(cache_pool_lv) ||
+	if (!(lv_is_cache_pool(cache_pool_lv) || lv_is_bittern_pool(cache_pool_lv)) ||
 	    !dm_list_empty(&cache_pool_lv->segs_using_this_lv)) {
 		log_error(INTERNAL_ERROR "Failed to wipe cache pool for volume %s.",
 			  display_lvname(cache_pool_lv));
@@ -473,7 +482,9 @@ int wipe_cache_pool(struct logical_volume *cache_pool_lv)
 		return 0;
 	}
 	cache_pool_lv->status &= ~LV_TEMPORARY;
-	if (!(r = wipe_lv(cache_pool_lv, (struct wipe_params) { .do_zero = 1 }))) {
+	/* Wipe both Bittern headers: one is at index 0, and the second is at
+	 * 128kB (sector 256).  Data begins at sector 512. */
+	if (!(r = wipe_lv(cache_pool_lv, (struct wipe_params) { .do_zero = 1, .zero_sectors = 512 }))) {
 		log_error("Aborting. Failed to wipe cache pool %s.",
 			  display_lvname(cache_pool_lv));
 		/* Delay return of error after deactivation */

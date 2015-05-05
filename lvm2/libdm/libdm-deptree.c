@@ -28,6 +28,7 @@
 
 /* Supported segment types */
 enum {
+	SEG_BITTERN,
 	SEG_CACHE,
 	SEG_CRYPT,
 	SEG_ERROR,
@@ -60,6 +61,7 @@ static const struct {
 	unsigned type;
 	const char target[16];
 } _dm_segtypes[] = {
+	{ SEG_BITTERN, "bittern_cache" },
 	{ SEG_CACHE, "cache" },
 	{ SEG_CRYPT, "crypt" },
 	{ SEG_ERROR, "error" },
@@ -2376,12 +2378,12 @@ static int _cache_emit_segment_line(struct dm_task *dmt,
 	if (!_build_dev_string(data, sizeof(data), seg->pool))
 		return_0;
 
-	/* Metadata Dev */
-	if (!_build_dev_string(metadata, sizeof(metadata), seg->metadata))
-		return_0;
-
 	/* Origin Dev */
 	if (!_build_dev_string(origin, sizeof(origin), seg->origin))
+		return_0;
+
+	/* Metadata Dev */
+	if (!_build_dev_string(metadata, sizeof(metadata), seg->metadata))
 		return_0;
 
 	EMIT_PARAMS(pos, " %s %s %s", metadata, data, origin);
@@ -2461,6 +2463,29 @@ static int _thin_emit_segment_line(struct dm_task *dmt,
 	}
 
 	EMIT_PARAMS(pos, "%s %d%s", pool, seg->device_id, external);
+
+	return 1;
+}
+
+static int _bittern_emit_segment_line(struct dm_task *dmt, struct load_segment *seg, char *params, size_t paramsize)
+{
+	int pos = 0;
+	char pool[DM_FORMAT_DEV_BUFSIZE];
+	char origin[DM_FORMAT_DEV_BUFSIZE];
+	const char *operation;
+
+	if (!_build_dev_string(pool, sizeof(pool), seg->pool))
+		return_0;
+
+	if (!_build_dev_string(origin, sizeof(origin), seg->origin))
+		return_0;
+
+	if (seg->flags & DM_CACHE_FEATURE_BITTERN_CREATE)
+		operation = "create";
+	else
+		operation = "restore";
+
+	EMIT_PARAMS(pos, "%s %s %s", operation, origin, pool);
 
 	return 1;
 }
@@ -2554,6 +2579,10 @@ static int _emit_segment_line(struct dm_task *dmt, uint32_t major,
 		if (!_cache_emit_segment_line(dmt, seg, params, paramsize))
 			return_0;
 		break;
+	case SEG_BITTERN:
+		if (!_bittern_emit_segment_line(dmt, seg, params, paramsize))
+			return_0;
+		break;
 	}
 
 	switch(seg->type) {
@@ -2566,6 +2595,7 @@ static int _emit_segment_line(struct dm_task *dmt, uint32_t major,
 	case SEG_THIN_POOL:
 	case SEG_THIN:
 	case SEG_CACHE:
+	case SEG_BITTERN:
 		break;
 	case SEG_CRYPT:
 	case SEG_LINEAR:
@@ -3313,7 +3343,9 @@ int dm_tree_node_add_cache_target(struct dm_tree_node *node,
 	struct dm_config_node *cn;
 	struct load_segment *seg;
 
-	if (!(seg = _add_segment(node, SEG_CACHE, size)))
+	if (!(seg = _add_segment(node,
+	                         feature_flags & DM_CACHE_FEATURE_BITTERN ? SEG_BITTERN : SEG_CACHE,
+				 size)))
 		return_0;
 
 	if (!(seg->pool = dm_tree_find_node_by_uuid(node->dtree,
@@ -3325,15 +3357,16 @@ int dm_tree_node_add_cache_target(struct dm_tree_node *node,
 	if (!_link_tree_nodes(node, seg->pool))
 		return_0;
 
-	if (!(seg->metadata = dm_tree_find_node_by_uuid(node->dtree,
+	if (metadata_uuid &&
+	    !(seg->metadata = dm_tree_find_node_by_uuid(node->dtree,
 							metadata_uuid))) {
 		log_error("Missing cache's metadata uuid %s.",
 			  metadata_uuid);
 		return 0;
 	}
-	if (!_link_tree_nodes(node, seg->metadata))
-		return_0;
 
+	if (metadata_uuid && !_link_tree_nodes(node, seg->metadata))
+		return_0;
 
 	if (!(seg->origin = dm_tree_find_node_by_uuid(node->dtree,
 						      origin_uuid))) {

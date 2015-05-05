@@ -1855,6 +1855,11 @@ static int _pool_callback(struct dm_tree_node *node,
 		find_config_tree_str_allow_empty(pool_lv->vg->cmd, data->exec, NULL) /* argv[0] */
 	};
 
+	/* Skip checking a Bittern pool */
+	if (lv_is_bittern_pool(pool_lv))
+		/* mlv is NULL here, but we haven't dereferenced it yet */
+		return 1;
+
 	if (!*argv[0])
 		return 1; /* Checking disabled */
 
@@ -1953,6 +1958,11 @@ static int _pool_register_callback(struct dev_manager *dm,
 		return 1;
 #endif
 
+	/* I don't need to call cache_check on Bittern (maybe?) -- TODO: is
+	 * this all the callback does? */
+	if (lv_is_bittern_pool(lv))
+		return 1;
+
 	if (!(data = dm_pool_zalloc(dm->mem, sizeof(*data)))) {
 		log_error("Failed to allocated path for callback.");
 		return 0;
@@ -1997,11 +2007,12 @@ static int _add_lv_to_dtree(struct dev_manager *dm, struct dm_tree *dtree,
 	struct dm_tree_node *node;
 	const char *uuid;
 
-	if (lv_is_cache_pool(lv)) {
+	if (lv_is_cache_pool(lv) || lv_is_bittern_pool(lv)) {
 		if (!dm_list_empty(&lv->segs_using_this_lv)) {
 			if (!_add_lv_to_dtree(dm, dtree, seg_lv(first_seg(lv), 0), 0))
 				return_0;
-			if (!_add_lv_to_dtree(dm, dtree, first_seg(lv)->metadata_lv, 0))
+			if (!lv_is_bittern_pool(lv) &&
+			    !_add_lv_to_dtree(dm, dtree, first_seg(lv)->metadata_lv, 0))
 				return_0;
 			/* Cache pool does not have a real device node */
 			return 1;
@@ -2732,6 +2743,12 @@ static int _add_new_lv_to_dtree(struct dev_manager *dm, struct dm_tree *dtree,
 		return 1;
 	}
 
+	if (lv_is_bittern_pool(lv) && !dm_list_empty(&lv->segs_using_this_lv)) {
+		if (!_add_new_lv_to_dtree(dm, dtree, seg_lv(first_seg(lv), 0), laopts, NULL))
+			return_0;
+		return 1;
+	}
+
 	/* FIXME Seek a simpler way to lay out the snapshot-merge tree. */
 
 	if (!layer && lv_is_merging_origin(lv)) {
@@ -2812,6 +2829,10 @@ static int _add_new_lv_to_dtree(struct dev_manager *dm, struct dm_tree *dtree,
 	/* This is unused cache-pool - make metadata accessible */
 	if (lv_is_cache_pool(lv))
 		lv = first_seg(lv)->metadata_lv;
+
+	/* This is an unused Bittern pool - make the data accessible (e.g. to wipe) */
+	if (lv_is_bittern_pool(lv))
+		lv = seg_lv(first_seg(lv), 0);
 
 	/* If this is a snapshot origin, add real LV */
 	/* If this is a snapshot origin + merging snapshot, add cow + real LV */

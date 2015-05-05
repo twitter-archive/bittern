@@ -114,10 +114,47 @@ static int _cache_pool_text_import(struct lv_segment *seg,
 	return 1;
 }
 
+static int _bittern_pool_text_import(struct lv_segment *seg,
+				     const struct dm_config_node *sn,
+				     struct dm_hash_table *pv_hash __attribute__((unused)))
+{
+	struct logical_volume *cache_lv;
+	const char *str = NULL;
+
+	if (!dm_config_has_node(sn, "cache_dev"))
+		return SEG_LOG_ERROR("cache_dev not specified for Bittern pool");
+	if (!(str = dm_config_find_str(sn, "cache_dev", NULL)))
+		return SEG_LOG_ERROR("cache_dev must be a string in Bittern pool");
+	if (dm_config_has_node(sn, "needs_create") &&
+			dm_config_find_bool(sn, "needs_create", 0))
+		seg->feature_flags |= DM_CACHE_FEATURE_BITTERN_CREATE;
+	if (!(cache_lv = find_lv(seg->lv->vg, str)))
+		return SEG_LOG_ERROR("Unknown logical volume %s specified in Bittern pool",
+				     str);
+
+	if (!attach_pool_data_lv(seg, cache_lv))
+		return_0;
+
+	seg->feature_flags |= DM_CACHE_FEATURE_BITTERN;
+
+	return 1;
+}
+
 static int _cache_pool_text_import_area_count(const struct dm_config_node *sn,
 					      uint32_t *area_count)
 {
 	*area_count = 1;
+
+	return 1;
+}
+
+static int _bittern_pool_text_export(const struct lv_segment *seg,
+				     struct formatter *f)
+{
+	outf(f, "cache_dev = \"%s\"", seg_lv(seg, 0)->name);
+
+	if (seg->feature_flags & DM_CACHE_FEATURE_BITTERN_CREATE)
+		outf(f, "needs_create = \"true\"");
 
 	return 1;
 }
@@ -212,6 +249,17 @@ static struct segtype_handler _cache_pool_ops = {
 	.destroy = _destroy,
 };
 
+static struct segtype_handler _bittern_pool_ops = {
+	.text_import = _bittern_pool_text_import,
+	.text_import_area_count = _cache_pool_text_import_area_count,
+	.text_export = _bittern_pool_text_export,
+#ifdef DEVMAPPER_SUPPORT
+	.target_present = _target_present,
+	.modules_needed = _modules_needed,
+#endif
+	.destroy = _destroy,
+};
+
 static int _cache_text_import(struct lv_segment *seg,
 			      const struct dm_config_node *sn,
 			      struct dm_hash_table *pv_hash __attribute__((unused)))
@@ -285,8 +333,16 @@ static int _cache_add_target_line(struct dev_manager *dm,
 	struct lv_segment *cache_pool_seg = first_seg(seg->pool_lv);
 	char *metadata_uuid, *data_uuid, *origin_uuid;
 
-	if (!(metadata_uuid = build_dm_uuid(mem, cache_pool_seg->metadata_lv, NULL)))
+	if (seg_is_cache_pool(cache_pool_seg)) {
+		if (!(metadata_uuid = build_dm_uuid(mem, cache_pool_seg->metadata_lv, NULL)))
+			return_0;
+	} else if (seg_is_bittern_pool(cache_pool_seg)) {
+		metadata_uuid = NULL;
+	} else {
+		log_error("Cache pool for device %s is neither cache-pool nor bittern-pool.",
+		          seg->lv->name);
 		return_0;
+	}
 
 	if (!(data_uuid = build_dm_uuid(mem, seg_lv(cache_pool_seg, 0), NULL)))
 		return_0;
@@ -339,9 +395,20 @@ int init_cache_segtypes(struct cmd_context *cmd,
 		return 0;
 	}
 
+	/* cache-pool */
 	segtype->name = "cache-pool";
 	segtype->flags = SEG_CACHE_POOL | SEG_CANNOT_BE_ZEROED | SEG_ONLY_EXCLUSIVE;
 	segtype->ops = &_cache_pool_ops;
+
+	if (!lvm_register_segtype(seglib, segtype))
+		return_0;
+	log_very_verbose("Initialised segtype: %s", segtype->name);
+
+	/* bittern-pool */
+	segtype = dm_zalloc(sizeof(*segtype));
+	segtype->name = "bittern-pool";
+	segtype->flags = SEG_BITTERN_POOL | SEG_CANNOT_BE_ZEROED | SEG_ONLY_EXCLUSIVE;
+	segtype->ops = &_bittern_pool_ops;
 
 	if (!lvm_register_segtype(seglib, segtype))
 		return_0;
@@ -353,6 +420,7 @@ int init_cache_segtypes(struct cmd_context *cmd,
 		return 0;
 	}
 
+	/* cache */
 	segtype->name = "cache";
 	segtype->flags = SEG_CACHE | SEG_ONLY_EXCLUSIVE;
 	segtype->ops = &_cache_ops;

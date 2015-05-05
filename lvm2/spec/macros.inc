@@ -1,9 +1,11 @@
-%global _default_pid_dir /run
-%global _default_dm_run_dir /run
-%global _default_run_dir /run/lvm
-%global _default_locking_dir /run/lock/lvm
+%global _default_pid_dir /var/run
+%global _default_dm_run_dir /var/run
+%global _default_run_dir /var/run/lvm
+%global _default_locking_dir /var/lock/lvm
 %global _udevbasedir %{_prefix}/lib/udev
 %global _udevdir %{_udevbasedir}/rules.d
+
+%global lvm_confdir %{_sysconfdir}/bittern-lvm
 
 %if !0%{?fedora}
 %global fedora 0
@@ -20,7 +22,6 @@
 %global configure_flags %(echo -n "%{?configure_flags} " | sed -e "s,--with-%1=[^ ]*,,"; test -n "%{?2}" && echo --with-%1=%2) \
 %global with_flags %(echo -n "%{?with_flags} " | sed -e "s,%1,,"; test -n "%{?2}" && test "%{?2}" != none && echo %1)
 
-%global services monitor
 %define service() \
 %global services %(echo -n "%{?services} " | sed -e s,%1,,; test "%2" = 1 && echo %1)
 

@@ -36,9 +36,8 @@ SOURCES =\
 INCLUDES = -I$(srcdir)/$(interface) -I$(srcdir)
 CFLAGS += $(UDEV_CFLAGS) $(VALGRIND_CFLAGS)
 
-ifeq ("@STATIC_LINK@", "yes")
 LIB_STATIC = $(interface)/libdevmapper.a
-endif
+TARGETS += libdevmapper.a
 
 LIB_SHARED = $(interface)/libdevmapper.$(LIB_SUFFIX)
 LIB_VERSION = $(LIB_VERSION_DM)
@@ -60,6 +59,9 @@ LIBS += $(SELINUX_LIBS) $(UDEV_LIBS) $(PTHREAD_LIBS)
 device-mapper: all
 
 libdevmapper.$(LIB_SUFFIX) libdevmapper.$(LIB_SUFFIX).$(LIB_VERSION): $(LIB_SHARED)
+	$(LN_S) -f $< $@
+
+libdevmapper.a: @interface@/libdevmapper.a
 	$(LN_S) -f $< $@
 
 .PHONY: install_dynamic install_static install_include \
@@ -95,5 +97,5 @@ install_pkgconfig: libdevmapper.pc
 install_ioctl_static: $(LIB_STATIC)
 	$(INSTALL_DATA) -D $< $(usrlibdir)/$(<F)
 
-CLEAN_TARGETS += ioctl/libdevmapper.a
+CLEAN_TARGETS += ioctl/libdevmapper.a libdevmapper.a
 DISTCLEAN_TARGETS += libdevmapper.pc .exported_symbols_generated

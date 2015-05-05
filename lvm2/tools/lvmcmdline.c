@@ -760,8 +760,12 @@ static struct command *_find_command(const char *name)
 {
 	int i;
 	const char *base;
+	const size_t prefixlen = strlen(LVM_PREFIX);
 
 	base = last_path_component(name);
+
+	if (strncmp(base, LVM_PREFIX, prefixlen) == 0)
+		base += prefixlen;
 
 	for (i = 0; i < _cmdline.num_commands; i++) {
 		if (!strcmp(base, _cmdline.commands[i].name))
@@ -1910,7 +1914,8 @@ int lvm2_main(int argc, char **argv)
 		return -1;
 
 	base = last_path_component(argv[0]);
-	if (strcmp(base, "lvm") && strcmp(base, "lvm.static") &&
+	if (strcmp(base, LVM_PREFIX "lvm") &&
+	    strcmp(base, "lvm.static") &&
 	    strcmp(base, "initrd-lvm"))
 		alias = 1;
 

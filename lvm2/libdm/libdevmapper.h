@@ -779,6 +779,10 @@ int dm_tree_node_add_raid_target_with_params(struct dm_tree_node *node,
 #define DM_CACHE_FEATURE_WRITEBACK    0x00000001
 #define DM_CACHE_FEATURE_WRITETHROUGH 0x00000002
 #define DM_CACHE_FEATURE_PASSTHROUGH  0x00000004
+/* Hack to signal the dtree infrastructure that it should use a "bittern" device-mapper target
+ * rather than "cache". */
+#define DM_CACHE_FEATURE_BITTERN      0x00000008
+#define DM_CACHE_FEATURE_BITTERN_CREATE 0x00000010
 
 struct dm_config_node;
 /*

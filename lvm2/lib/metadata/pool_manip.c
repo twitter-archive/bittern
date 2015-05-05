@@ -79,8 +79,9 @@ int attach_pool_data_lv(struct lv_segment *pool_seg,
 				    THIN_POOL_DATA : CACHE_POOL_DATA))
 		return_0;
 
-	pool_seg->lv->status |= seg_is_thin_pool(pool_seg) ?
-		THIN_POOL : CACHE_POOL;
+	pool_seg->lv->status |= seg_is_thin_pool(pool_seg) ? THIN_POOL :
+				seg_is_bittern_pool(pool_seg) ? BITTERN_POOL :
+				CACHE_POOL;
 	lv_set_hidden(pool_data_lv);
 
 	return 1;
@@ -266,6 +267,9 @@ int validate_pool_chunk_size(struct cmd_context *cmd,
 		min_size = DM_THIN_MIN_DATA_BLOCK_SIZE;
 		max_size = DM_THIN_MAX_DATA_BLOCK_SIZE;
 		name = "Thin";
+	} else if (segtype_is_bittern_pool(segtype)) {
+		/* Bittern pools do not have a user-configurable chunk size */
+		return 1;
 	} else {
 		log_error(INTERNAL_ERROR "Cannot validate chunk size of "
 			  "%s segtype.", segtype->name);
@@ -333,6 +337,12 @@ int recalculate_pool_chunk_size_with_dev_hints(struct logical_volume *pool_lv,
 		min_chunk_size = DM_THIN_MIN_DATA_BLOCK_SIZE;
 		max_chunk_size = DM_THIN_MAX_DATA_BLOCK_SIZE;
 		default_chunk_size = get_default_allocation_thin_pool_chunk_size_CFG(cmd, NULL);
+	} else if (lv_is_bittern_pool(pool_lv)) {
+		/* This is pretty heavy-handed, but Bittern doesn't have a configurable chunk size.
+		 * Hopefully UINT32_MAX will cause an error if anything actually tries to use it.
+		 */
+		first_seg(pool_lv)->chunk_size = UINT32_MAX;
+		return 1;
 	} else if (lv_is_cache_pool(pool_lv)) {
 		if (find_config_tree_int(cmd, allocation_cache_pool_chunk_size_CFG, NULL))
 			return 1;
@@ -449,6 +459,9 @@ int create_pool(struct logical_volume *pool_lv,
 	}
 
 	/* Metadata segment */
+	if (segtype_is_bittern_pool(segtype))
+		goto skip_metadata_seg;
+
 	if (!lv_add_segment(ah, stripes, 1, pool_lv, striped, 1, 0, 0))
 		return_0;
 
@@ -500,6 +513,7 @@ int create_pool(struct logical_volume *pool_lv,
 	if (!move_lv_segments(meta_lv, pool_lv, 0, 0))
 		goto_bad;
 
+skip_metadata_seg:
 	/* Pool data segment */
 	if (!lv_add_segment(ah, 0, stripes, pool_lv, striped, stripe_size, 0, 0))
 		goto_bad;
@@ -517,10 +531,14 @@ int create_pool(struct logical_volume *pool_lv,
 
 	seg->segtype = segtype; /* Set as thin_pool or cache_pool segment */
 
+	/* Flag a newly-created Bittern pool as requiring kernel-mode on-disk initialization */
+	if (segtype_is_bittern_pool(segtype))
+		seg->feature_flags |= DM_CACHE_FEATURE_BITTERN_CREATE;
+
 	if (!attach_pool_data_lv(seg, data_lv))
 		goto_bad;
 
-	if (!attach_pool_metadata_lv(seg, meta_lv))
+	if (!segtype_is_bittern_pool(segtype) && !attach_pool_metadata_lv(seg, meta_lv))
 		goto_bad;
 
 	return 1;

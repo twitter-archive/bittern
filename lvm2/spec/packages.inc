@@ -5,11 +5,19 @@
 %daemon_reload
 %enable -s monitor -t service
 %enable -s lvmetad -t socket
+%if %{enable_systemd}
+%else
+  /sbin/chkconfig --add bittern-lvm2
+%endif
 
 %preun
 if [ "$1" = 0 ]; then
 %disable -s monitor -t service
 %disable -s lvmetad -t socket
+%if %{enable_systemd}
+%else
+  /sbin/chkconfig --del bittern-lvm2
+%endif
 fi
 
 %postun
@@ -31,114 +39,110 @@ fi
 %defattr(-,root,root,-)
 %doc COPYING COPYING.LIB INSTALL README VERSION WHATS_NEW
 %doc doc/lvm_fault_handling.txt
-%{_sbindir}/fsadm
-%{_sbindir}/lvchange
-%{_sbindir}/lvconvert
-%{_sbindir}/lvcreate
-%{_sbindir}/lvdisplay
-%{_sbindir}/lvextend
-%{_sbindir}/lvm
-%{_sbindir}/lvmchange
-%{_sbindir}/lvmdiskscan
-%{_sbindir}/lvmdump
-%{_sbindir}/lvmsadc
-%{_sbindir}/lvmsar
-%{_sbindir}/lvreduce
-%{_sbindir}/lvremove
-%{_sbindir}/lvrename
-%{_sbindir}/lvresize
-%{_sbindir}/lvs
-%{_sbindir}/lvscan
-%{_sbindir}/pvchange
-%{_sbindir}/pvck
-%{_sbindir}/pvcreate
-%{_sbindir}/pvdisplay
-%{_sbindir}/pvmove
-%{_sbindir}/pvremove
-%{_sbindir}/pvresize
-%{_sbindir}/pvs
-%{_sbindir}/pvscan
-%{_sbindir}/vgcfgbackup
-%{_sbindir}/vgcfgrestore
-%{_sbindir}/vgchange
-%{_sbindir}/vgck
-%{_sbindir}/vgconvert
-%{_sbindir}/vgcreate
-%{_sbindir}/vgdisplay
-%{_sbindir}/vgexport
-%{_sbindir}/vgextend
-%{_sbindir}/vgimport
-%{_sbindir}/vgimportclone
-%{_sbindir}/vgmerge
-%{_sbindir}/vgmknodes
-%{_sbindir}/vgreduce
-%{_sbindir}/vgremove
-%{_sbindir}/vgrename
-%{_sbindir}/vgs
-%{_sbindir}/vgscan
-%{_sbindir}/vgsplit
-%{_sbindir}/lvmconf
-%{_sbindir}/blkdeactivate
+%{_sbindir}/bittern-lvchange
+%{_sbindir}/bittern-lvconvert
+%{_sbindir}/bittern-lvcreate
+%{_sbindir}/bittern-lvdisplay
+%{_sbindir}/bittern-lvextend
+%{_sbindir}/bittern-lvm
+%{_sbindir}/bittern-lvmchange
+%{_sbindir}/bittern-lvmdiskscan
+%{_sbindir}/bittern-lvmdump
+%{_sbindir}/bittern-lvmsadc
+%{_sbindir}/bittern-lvmsar
+%{_sbindir}/bittern-lvreduce
+%{_sbindir}/bittern-lvremove
+%{_sbindir}/bittern-lvrename
+%{_sbindir}/bittern-lvresize
+%{_sbindir}/bittern-lvs
+%{_sbindir}/bittern-lvscan
+%{_sbindir}/bittern-pvchange
+%{_sbindir}/bittern-pvck
+%{_sbindir}/bittern-pvcreate
+%{_sbindir}/bittern-pvdisplay
+%{_sbindir}/bittern-pvmove
+%{_sbindir}/bittern-pvremove
+%{_sbindir}/bittern-pvresize
+%{_sbindir}/bittern-pvs
+%{_sbindir}/bittern-pvscan
+%{_sbindir}/bittern-vgcfgbackup
+%{_sbindir}/bittern-vgcfgrestore
+%{_sbindir}/bittern-vgchange
+%{_sbindir}/bittern-vgck
+%{_sbindir}/bittern-vgconvert
+%{_sbindir}/bittern-vgcreate
+%{_sbindir}/bittern-vgdisplay
+%{_sbindir}/bittern-vgexport
+%{_sbindir}/bittern-vgextend
+%{_sbindir}/bittern-vgimport
+%{_sbindir}/bittern-vgimportclone
+%{_sbindir}/bittern-vgmerge
+%{_sbindir}/bittern-vgmknodes
+%{_sbindir}/bittern-vgreduce
+%{_sbindir}/bittern-vgremove
+%{_sbindir}/bittern-vgrename
+%{_sbindir}/bittern-vgs
+%{_sbindir}/bittern-vgscan
+%{_sbindir}/bittern-vgsplit
+%{_sbindir}/bittern-lvmconf
 %if %{have_service lvmetad}
- %{_sbindir}/lvmetad
+ %{_sbindir}/bittern-lvmetad
 %endif
 %if %{have_with cache}
-  %{_mandir}/man7/lvmcache.7.gz
+  %{_mandir}/man7/bittern-lvmcache.7.gz
 %endif
 %if %{have_with thin}
-  %{_mandir}/man7/lvmthin.7.gz
+  %{_mandir}/man7/bittern-lvmthin.7.gz
 %endif
-%{_mandir}/man7/lvmsystemid.7.gz
-%{_mandir}/man5/lvm.conf.5.gz
-%{_mandir}/man8/fsadm.8.gz
-%{_mandir}/man8/lvchange.8.gz
-%{_mandir}/man8/lvconvert.8.gz
-%{_mandir}/man8/lvcreate.8.gz
-%{_mandir}/man8/lvdisplay.8.gz
-%{_mandir}/man8/lvextend.8.gz
-%{_mandir}/man8/lvm.8.gz
-%{_mandir}/man8/lvmchange.8.gz
-%{_mandir}/man8/lvmconf.8.gz
-%{_mandir}/man8/lvmdiskscan.8.gz
-%{_mandir}/man8/lvmdump.8.gz
-%{_mandir}/man8/lvmsadc.8.gz
-%{_mandir}/man8/lvmsar.8.gz
-%{_mandir}/man8/lvreduce.8.gz
-%{_mandir}/man8/lvremove.8.gz
-%{_mandir}/man8/lvrename.8.gz
-%{_mandir}/man8/lvresize.8.gz
-%{_mandir}/man8/lvs.8.gz
-%{_mandir}/man8/lvscan.8.gz
-%{_mandir}/man8/pvchange.8.gz
-%{_mandir}/man8/pvck.8.gz
-%{_mandir}/man8/pvcreate.8.gz
-%{_mandir}/man8/pvdisplay.8.gz
-%{_mandir}/man8/pvmove.8.gz
-%{_mandir}/man8/pvremove.8.gz
-%{_mandir}/man8/pvresize.8.gz
-%{_mandir}/man8/pvs.8.gz
-%{_mandir}/man8/pvscan.8.gz
-%{_mandir}/man8/vgcfgbackup.8.gz
-%{_mandir}/man8/vgcfgrestore.8.gz
-%{_mandir}/man8/vgchange.8.gz
-%{_mandir}/man8/vgck.8.gz
-%{_mandir}/man8/vgconvert.8.gz
-%{_mandir}/man8/vgcreate.8.gz
-%{_mandir}/man8/vgdisplay.8.gz
-%{_mandir}/man8/vgexport.8.gz
-%{_mandir}/man8/vgextend.8.gz
-%{_mandir}/man8/vgimport.8.gz
-%{_mandir}/man8/vgimportclone.8.gz
-%{_mandir}/man8/vgmerge.8.gz
-%{_mandir}/man8/vgmknodes.8.gz
-%{_mandir}/man8/vgreduce.8.gz
-%{_mandir}/man8/vgremove.8.gz
-%{_mandir}/man8/vgrename.8.gz
-%{_mandir}/man8/vgs.8.gz
-%{_mandir}/man8/vgscan.8.gz
-%{_mandir}/man8/vgsplit.8.gz
-%{_mandir}/man8/blkdeactivate.8.gz
-%{_mandir}/man8/lvm-dumpconfig.8.gz
+%{_mandir}/man7/bittern-lvmsystemid.7.gz
+%{_mandir}/man5/bittern-lvm.conf.5.gz
+%{_mandir}/man8/bittern-lvchange.8.gz
+%{_mandir}/man8/bittern-lvconvert.8.gz
+%{_mandir}/man8/bittern-lvcreate.8.gz
+%{_mandir}/man8/bittern-lvdisplay.8.gz
+%{_mandir}/man8/bittern-lvextend.8.gz
+%{_mandir}/man8/bittern-lvm.8.gz
+%{_mandir}/man8/bittern-lvmchange.8.gz
+%{_mandir}/man8/bittern-lvmconf.8.gz
+%{_mandir}/man8/bittern-lvmdiskscan.8.gz
+%{_mandir}/man8/bittern-lvmdump.8.gz
+%{_mandir}/man8/bittern-lvmsadc.8.gz
+%{_mandir}/man8/bittern-lvmsar.8.gz
+%{_mandir}/man8/bittern-lvreduce.8.gz
+%{_mandir}/man8/bittern-lvremove.8.gz
+%{_mandir}/man8/bittern-lvrename.8.gz
+%{_mandir}/man8/bittern-lvresize.8.gz
+%{_mandir}/man8/bittern-lvs.8.gz
+%{_mandir}/man8/bittern-lvscan.8.gz
+%{_mandir}/man8/bittern-pvchange.8.gz
+%{_mandir}/man8/bittern-pvck.8.gz
+%{_mandir}/man8/bittern-pvcreate.8.gz
+%{_mandir}/man8/bittern-pvdisplay.8.gz
+%{_mandir}/man8/bittern-pvmove.8.gz
+%{_mandir}/man8/bittern-pvremove.8.gz
+%{_mandir}/man8/bittern-pvresize.8.gz
+%{_mandir}/man8/bittern-pvs.8.gz
+%{_mandir}/man8/bittern-pvscan.8.gz
+%{_mandir}/man8/bittern-vgcfgbackup.8.gz
+%{_mandir}/man8/bittern-vgcfgrestore.8.gz
+%{_mandir}/man8/bittern-vgchange.8.gz
+%{_mandir}/man8/bittern-vgck.8.gz
+%{_mandir}/man8/bittern-vgconvert.8.gz
+%{_mandir}/man8/bittern-vgcreate.8.gz
+%{_mandir}/man8/bittern-vgdisplay.8.gz
+%{_mandir}/man8/bittern-vgexport.8.gz
+%{_mandir}/man8/bittern-vgextend.8.gz
+%{_mandir}/man8/bittern-vgimport.8.gz
+%{_mandir}/man8/bittern-vgimportclone.8.gz
+%{_mandir}/man8/bittern-vgmerge.8.gz
+%{_mandir}/man8/bittern-vgmknodes.8.gz
+%{_mandir}/man8/bittern-vgreduce.8.gz
+%{_mandir}/man8/bittern-vgremove.8.gz
+%{_mandir}/man8/bittern-vgrename.8.gz
+%{_mandir}/man8/bittern-vgs.8.gz
+%{_mandir}/man8/bittern-vgscan.8.gz
+%{_mandir}/man8/bittern-vgsplit.8.gz
+%{_mandir}/man8/bittern-lvm-dumpconfig.8.gz
 %if %{enable_udev}
  %{_udevdir}/11-dm-lvm.rules
  %if %{have_service lvmetad}
@@ -146,17 +150,17 @@ fi
   %{_udevdir}/69-dm-lvm-metad.rules
  %endif
 %endif
-%dir %{_sysconfdir}/lvm
-%ghost %{_sysconfdir}/lvm/cache/.cache
-%config(noreplace) %verify(not md5 mtime size) %{_sysconfdir}/lvm/lvm.conf
-%config(noreplace) %verify(not md5 mtime size) %{_sysconfdir}/lvm/lvmlocal.conf
-%config(noreplace) %verify(not md5 mtime size) %{_sysconfdir}/lvm/profile/command_profile_template.profile
-%config(noreplace) %verify(not md5 mtime size) %{_sysconfdir}/lvm/profile/metadata_profile_template.profile
-%config(noreplace) %verify(not md5 mtime size) %{_sysconfdir}/lvm/profile/thin-generic.profile
-%config(noreplace) %verify(not md5 mtime size) %{_sysconfdir}/lvm/profile/thin-performance.profile
-%dir %{_sysconfdir}/lvm/backup
-%dir %{_sysconfdir}/lvm/cache
-%dir %{_sysconfdir}/lvm/archive
+%dir %{lvm_confdir}
+%ghost %{lvm_confdir}/cache/.cache
+%config(noreplace) %verify(not md5 mtime size) %{lvm_confdir}/lvm.conf
+%config(noreplace) %verify(not md5 mtime size) %{lvm_confdir}/lvmlocal.conf
+%config(noreplace) %verify(not md5 mtime size) %{lvm_confdir}/profile/command_profile_template.profile
+%config(noreplace) %verify(not md5 mtime size) %{lvm_confdir}/profile/metadata_profile_template.profile
+%config(noreplace) %verify(not md5 mtime size) %{lvm_confdir}/profile/thin-generic.profile
+%config(noreplace) %verify(not md5 mtime size) %{lvm_confdir}/profile/thin-performance.profile
+%dir %{lvm_confdir}/backup
+%dir %{lvm_confdir}/cache
+%dir %{lvm_confdir}/archive
 %dir %{_default_locking_dir}
 %dir %{_default_run_dir}
 %if %{enable_systemd}
@@ -169,37 +173,16 @@ fi
   %{_unitdir}/blk-availability.service
  %endif
 %else
- %{_sysconfdir}/rc.d/init.d/lvm2-monitor
- %{_sysconfdir}/rc.d/init.d/blk-availability
+ %{_sysconfdir}/rc.d/init.d/bittern-lvm2
  %if %{have_service lvmetad}
-  %{_sysconfdir}/rc.d/init.d/lvm2-lvmetad
+   %{_sysconfdir}/rc.d/init.d/blk-availability
+   %{_sysconfdir}/rc.d/init.d/lvm2-lvmetad
  %endif
 %endif
 
 ##############################################################################
 # Library and Development subpackages
 ##############################################################################
-%package devel
-Summary: Development libraries and headers
-Group: Development/Libraries
-License: LGPLv2
-Requires: %{name} = %{version}-%{release}
-Requires: device-mapper-devel >= %{device_mapper_version}-%{release}
-Requires: device-mapper-event-devel >= %{device_mapper_version}-%{release}
-Requires: pkgconfig
-
-%description devel
-This package contains files needed to develop applications that use
-the lvm2 libraries.
-
-%files devel
-%defattr(-,root,root,-)
-%{_libdir}/liblvm2app.so
-%{_libdir}/liblvm2cmd.so
-%{_includedir}/lvm2app.h
-%{_includedir}/lvm2cmd.h
-%{_libdir}/pkgconfig/lvm2app.pc
-%{_libdir}/libdevmapper-event-lvm2.so
 
 %package libs
 Summary: Shared libraries for lvm2
@@ -216,20 +199,6 @@ This package contains shared lvm2 libraries for applications.
 
 %files libs
 %defattr(-,root,root,-)
-%attr(755,root,root) %{_libdir}/liblvm2app.so.*
-%attr(755,root,root) %{_libdir}/liblvm2cmd.so.*
-%attr(755,root,root) %{_libdir}/libdevmapper-event-lvm2.so.*
-%dir %{_libdir}/device-mapper
-%{_libdir}/device-mapper/libdevmapper-event-lvm2mirror.so
-%{_libdir}/device-mapper/libdevmapper-event-lvm2snapshot.so
-%{_libdir}/device-mapper/libdevmapper-event-lvm2raid.so
-%if %{have_with thin}
-%{_libdir}/device-mapper/libdevmapper-event-lvm2thin.so
-%{_libdir}/libdevmapper-event-lvm2thin.so
-%endif
-%{_libdir}/libdevmapper-event-lvm2mirror.so
-%{_libdir}/libdevmapper-event-lvm2snapshot.so
-%{_libdir}/libdevmapper-event-lvm2raid.so
 
 ##############################################################################
 # Cluster subpackage
@@ -267,8 +236,8 @@ fi
 
 %files cluster
 %defattr(-,root,root,-)
-%attr(755,root,root) /usr/sbin/clvmd
-%{_mandir}/man8/clvmd.8.gz
+%attr(755,root,root) %{_sbindir}/bittern-clvmd
+%{_mandir}/man8/bittern-clvmd.8.gz
 %{_sysconfdir}/rc.d/init.d/clvmd
 %if %{enable_systemd}
   %{_unitdir}/lvm2-clvmd.service
@@ -304,8 +273,8 @@ fi
 
 %files -n cmirror
 %defattr(-,root,root,-)
-%attr(755,root,root) /usr/sbin/cmirrord
-%{_mandir}/man8/cmirrord.8.gz
+%attr(755,root,root) %{_sbindir}/bittern-cmirrord
+%{_mandir}/man8/bittern-cmirrord.8.gz
 %{_sysconfdir}/rc.d/init.d/cmirrord
 %if %{enable_systemd}
   %{_unitdir}/lvm2-cmirrord.service
@@ -330,7 +299,7 @@ is not used as the system init process.
 
 %files sysvinit
 %{_sysconfdir}/rc.d/init.d/lvm2-monitor
-%{_sysconfdir}/rc.d/init.d/blk-availability
+%{_sysconfdirr}/rc.d/init.d/blk-availability
 %if %{have_service lvmetad}
 %{_sysconfdir}/rc.d/init.d/lvm2-lvmetad
 %endif
@@ -340,6 +309,7 @@ is not used as the system init process.
 ##############################################################################
 # Device-mapper subpackages
 ##############################################################################
+%if 0%{?package_device-mapper}
 %package -n device-mapper
 Summary: Device mapper utility
 Version: %{device_mapper_version}
@@ -363,8 +333,8 @@ for the kernel device-mapper.
 %files -n device-mapper
 %defattr(-,root,root,-)
 %doc COPYING COPYING.LIB WHATS_NEW_DM VERSION_DM README INSTALL
-%attr(755,root,root) %{_sbindir}/dmsetup
-%{_mandir}/man8/dmsetup.8.gz
+%attr(755,root,root) %{_sbindir}/bittern-dmsetup
+%{_mandir}/man8/bittern-dmsetup.8.gz
 %if %{enable_udev}
 %doc udev/12-dm-permissions.rules
 %dir %{_udevbasedir}
@@ -391,7 +361,6 @@ the device-mapper libraries.
 %defattr(-,root,root,-)
 %{_libdir}/libdevmapper.so
 %{_includedir}/libdevmapper.h
-%{_libdir}/pkgconfig/devmapper.pc
 
 %package -n device-mapper-libs
 Summary: Device-mapper shared library
@@ -410,6 +379,10 @@ This package contains the device-mapper shared library, libdevmapper.
 
 %files -n device-mapper-libs
 %attr(755,root,root) %{_libdir}/libdevmapper.so.*
+
+%endif # package_device-mapper
+
+%if x%{with_dmeventd} != x0
 
 %package -n device-mapper-event
 Summary: Device-mapper event daemon
@@ -453,7 +426,7 @@ fi
 %files -n device-mapper-event
 %defattr(-,root,root,-)
 %{_sbindir}/dmeventd
-%{_mandir}/man8/dmeventd.8.gz
+%{_mandir}/man8/bittern-dmeventd.8.gz
 %if %{enable_systemd}
 %{_unitdir}/dm-event.socket
 %{_unitdir}/dm-event.service
@@ -495,6 +468,7 @@ the device-mapper event library.
 %{_libdir}/libdevmapper-event.so
 %{_includedir}/libdevmapper-event.h
 %{_libdir}/pkgconfig/devmapper-event.pc
+%endif
 
 %if %{enable_testsuite}
 %package testsuite

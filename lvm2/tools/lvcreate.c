@@ -758,7 +758,7 @@ static int _lvcreate_params(struct cmd_context *cmd,
 					    -1))
 			return_0;
 		lp->create_pool = 1; /* Confirmed when opened VG */
-	} else if (seg_is_cache_pool(lp)) {
+	} else if (seg_is_cache_pool(lp) || seg_is_bittern_pool(lp)) {
 		if (arg_outside_list_is_set(cmd, "is unsupported with cache pools",
 					    CACHE_POOL_ARGS,
 					    LVCREATE_ARGS,
@@ -1074,7 +1074,7 @@ static int _determine_cache_argument(struct volume_group *vg,
 
 	if (!lp->pool_name) {
 		lp->pool_name = lp->lv_name;
-	} else if ((lv = find_lv(vg, lp->pool_name)) && lv_is_cache_pool(lv)) {
+	} else if ((lv = find_lv(vg, lp->pool_name)) && (lv_is_cache_pool(lv) || lv_is_bittern_pool(lv))) {
 		if (!validate_lv_cache_create_pool(lv))
 			return_0;
 		/* Pool exists, create cache volume */
@@ -1331,7 +1331,7 @@ static int _check_pool_parameters(struct cmd_context *cmd,
 				  lp->pool_name, vg->name);
 			return 0;
 		}
-		if (seg_is_cache(lp) && !lv_is_cache_pool(pool_lv)) {
+		if (seg_is_cache(lp) && !(lv_is_cache_pool(pool_lv) || lv_is_bittern_pool(pool_lv))) {
 			log_error("Logical volume %s is not a cache pool.",
 				  display_lvname(pool_lv));
 			return 0;
@@ -1494,8 +1494,9 @@ int lvcreate(struct cmd_context *cmd, int argc, char **argv)
 		goto_out;
 
 	if (lp.create_pool) {
-		if (!handle_pool_metadata_spare(vg, lp.pool_metadata_extents,
-						lp.pvh, lp.pool_metadata_spare))
+		if (!seg_is_bittern_pool(&lp) &&
+				!handle_pool_metadata_spare(vg, lp.pool_metadata_extents,
+					lp.pvh, lp.pool_metadata_spare))
 			goto_out;
 
 		log_verbose("Making pool %s in VG %s using segtype %s",

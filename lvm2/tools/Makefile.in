@@ -105,7 +105,7 @@ ifeq ("@DMEVENTD@", "yes")
 	LVMLIBS += -ldevmapper-event
 endif
 
-LVMLIBS += -ldevmapper
+LVMLIBS += -Wl,-Bstatic -ldevmapper -Wl,-Bdynamic $(SELINUX_LIBS)
 
 EXPORTED_HEADER = $(srcdir)/lvm2cmd.h
 EXPORTED_FN_PREFIX = lvm2
@@ -190,18 +190,18 @@ install_cmdlib_static: liblvm2cmd-static.a
 	$(INSTALL_DATA) -D $< $(usrlibdir)/liblvm2cmd.a
 
 install_tools_dynamic: lvm .commands
-	$(INSTALL_PROGRAM) -D lvm $(sbindir)/lvm
+	$(INSTALL_PROGRAM) -D lvm $(sbindir)/@LVM_PREFIX@lvm
 	@echo Creating symbolic links for individual commands in $(sbindir)
 	@for v in `cat .commands`; do \
-		echo "$(LN_S) -f lvm $(sbindir)/$$v"; \
-		$(LN_S) -f lvm $(sbindir)/$$v; \
+		echo "$(LN_S) -f @LVM_PREFIX@lvm $(sbindir)/@LVM_PREFIX@$$v"; \
+		$(LN_S) -f @LVM_PREFIX@lvm $(sbindir)/@LVM_PREFIX@$$v; \
 	done;
 
 install_tools_static: lvm.static
 	$(INSTALL_PROGRAM) -D $< $(staticdir)/$(<F)
 
 install_dmsetup_dynamic: dmsetup
-	$(INSTALL_PROGRAM) -D $< $(sbindir)/$(<F)
+	$(INSTALL_PROGRAM) -D $< $(sbindir)/@LVM_PREFIX@$(<F)
 
 install_dmsetup_static: dmsetup.static
 	$(INSTALL_PROGRAM) -D $< $(staticdir)/$(<F)

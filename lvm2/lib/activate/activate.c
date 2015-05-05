@@ -1088,6 +1088,24 @@ int lv_cache_status(const struct logical_volume *cache_lv,
 	return 1;
 }
 
+static int _lv_clear_create_if_bittern_cache(const struct logical_volume *lv) {
+	if (!lv_is_cache(lv) || !lv_is_bittern_pool(first_seg(lv)->pool_lv))
+		return 0;
+
+	struct logical_volume *pool_lv = first_seg(lv)->pool_lv;
+	struct lv_segment *pool_seg = first_seg(pool_lv);
+
+	if (pool_seg->feature_flags & DM_CACHE_FEATURE_BITTERN_CREATE) {
+		pool_seg->feature_flags &= ~DM_CACHE_FEATURE_BITTERN_CREATE;
+		if (!vg_write(lv->vg) || !vg_commit(lv->vg)) {
+			log_error("Error writing volume group %s", lv->vg->name);
+			return_0;
+		}
+	}
+
+	return 1;
+}
+
 /*
  * Returns data or metadata percent usage, depends on metadata 0/1.
  * Returns 1 if percent set, else 0 on failure.
@@ -2027,10 +2045,13 @@ static int _lv_resume(struct cmd_context *cmd, const char *lvid_s,
 
 	laopts->read_only = _passes_readonly_filter(cmd, lv);
 
-	if (!_lv_activate_lv(lv, laopts))
+	if (!(r =_lv_activate_lv(lv, laopts)))
 		goto_out;
 
 	critical_section_dec(cmd, "resumed");
+
+	if (r)
+		_lv_clear_create_if_bittern_cache(lv);
 
 	if (!monitor_dev_for_events(cmd, lv, laopts, 1))
 		stack;
@@ -2284,6 +2305,9 @@ static int _lv_activate(struct cmd_context *cmd, const char *lvid_s,
 	if (!(r = _lv_activate_lv(lv, laopts)))
 		stack;
 	critical_section_dec(cmd, "activated");
+
+	if (r)
+		_lv_clear_create_if_bittern_cache(lv);
 
 	if (r && !monitor_dev_for_events(cmd, lv, laopts, 1))
 		stack;

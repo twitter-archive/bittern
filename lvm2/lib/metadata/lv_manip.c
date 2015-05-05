@@ -5534,7 +5534,7 @@ int lv_remove_single(struct cmd_context *cmd, struct logical_volume *lv,
 		}
 	}
 
-	if (lv_is_cache_pool(lv)) {
+	if (lv_is_cache_pool(lv) || lv_is_bittern_pool(lv)) {
 		/* Cache pool removal drops cache layer
 		 * If the cache pool is not linked, we can simply remove it. */
 		if (!dm_list_empty(&lv->segs_using_this_lv)) {
@@ -6825,7 +6825,7 @@ static struct logical_volume *_lv_create_an_lv(struct volume_group *vg,
 			return NULL;
 		}
 	} else if (pool_lv && seg_is_cache(lp)) {
-		if (!lv_is_cache_pool(pool_lv)) {
+		if (!lv_is_cache_pool(pool_lv) && !lv_is_bittern_pool(pool_lv)) {
 			log_error("Logical volume %s is not a cache pool.",
 				  display_lvname(pool_lv));
 			return NULL;
@@ -7015,6 +7015,8 @@ static struct logical_volume *_lv_create_an_lv(struct volume_group *vg,
 			stack;
 			goto revert_new_lv;
 		}
+	} else if (seg_is_bittern_pool(lp)) {
+		pool_lv = pool_lv ? : lv;
 	} else if (seg_is_raid(lp)) {
 		first_seg(lv)->min_recovery_rate = lp->min_recovery_rate;
 		first_seg(lv)->max_recovery_rate = lp->max_recovery_rate;
@@ -7110,7 +7112,7 @@ static struct logical_volume *_lv_create_an_lv(struct volume_group *vg,
 				  display_lvname(lv));
 			goto revert_new_lv;
 		}
-	} else if (lv_is_cache_pool(lv)) {
+	} else if (lv_is_cache_pool(lv) || lv_is_bittern_pool(lv)) {
 		/* Cache pool cannot be actived and zeroed */
 		log_very_verbose("Cache pool is prepared.");
 	} else if (lv_is_thin_volume(lv)) {

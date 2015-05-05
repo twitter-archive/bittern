@@ -21,7 +21,7 @@
 # PatchN: nnn.patch goes here
 
 %prep
-%setup -q -n LVM2.%{version}
+%setup -q
 
 %import build.inc
 %import packages.inc

@@ -61,11 +61,12 @@
  * 0.23 version = Julia Butlen Hansen (JBH) release
  * 0.24 version = Julia Butlen Hansen (JBH) release (Coldvirus Series)
  * 0.25 version = Bosque Del Apache release (DAX, LVM)
+ * 0.26 version = Klamath release
  *
  * Release codenames are National Wildlife Refuges wetlands where the Bittern
  * can be found.
  */
-#define BITTERN_CACHE_VERSION "0.26.1"
+#define BITTERN_CACHE_VERSION "0.26.2"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -1124,35 +1125,6 @@ static inline const char *cache_mode_to_str(struct bittern_cache *bc)
 	__ASSERT_BITTERN_CACHE(__bc);                                                               \
 	ASSERT(atomic_read(&(__bc)->bc_total_entries) == (__bc)->bc_papi.papi_hdr.lm_cache_blocks); \
 })
-
-#define __do_printk_in_loop(__count, __max_count) ({                        \
-	int ret;                                                            \
-	int ___max_count = (__max_count);                                   \
-	/* make sure it's an l-value. compiler will optimize this away */   \
-	__count = (__count);                                                \
-	if (___max_count > 1000000)                                         \
-		ret = (__count) < 100 || ((__count) % 50000) == 0;          \
-	else if (___max_count > 100000)                                     \
-		ret = (__count) < 100 || ((__count) % 5000) == 0;           \
-	else if (___max_count > 10000)                                      \
-		ret = (__count) < 50 || ((__count) % 100) == 0;             \
-	else                                                                \
-		ret = (__count) < 50 || ((__count) % 100) == 0;             \
-	ret;                                                                \
-})
-
-#define do_printk_in_loop(__bc, __count) ({                                         \
-	int ret;                                                                    \
-	/* make sure it's an l-value. compiler will optimize this away */           \
-	__bc = (__bc);                                                              \
-	/* make sure it's an l-value. compiler will optimize this away */           \
-	__count = (__count);                                                        \
-	ASSERT_BITTERN_CACHE(__bc);                                                 \
-	ret = __do_printk_in_loop(__count, atomic_read(&(__bc)->bc_total_entries)); \
-})
-
-#define __do_trace_in_loop(__count, __max_count) __do_printk_in_loop((__count), __max_count)
-#define do_trace_in_loop(__bc, __count) do_printk_in_loop((__bc), (__count))
 
 extern void seq_bypass_initialize(struct bittern_cache *bc);
 extern int seq_bypass_is_sequential(struct bittern_cache *bc, struct bio *bio);

@@ -650,13 +650,10 @@ int pmem_block_restore(struct bittern_cache *bc,
 	}
 
 	if (CACHE_STATE_VALID(pmbm->pmbm_status)) {
-		if (0
-		    && __do_printk_in_loop(block_id,
-					   pa->papi_hdr.lm_cache_blocks))
-			printk_info
-			    ("block id #%u: metadata cache status valid %u(%s)\n",
-			     block_id, pmbm->pmbm_status,
-			     cache_state_to_str(pmbm->pmbm_status));
+		printk_info_ratelimited("block id #%u: metadata cache status valid %u(%s)\n",
+					block_id,
+					pmbm->pmbm_status,
+					cache_state_to_str(pmbm->pmbm_status));
 	} else {
 		/*
 		 * this can only happen if pmem is corrupt
@@ -672,15 +669,13 @@ int pmem_block_restore(struct bittern_cache *bc,
 	}
 
 	if (pmbm->pmbm_status == CACHE_INVALID) {
-		if (__do_printk_in_loop(block_id, pa->papi_hdr.lm_cache_blocks))
-			printk_info
-			    ("block id #%u: warning: metadata cache status is %u(%s), nothing to restore\n",
-			     block_id, pmbm->pmbm_status,
-			     cache_state_to_str(pmbm->pmbm_status));
+		printk_info_ratelimited("block id #%u: warning: metadata cache status is %u(%s), nothing to restore\n",
+					block_id,
+					pmbm->pmbm_status,
+					cache_state_to_str(pmbm->pmbm_status));
 		pa->papi_stats.restore_invalid_metadata_blocks++;
 		pa->papi_stats.restore_invalid_data_blocks++;
-		kmem_free(pmbm,
-			  sizeof(struct pmem_block_metadata));
+		kmem_free(pmbm, sizeof(struct pmem_block_metadata));
 		/*
 		 * restore ok
 		 */
@@ -689,14 +684,12 @@ int pmem_block_restore(struct bittern_cache *bc,
 
 	if (pmbm->pmbm_status != CACHE_VALID_CLEAN
 	    && pmbm->pmbm_status != CACHE_VALID_DIRTY) {
-		if (__do_printk_in_loop(block_id, pa->papi_hdr.lm_cache_blocks))
-			printk_info
-			    ("block id #%u: warning: metadata cache status is %u(%s) (transaction in progress), nothing to restore\n",
-			     block_id, pmbm->pmbm_status,
-			     cache_state_to_str(pmbm->pmbm_status));
+		printk_info_ratelimited("block id #%u: warning: metadata cache status is %u(%s) (transaction in progress), nothing to restore\n",
+					block_id,
+					pmbm->pmbm_status,
+					cache_state_to_str(pmbm->pmbm_status));
 		pa->papi_stats.restore_pending_metadata_blocks++;
-		kmem_free(pmbm,
-			  sizeof(struct pmem_block_metadata));
+		kmem_free(pmbm, sizeof(struct pmem_block_metadata));
 		/*
 		 * intermediate state (crashed during a transaction)
 		 */
@@ -740,8 +733,7 @@ int pmem_block_restore(struct bittern_cache *bc,
 			   UINT128_ARG(pmbm->pmbm_hash_metadata),
 			   UINT128_ARG(computed_hash_metadata));
 		pa->papi_stats.restore_hash_corrupt_data_blocks++;
-		kmem_free(pmbm,
-			  sizeof(struct pmem_block_metadata));
+		kmem_free(pmbm, sizeof(struct pmem_block_metadata));
 		return -EHWPOISON;
 	}
 
@@ -765,15 +757,15 @@ int pmem_block_restore(struct bittern_cache *bc,
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 	ASSERT(cache_block->bcb_sector >= 0);
 
-	if (__do_printk_in_loop(block_id, pa->papi_hdr.lm_cache_blocks))
-		printk_info("block id #%u: status=%u(%s), xid=%llu, sector=%llu, hash_metadata=" UINT128_FMT ", hash_data=" UINT128_FMT ": restore ok\n",
-			    pmbm->pmbm_block_id,
-			    pmbm->pmbm_status,
-			    cache_state_to_str(pmbm->pmbm_status),
-			    pmbm->pmbm_xid,
-			    pmbm->pmbm_device_sector,
-			    UINT128_ARG(pmbm->pmbm_hash_metadata),
-			    UINT128_ARG(pmbm->pmbm_hash_data));
+	printk_info_ratelimited("block id #%u: status=%u(%s), xid=%llu, sector=%llu, hash_metadata=" UINT128_FMT ", hash_data=" UINT128_FMT ": restore ok\n",
+				pmbm->pmbm_block_id,
+				pmbm->pmbm_status,
+				cache_state_to_str(pmbm->pmbm_status),
+				pmbm->pmbm_xid,
+				pmbm->pmbm_device_sector,
+				UINT128_ARG(pmbm->pmbm_hash_metadata),
+				UINT128_ARG(pmbm->pmbm_hash_data));
+
 	kmem_free(pmbm, sizeof(struct pmem_block_metadata));
 
 	return 1;

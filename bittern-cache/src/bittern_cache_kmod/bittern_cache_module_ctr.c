@@ -113,10 +113,8 @@ int cache_ctr_restore_data_block(struct bittern_cache *bc,
 		/*
 		 * Entry is invalid, nothing else to do.
 		 */
-		if (__do_printk_in_loop(block_id,
-					bc->bc_papi.papi_hdr.lm_cache_blocks))
-			printk_debug("cache entry #%d is invalid, nothing to restore\n",
-				     block_id);
+		printk_debug_ratelimited("cache entry #%d is invalid, nothing to restore\n",
+					 block_id);
 		return 0;
 	}
 
@@ -366,9 +364,7 @@ int bittern_cache_restore_or_init_block(struct bittern_cache *bc,
 		cache_xid_set(bc, bcb->bcb_xid);
 	}
 
-	if (__do_printk_in_loop(block_id,
-				bc->bc_papi.papi_hdr.lm_cache_blocks))
-		printk_info("'%s' bcb=%p, id=#%d, cache_block=%lu, state=%d(%s)\n",
+	printk_info_ratelimited("'%s' bcb=%p, id=#%d, cache_block=%lu, state=%d(%s)\n",
 			    cache_operation_str,
 			    bcb, bcb->bcb_block_id,
 			    bcb->bcb_sector, bcb->bcb_state,

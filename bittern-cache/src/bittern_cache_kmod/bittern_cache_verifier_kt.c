@@ -398,11 +398,6 @@ void cache_block_verifier(struct bittern_cache *bc)
 						       cache_flags);
 
 				bc->bc_cache_block_verifier_blocks_verified++;
-				if (do_printk_in_loop
-				    (bc,
-				     bc->
-				     bc_cache_block_verifier_blocks_verified))
-					do_bt_level_trace = BT_LEVEL_TRACE0;
 				errors +=
 				    cache_block_verify(
 					bc, block_id,

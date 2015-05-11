@@ -213,14 +213,13 @@ void cache_dtr(struct dm_target *ti)
 		M_ASSERT(bcb->bcb_block_id >= 1);
 		M_ASSERT(bcb->bcb_block_id <=
 			 bc->bc_papi.papi_hdr.lm_cache_blocks);
-		if (__do_printk_in_loop(entries, bc_total_entries))
-			printk_info("deallocating cache block_id=#%d, bcb_sector=%lu, state=%d(%s), refcount=%d, hash_data=" UINT128_FMT "\n",
-				    bcb->bcb_block_id,
-				    bcb->bcb_sector,
-				    bcb->bcb_state,
-				    cache_state_to_str(bcb->bcb_state),
-				    atomic_read(&bcb->bcb_refcount),
-				    UINT128_ARG(bcb->bcb_hash_data));
+		printk_info_ratelimited("deallocating cache block_id=#%d, bcb_sector=%lu, state=%d(%s), refcount=%d, hash_data=" UINT128_FMT "\n",
+					bcb->bcb_block_id,
+					bcb->bcb_sector,
+					bcb->bcb_state,
+					cache_state_to_str(bcb->bcb_state),
+					atomic_read(&bcb->bcb_refcount),
+					UINT128_ARG(bcb->bcb_hash_data));
 		M_ASSERT(bcb != NULL);
 		__ASSERT_CACHE_BLOCK(bcb, bc);
 		list_del_init(&bcb->bcb_entry);

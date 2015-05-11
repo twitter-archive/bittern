@@ -125,24 +125,72 @@ static inline void atomic64_set_if_higher(atomic64_t *v, long long new)
 #endif /*DISABLE_ASSERT */
 
 /*! convenient wrapper for printk */
-#define __printk_kern(__kern, __func, __line, __kern_str, __fmt, ...)   ({ \
+#define __printk_kern(__kern, __func, __line, __kern_str, __fmt, ...)	({ \
 	printk(__kern "%s@%d: [%d]: " __kern_str ": " __fmt,               \
 		__func, __line,                                            \
 		current->pid,                                              \
 		##__VA_ARGS__);                                            \
 })
 
+/*! convenient wrapper for printk_ratelimited */
+#define __printk_kern_ratelimited(__kern, __func, __line, __kern_str,      \
+				  __fmt, ...) ({                           \
+	printk_ratelimited(__kern "%s@%d: [%d]: " __kern_str ": " __fmt,   \
+			   __func, __line,                                 \
+			   current->pid,                                   \
+			   ##__VA_ARGS__);                                 \
+})
+
 #if !defined(PRINTK_DEBUG_DEFAULT)
 #define PRINTK_DEBUG_DEFAULT            KERN_DEBUG
 #endif /* !defined(PRINTK_DEBUG_DEFAULT) */
 
-#define __printk_debug(__func, __line, __fmt, ...)      __printk_kern(PRINTK_DEBUG_DEFAULT, __func, __line, "DEBUG", __fmt, ##__VA_ARGS__)
-#define __printk_info(__func, __line, __fmt, ...)       __printk_kern(KERN_INFO, __func, __line, "INFO", __fmt, ##__VA_ARGS__)
-#define __printk_warning(__func, __line, __fmt, ...)    __printk_kern(KERN_WARNING, __func, __line, "WARNING", __fmt, ##__VA_ARGS__)
-#define __printk_err(__func, __line, __fmt, ...)        __printk_kern(KERN_ERR, __func, __line, "ERR", __fmt, ##__VA_ARGS__)
-#define printk_debug(fmt, ...)                          __printk_debug(__func__, __LINE__, fmt, ##__VA_ARGS__)
-#define printk_info(fmt, ...)                           __printk_info(__func__, __LINE__, fmt, ##__VA_ARGS__)
-#define printk_warning(fmt, ...)                        __printk_warning(__func__, __LINE__, fmt, ##__VA_ARGS__)
-#define printk_err(fmt, ...)                            __printk_err(__func__, __LINE__, fmt, ##__VA_ARGS__)
+#define __printk_debug(__func, __line, __fmt, ...)			\
+		__printk_kern(PRINTK_DEBUG_DEFAULT, __func, __line,	\
+			      "DEBUG", __fmt, ##__VA_ARGS__)
+#define __printk_info(__func, __line, __fmt, ...)			\
+		__printk_kern(KERN_INFO, __func, __line,		\
+			      "INFO", __fmt, ##__VA_ARGS__)
+#define __printk_warning(__func, __line, __fmt, ...)			\
+		__printk_kern(KERN_WARNING, __func, __line,		\
+			      "WARNING", __fmt, ##__VA_ARGS__)
+#define __printk_err(__func, __line, __fmt, ...)			\
+		__printk_kern(KERN_ERR, __func, __line,			\
+			      "ERR", __fmt, ##__VA_ARGS__)
+#define printk_debug(fmt, ...)						\
+		__printk_debug(__func__, __LINE__, fmt, ##__VA_ARGS__)
+#define printk_info(fmt, ...)						\
+		__printk_info(__func__, __LINE__, fmt, ##__VA_ARGS__)
+#define printk_warning(fmt, ...)					\
+		__printk_warning(__func__, __LINE__, fmt, ##__VA_ARGS__)
+#define printk_err(fmt, ...)						\
+		__printk_err(__func__, __LINE__, fmt, ##__VA_ARGS__)
+
+#define __printk_debug_ratelimited(__func, __line, __fmt, ...)		\
+		__printk_kern_ratelimited(PRINTK_DEBUG_DEFAULT,		\
+					  __func, __line,		\
+					  "DEBUG", __fmt, ##__VA_ARGS__)
+#define __printk_info_ratelimited(__func, __line, __fmt, ...)		\
+		__printk_kern_ratelimited(KERN_INFO,			\
+					  __func, __line,		\
+					  "INFO", __fmt, ##__VA_ARGS__)
+#define __printk_warning_ratelimited(__func, __line, __fmt, ...)	\
+		__printk_kern_ratelimited(KERN_WARNING, __func, __line,	\
+					  "WARNING", __fmt, ##__VA_ARGS__)
+#define __printk_err_ratelimited(__func, __line, __fmt, ...)		\
+		__printk_kern_ratelimited(KERN_ERR, __func, __line,	\
+					  "ERR", __fmt, ##__VA_ARGS__)
+#define printk_debug_ratelimited(fmt, ...)				\
+		__printk_debug_ratelimited(__func__, __LINE__,		\
+					   fmt, ##__VA_ARGS__)
+#define printk_info_ratelimited(fmt, ...)				\
+		__printk_info_ratelimited(__func__, __LINE__,		\
+					   fmt, ##__VA_ARGS__)
+#define printk_warning_ratelimited(fmt, ...)				\
+		__printk_warning_ratelimited(__func__, __LINE__,	\
+					     fmt, ##__VA_ARGS__)
+#define printk_err_ratelimited(fmt, ...)				\
+		__printk_err_ratelimited(__func__, __LINE__,		\
+					 fmt, ##__VA_ARGS__)
 
 #endif /* BITTERN_CACHE_LINUX_H */

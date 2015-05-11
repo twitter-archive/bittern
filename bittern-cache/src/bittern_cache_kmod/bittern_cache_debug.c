@@ -376,10 +376,6 @@ void cache_invalidate_blocks(struct bittern_cache *bc)
 		BT_TRACE(BT_LEVEL_TRACE2, bc, NULL, NULL, NULL, NULL,
 			 "invalidate block #%d: %d(%s)", block_id, ret,
 			 cache_get_ret_to_str(ret));
-		if (do_trace_in_loop(bc, block_id))
-			BT_TRACE(BT_LEVEL_TRACE0, bc, NULL, NULL, NULL, NULL,
-				 "invalidate block #%d: %d(%s)", block_id, ret,
-				 cache_get_ret_to_str(ret));
 		ASSERT_CACHE_GET_RET(ret);
 		switch (ret) {
 		case CACHE_GET_RET_HIT_IDLE:
@@ -387,29 +383,17 @@ void cache_invalidate_blocks(struct bittern_cache *bc)
 			ASSERT(cache_block != NULL);
 			ASSERT_CACHE_BLOCK(cache_block, bc);
 			if (cache_block->bcb_state == CACHE_VALID_CLEAN) {
-				if (do_trace_in_loop(bc, block_id))
-					BT_TRACE(BT_LEVEL_TRACE0, bc, NULL,
-						 cache_block, NULL, NULL,
-						 "invalidating clean block id #%d",
-						 cache_block->bcb_block_id);
-				else
-					BT_TRACE(BT_LEVEL_TRACE1, bc, NULL,
-						 cache_block, NULL, NULL,
-						 "invalidating clean block id #%d",
-						 cache_block->bcb_block_id);
+				BT_TRACE(BT_LEVEL_TRACE1, bc, NULL,
+					 cache_block, NULL, NULL,
+					 "invalidating clean block id #%d",
+					 cache_block->bcb_block_id);
 				cache_invalidate_clean_block(bc,
 							     cache_block);
 			} else {
-				if (block_id < 100 || block_id % 10000 == 0)
-					BT_TRACE(BT_LEVEL_TRACE0, bc, NULL,
-						 cache_block, NULL, NULL,
-						 "block id #%d is dirty -- skipping",
-						 cache_block->bcb_block_id);
-				else
-					BT_TRACE(BT_LEVEL_TRACE1, bc, NULL,
-						 cache_block, NULL, NULL,
-						 "block id #%d is dirty -- skipping",
-						 cache_block->bcb_block_id);
+				BT_TRACE(BT_LEVEL_TRACE1, bc, NULL,
+					 cache_block, NULL, NULL,
+					 "block id #%d is dirty -- skipping",
+					 cache_block->bcb_block_id);
 				ASSERT(cache_block->bcb_state ==
 				       CACHE_VALID_DIRTY);
 				cache_put(bc, cache_block, 1);
@@ -419,27 +403,17 @@ void cache_invalidate_blocks(struct bittern_cache *bc)
 		case CACHE_GET_RET_HIT_BUSY:
 			ASSERT(cache_block == NULL);
 			busy_count++;
-			if (do_trace_in_loop(bc, block_id))
-				BT_TRACE(BT_LEVEL_TRACE0, bc, NULL, NULL, NULL,
-					 NULL, "block #%d busy -- skipping",
-					 block_id);
-			else
-				BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL,
-					 NULL, "block #%d busy -- skipping",
-					 block_id);
+			BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL,
+				 NULL, "block #%d busy -- skipping",
+				 block_id);
 			schedule();
 			break;
 		case CACHE_GET_RET_INVALID:
 			ASSERT(cache_block == NULL);
 			invalid_count++;
-			if (do_trace_in_loop(bc, block_id))
-				BT_TRACE(BT_LEVEL_TRACE0, bc, NULL, NULL, NULL,
-					 NULL, "block #%d invalid -- skipping",
-					 block_id);
-			else
-				BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL,
-					 NULL, "block #%d invalid -- skipping",
-					 block_id);
+			BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL,
+				 NULL, "block #%d invalid -- skipping",
+				 block_id);
 			schedule();
 			break;
 		default:

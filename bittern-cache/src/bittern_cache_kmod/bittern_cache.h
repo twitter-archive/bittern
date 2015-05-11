@@ -65,8 +65,8 @@
  * Release codenames are National Wildlife Refuges wetlands where the Bittern
  * can be found.
  */
-#define BITTERN_CACHE_VERSION "0.25.10"
-#define BITTERN_CACHE_CODENAME "bosque_del_apache"
+#define BITTERN_CACHE_VERSION "0.26.1"
+#define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
 

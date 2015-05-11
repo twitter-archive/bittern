@@ -4,15 +4,18 @@
 
 ## Current release
 
-The current release is version 0.25.11, nicknamed "El Bosque del Apache"
+The current stable release is version 0.25.10, nicknamed "El Bosque del Apache".
 (Bitten releases are nicknamed after U.S. National Wildlife Refuge
 wetlands where the Bittern bird can be sometimes found).
+
+The release under development is version 0.26, nickanamed "Klamath".
 
 Because of known missing features like error handling, known state
 machine issues with write handling, this is not intended to be a production
 release.
 It is however suitable for use in stress testing, performance evaluation
 and non-production workloads such as write-only mirroring of live traffic.
+The pending list of issues below refers to the most recent development version.
 
 ## Issues to be fixed by Production
 
@@ -46,9 +49,11 @@ if the fix is deemed to be very low-risk.
 
 * *Cache Device Flushing* This will allow using NAND-flash devices which are
   not power-fail-safe as cache device.
-* *Fast Cache Restore* Right now restore is done in a pure sequential fashion
-  and needs to be parallelized in order to be able to perform it at the
-  throughput that NAND-flash technologies allow.
+* WRITE_SAME support ?
+* REQ_FLUSH support ? Probably yes if it makes sense performance wise
+  by the time we implement HDD flushing (and in any case let user tune it).
+* TRIM support. Performance wise, it only really makes sense for
+  NVDIMM, as we would need to erase the whole cache.
 * *Deep Architecture Dive* Bittern has so far received internal scrutiny by
   "insiders" and as such it has not yes reviewed the impartial scrutiny it
   needs.

@@ -77,6 +77,8 @@ int cache_ctr_restore_data_block(struct bittern_cache *bc,
 				 unsigned int block_id,
 				 struct cache_block *bcb)
 {
+	struct cache_block *existing_bcb;
+	unsigned int existing_block_id;
 	int ret = pmem_block_restore(bc, block_id, bcb);
 
 	if (ret < 0) {
@@ -97,99 +99,149 @@ int cache_ctr_restore_data_block(struct bittern_cache *bc,
 		M_ASSERT(rr == 0);
 		return ret;
 	}
+
 	/*
-	 * data/metadata are correct, check for duplicates
+	 * We can only restore finalized transactions which have a correct
+	 * checksum. Anything else would be a transaction in progress
 	 */
-	if (bcb->bcb_state == CACHE_VALID_CLEAN
-	    || bcb->bcb_state == CACHE_VALID_DIRTY) {
-		struct cache_block *existing_bcb =
-			cache_rb_lookup(bc, bcb->bcb_sector);
-		M_ASSERT(bcb->bcb_sector != -1);
-		if (existing_bcb != NULL) {
-			printk_info("block bcb=%p, id=#%d, xid=#%llu, cache_block=%lu, state=%d(%s): existing bcb found\n",
-			     bcb, bcb->bcb_block_id, bcb->bcb_xid,
-			     bcb->bcb_sector, bcb->bcb_state,
-			     cache_state_to_str(bcb->bcb_state));
-			printk_info("block existing_bcb=%p, existing_id=#%d, existing_xid=#%llu, existing_cache_block=%lu, existing_state=%d(%s): existing bcb found\n",
-			     existing_bcb, existing_bcb->bcb_block_id,
-			     existing_bcb->bcb_xid, existing_bcb->bcb_sector,
-			     existing_bcb->bcb_state,
-			     cache_state_to_str(existing_bcb->bcb_state));
-			M_ASSERT(existing_bcb->bcb_state ==
-				 CACHE_VALID_CLEAN
-				 || existing_bcb->bcb_state ==
-				 CACHE_VALID_DIRTY);
-			M_ASSERT(bcb->bcb_xid != existing_bcb->bcb_xid);
-			if (bcb->bcb_xid > existing_bcb->bcb_xid) {
-				int existing_block_id =
-					existing_bcb->bcb_block_id;
-				printk_info("deleting existing_bcb=%p, existing_id=#%llu",
-					existing_bcb, existing_bcb->bcb_xid);
-				M_ASSERT(existing_bcb->bcb_sector != -1);
-				/*
-				 * remove
-				 */
-				atomic_dec(&bc->bc_total_entries);
-				atomic_dec(&bc->bc_valid_entries);
-				if (existing_bcb->bcb_state ==
-				    CACHE_VALID_CLEAN) {
-					atomic_dec(&bc->bc_valid_entries_clean);
-				} else {
-					M_ASSERT(existing_bcb->bcb_state ==
-						 CACHE_VALID_DIRTY);
-					atomic_dec(&bc->bc_valid_entries_dirty);
-				}
-				M_ASSERT(RB_NON_EMPTY_ROOT(&bc->bc_rb_root));
-				M_ASSERT(RB_NON_EMPTY_NODE
-					 (&existing_bcb->bcb_rb_node));
-				cache_rb_remove(bc, existing_bcb);
-				M_ASSERT(RB_EMPTY_NODE
-					 (&existing_bcb->bcb_rb_node));
-				list_del_init(&existing_bcb->
-					      bcb_entry_cleandirty);
-				list_del_init(&existing_bcb->bcb_entry);
-				M_ASSERT(is_sector_number_valid
-					 (existing_bcb->bcb_sector));
-				/*
-				 * deinit
-				 */
-				memset(existing_bcb, 0,
-				       sizeof(struct cache_block));
-				existing_bcb->bcb_block_id = existing_block_id;
-				existing_bcb->bcb_magic1 = BCB_MAGIC1;
-				existing_bcb->bcb_magic3 = BCB_MAGIC3;
-				spin_lock_init(&existing_bcb->bcb_spinlock);
-				atomic_set(&bcb->bcb_refcount, 0);
-				existing_bcb->bcb_sector =
-					SECTOR_NUMBER_INVALID;
-				existing_bcb->bcb_state = CACHE_INVALID;
-				existing_bcb->bcb_transition_path =
-				    CACHE_TRANSITION_PATH_NONE;
-				/*
-				 * reinsert as invalid
-				 */
-				INIT_LIST_HEAD(&existing_bcb->bcb_entry);
-				INIT_LIST_HEAD(&existing_bcb->
-					       bcb_entry_cleandirty);
-				atomic_inc(&bc->bc_total_entries);
-				atomic_inc(&bc->bc_invalid_entries);
-				list_del_init(&existing_bcb->bcb_entry);
-				list_add(&existing_bcb->bcb_entry,
-					 &bc->bc_invalid_entries_list);
-				RB_CLEAR_NODE(&existing_bcb->bcb_rb_node);
-				M_ASSERT(RB_EMPTY_NODE
-					 (&existing_bcb->bcb_rb_node));
-				ret = pmem_metadata_initialize(bc,
-							existing_block_id);
-				M_ASSERT(ret == 0);
-			} else {
-				printk_info("keeping existing_bcb=%p, existing_xid=#%llu",
-				     existing_bcb, existing_bcb->bcb_xid);
-				ret = pmem_metadata_initialize(bc, block_id);
-				M_ASSERT(ret == 0);
-			}
-		}
+
+	M_ASSERT(bcb->bcb_state == CACHE_INVALID ||
+		 bcb->bcb_state == CACHE_VALID_CLEAN ||
+		 bcb->bcb_state == CACHE_VALID_DIRTY);
+
+	if (bcb->bcb_state == CACHE_INVALID) {
+		/*
+		 * Entry is invalid, nothing else to do.
+		 */
+		if (__do_printk_in_loop(block_id,
+					bc->bc_papi.papi_hdr.lm_cache_blocks))
+			printk_debug("cache entry #%d is invalid, nothing to restore\n",
+				     block_id);
+		return 0;
 	}
+
+	M_ASSERT(is_sector_number_valid(bcb->bcb_sector));
+
+	/*
+	 * Now check for an existing cache_block. If we find one, it means
+	 * that we have two different copies of the same cache block. The most
+	 * recent copy is indicated by the fact it has the most recent XID,
+	 * i.e., the highest number in a monotonically increasing fashion.
+	 *
+	 * This is a 64 bits quantity. Assuming 10,000,000 IOPS, this number
+	 * will rollover approximately in the year 3315. This bug can very
+	 * simply be fixed by adopting the same scheme that is used for TCP
+	 * sequence numbers and by making sure we'll never have the oldest
+	 * entry with a logically lower XID. This can also be very easily fixed
+	 * by forcing evicting entries every 100 years or so.
+	 * No matter what, it's probably not a priority for the first production
+	 * version.
+	 */
+
+	existing_bcb = cache_rb_lookup(bc, bcb->bcb_sector);
+
+	if (existing_bcb == NULL) {
+		/*
+		 * no existing cache block, it's all good.
+		 */
+		return 0;
+	}
+
+	printk_info("block bcb=%p, id=#%d, xid=#%llu, cache_block=%lu, state=%d(%s): existing bcb found\n",
+		    bcb,
+		    bcb->bcb_block_id,
+		    bcb->bcb_xid,
+		    bcb->bcb_sector,
+		    bcb->bcb_state,
+		    cache_state_to_str(bcb->bcb_state));
+	printk_info("block existing_bcb=%p, existing_id=#%d, existing_xid=#%llu, existing_cache_block=%lu, existing_state=%d(%s): existing bcb found\n",
+		    existing_bcb, existing_bcb->bcb_block_id,
+		    existing_bcb->bcb_xid, existing_bcb->bcb_sector,
+		    existing_bcb->bcb_state,
+		    cache_state_to_str(existing_bcb->bcb_state));
+	M_ASSERT(existing_bcb->bcb_state == CACHE_VALID_CLEAN ||
+		 existing_bcb->bcb_state == CACHE_VALID_DIRTY);
+	/*
+	 * This just cannot happen. Period.
+	 */
+	if (bcb->bcb_xid != existing_bcb->bcb_xid) {
+		M_ASSERT(bcb->bcb_xid != existing_bcb->bcb_xid);
+		printk_err("fatal error: existing_bcb=%p block_id #%llu is the same as bcb=%p\n",
+			   existing_bcb,
+			   existing_bcb->bcb_xid,
+			   existing_bcb);
+		/*
+		 * I think this errno code makes sense. Besides,
+		 * how many times in your life you get to use this one?
+		 */
+		return -EL2NSYNC;
+	}
+	M_ASSERT(is_sector_number_valid(existing_bcb->bcb_sector));
+
+	/*
+	 * If the new cache_block bcb is older than the existing
+	 * cache block, wipe out bcb (it has an oldeer version).
+	 */
+	if (bcb->bcb_xid < existing_bcb->bcb_xid) {
+		printk_info("keeping existing_bcb=%p, existing_xid=#%llu",
+			    existing_bcb, existing_bcb->bcb_xid);
+		ret = pmem_metadata_initialize(bc, block_id);
+		M_ASSERT(ret == 0);
+	}
+
+	M_ASSERT(bcb->bcb_xid > existing_bcb->bcb_xid);
+
+	existing_block_id = existing_bcb->bcb_block_id;
+	printk_info("deleting existing_bcb=%p, existing_id=#%llu",
+		    existing_bcb,
+		    existing_bcb->bcb_xid);
+
+	M_ASSERT(existing_bcb->bcb_sector != -1);
+
+	/*
+	 * remove
+	 */
+	atomic_dec(&bc->bc_total_entries);
+	atomic_dec(&bc->bc_valid_entries);
+	if (existing_bcb->bcb_state == CACHE_VALID_CLEAN) {
+		atomic_dec(&bc->bc_valid_entries_clean);
+	} else {
+		M_ASSERT(existing_bcb->bcb_state == CACHE_VALID_DIRTY);
+		atomic_dec(&bc->bc_valid_entries_dirty);
+	}
+	M_ASSERT(RB_NON_EMPTY_ROOT(&bc->bc_rb_root));
+	M_ASSERT(RB_NON_EMPTY_NODE(&existing_bcb->bcb_rb_node));
+	cache_rb_remove(bc, existing_bcb);
+	M_ASSERT(RB_EMPTY_NODE(&existing_bcb->bcb_rb_node));
+	list_del_init(&existing_bcb->bcb_entry_cleandirty);
+	list_del_init(&existing_bcb->bcb_entry);
+	M_ASSERT(is_sector_number_valid(existing_bcb->bcb_sector));
+	/*
+	 * deinit
+	 */
+	memset(existing_bcb, 0,
+			       sizeof(struct cache_block));
+	existing_bcb->bcb_block_id = existing_block_id;
+	existing_bcb->bcb_magic1 = BCB_MAGIC1;
+	existing_bcb->bcb_magic3 = BCB_MAGIC3;
+	spin_lock_init(&existing_bcb->bcb_spinlock);
+	atomic_set(&bcb->bcb_refcount, 0);
+	existing_bcb->bcb_sector = SECTOR_NUMBER_INVALID;
+	existing_bcb->bcb_state = CACHE_INVALID;
+	existing_bcb->bcb_transition_path = CACHE_TRANSITION_PATH_NONE;
+	/*
+	 * reinsert as invalid
+	 */
+	INIT_LIST_HEAD(&existing_bcb->bcb_entry);
+	INIT_LIST_HEAD(&existing_bcb->bcb_entry_cleandirty);
+	atomic_inc(&bc->bc_total_entries);
+	atomic_inc(&bc->bc_invalid_entries);
+	list_del_init(&existing_bcb->bcb_entry);
+	list_add(&existing_bcb->bcb_entry, &bc->bc_invalid_entries_list);
+	RB_CLEAR_NODE(&existing_bcb->bcb_rb_node);
+	M_ASSERT(RB_EMPTY_NODE(&existing_bcb->bcb_rb_node));
+	ret = pmem_metadata_initialize(bc, existing_block_id);
+	M_ASSERT(ret == 0);
 	return 0;
 }
 
@@ -197,6 +249,162 @@ enum cache_device_op {
 	CACHE_DEVICE_OP_CREATE,
 	CACHE_DEVICE_OP_RESTORE,
 };
+
+int bittern_cache_restore_or_init_block(struct bittern_cache *bc,
+					unsigned int block_id,
+					char *cache_operation_str,
+					enum cache_device_op cache_operation)
+{
+	/* block_id starts from 1, array starts from 0 */
+	struct cache_block *bcb = &bc->bc_cache_blocks[block_id - 1];
+	int ret;
+
+	M_ASSERT(bcb != NULL);
+	memset(bcb, 0, sizeof(struct cache_block));
+	bcb->bcb_block_id = block_id;
+	bcb->bcb_magic1 = BCB_MAGIC1;
+	bcb->bcb_magic3 = BCB_MAGIC3;
+	spin_lock_init(&bcb->bcb_spinlock);
+	atomic_set(&bcb->bcb_refcount, 0);
+	bcb->bcb_sector = SECTOR_NUMBER_INVALID;
+	bcb->bcb_state = CACHE_INVALID;
+	bcb->bcb_transition_path = CACHE_TRANSITION_PATH_NONE;
+	RB_CLEAR_NODE(&bcb->bcb_rb_node);
+
+	if (cache_operation == CACHE_DEVICE_OP_RESTORE) {
+		/*
+		 * cache restore
+		 */
+		ret = cache_ctr_restore_data_block(bc, block_id, bcb);
+		if (ret < 0) {
+			printk_err("error : cache entry %d restore failed (corrupt/bad data): ret=%d\n",
+				   block_id,
+				   ret);
+			return ret;
+		}
+	} else {
+		/*
+		 * cache create
+		 */
+		ret = pmem_metadata_initialize(bc, block_id);
+		M_ASSERT(ret == 0);
+	}
+
+	/*
+	 * printk_info("cache_ctr : cache entry %d:
+	 * bcb_sector=%lu, bcb_state=%d(%s)\n", block_id,
+	 * bcb->bcb_sector, bcb->bcb_state,
+	 * cache_state_to_str(bcb->bcb_state));
+	 */
+	M_ASSERT(bcb->bcb_state == CACHE_INVALID ||
+		 bcb->bcb_state == CACHE_VALID_CLEAN ||
+		 bcb->bcb_state == CACHE_VALID_DIRTY);
+
+	INIT_LIST_HEAD(&bcb->bcb_entry);
+	INIT_LIST_HEAD(&bcb->bcb_entry_cleandirty);
+
+	/*
+	 * this is init code so we don't need to grab spinlocks
+	 */
+	switch (bcb->bcb_state) {
+	case CACHE_INVALID:
+		M_ASSERT(is_sector_number_invalid(bcb->bcb_sector));
+		M_ASSERT(bcb->bcb_sector == SECTOR_NUMBER_INVALID);
+		/*
+		 * don't add invalid entries to the rb tree
+		 */
+		atomic_inc(&bc->bc_invalid_entries);
+		list_add_tail(&bcb->bcb_entry, &bc->bc_invalid_entries_list);
+		RB_CLEAR_NODE(&bcb->bcb_rb_node);
+		break;
+	case CACHE_VALID_CLEAN:
+		cache_track_hash_set(bc, bcb, bcb->bcb_hash_data);
+		M_ASSERT(is_sector_number_valid(bcb->bcb_sector));
+		M_ASSERT(bcb->bcb_sector >= 0);
+		atomic_inc(&bc->bc_valid_entries);
+		atomic_inc(&bc->bc_valid_entries_clean);
+		list_add_tail(&bcb->bcb_entry, &bc->bc_valid_entries_list);
+		RB_CLEAR_NODE(&bcb->bcb_rb_node);
+		cache_rb_insert(bc, bcb);
+		M_ASSERT(RB_NON_EMPTY_NODE(&bcb->bcb_rb_node));
+		M_ASSERT(RB_NON_EMPTY_ROOT(&bc->bc_rb_root));
+		/* add to clean list */
+		list_add_tail(&bcb->bcb_entry_cleandirty,
+			      &bc->bc_valid_entries_clean_list);
+		break;
+	case CACHE_VALID_DIRTY:
+		cache_track_hash_set(bc, bcb, bcb->bcb_hash_data);
+		M_ASSERT(is_sector_number_valid(bcb->bcb_sector));
+		M_ASSERT(bcb->bcb_sector >= 0);
+		atomic_inc(&bc->bc_valid_entries);
+		atomic_inc(&bc->bc_valid_entries_dirty);
+		list_add_tail(&bcb->bcb_entry, &bc->bc_valid_entries_list);
+		RB_CLEAR_NODE(&bcb->bcb_rb_node);
+		cache_rb_insert(bc, bcb);
+		M_ASSERT(RB_NON_EMPTY_NODE(&bcb->bcb_rb_node));
+		M_ASSERT(RB_NON_EMPTY_ROOT(&bc->bc_rb_root));
+		/* add to dirty list */
+		list_add_tail(&bcb->bcb_entry_cleandirty,
+			      &bc->bc_valid_entries_dirty_list);
+		break;
+	default:
+		M_ASSERT("unexpected cache state in _ctr switch" == NULL);
+		break;
+	}
+	atomic_inc(&bc->bc_total_entries);
+
+	if (bcb->bcb_xid > cache_xid_get(bc)) {
+		printk_info("block id #%u: id=%u, status=%u(%s), xid=%llu, sector=%lu: xid=%llu, bc_xid=%llu, updating bc_xid\n",
+			    block_id,
+			    bcb->bcb_block_id,
+			    bcb->bcb_state,
+			    cache_state_to_str(bcb->bcb_state),
+			    bcb->bcb_xid,
+			    bcb->bcb_sector,
+			    bcb->bcb_xid,
+			    cache_xid_get(bc));
+		cache_xid_set(bc, bcb->bcb_xid);
+	}
+
+	if (__do_printk_in_loop(block_id,
+				bc->bc_papi.papi_hdr.lm_cache_blocks))
+		printk_info("'%s' bcb=%p, id=#%d, cache_block=%lu, state=%d(%s)\n",
+			    cache_operation_str,
+			    bcb, bcb->bcb_block_id,
+			    bcb->bcb_sector, bcb->bcb_state,
+			    cache_state_to_str(bcb->bcb_state));
+	__ASSERT_CACHE_BLOCK(bcb, bc);
+
+	return 0;
+}
+
+int bittern_cache_restore_or_init(struct bittern_cache *bc,
+				  char *cache_operation_str,
+				  enum cache_device_op cache_operation)
+{
+	unsigned int block_id;
+
+	printk_debug("%s: enter\n", cache_operation_str);
+	for (block_id = 1; block_id <= bc->bc_papi.papi_hdr.lm_cache_blocks;
+	     block_id++) {
+		int ret;
+
+		ret = bittern_cache_restore_or_init_block(bc,
+							  block_id,
+							  cache_operation_str,
+							  cache_operation);
+		if (ret < 0) {
+			printk_err("error : cache entry %d '%s' failed: ret=%d (corrupt/bad data)\n",
+				   block_id,
+				   cache_operation_str,
+				   ret);
+			return ret;
+		}
+	}
+	printk_debug("%s: done, ret=0\n", cache_operation_str);
+
+	return 0;
+}
 
 /*
  * Mapping parameters:
@@ -219,67 +427,10 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	int i, ret;
 	char *cached_device_name;
 	char *cache_device_blockdev_path;
-	unsigned int block_id;
 	char *cache_operation_str;
 	enum cache_device_op cache_operation;
 
-	/*
-	 * FIXME
-	 *
-	 * there is a race condition here. for whatever reasons,
-	 * when dmsetup is called, a few instances of udev processes
-	 * kick off and open the block device very briefly.
-	 * sometimes it happens that they keep the block device open for about
-	 * 10-15 milliseconds or so (this is most likely to occur on a VM than
-	 * on bare metal), as shown in this log.
-	 * if this happens, the blockdev use count is non-zero and this function
-	 * will then abort due to the fact pemm cannot acquire exclusive access
-	 * to the block device.
-	 * we are going to revisit this when we deprecate PMEM layer.
-	 *
-	 * for now, a little beauty sleep will do.
-	 *
-	 * [  510.804153] pmem_ram_bdev_open@90(): [7535/udisks-part-id]:
-	 * INFO: ram_bdev->ram_in_use_pmem=0, ram_bdev->ram_in_use_blockdev=0
-	 * [  510.808580] pmem_ram_bdev_release@110(): [7535/udisks-part-id]:
-	 * INFO: ram_bdev->ram_in_use_pmem=0, ram_bdev->ram_in_use_blockdev=1
-	 * [  533.988022] pmem_ram_bdev_open@90(): [7541/bc_tool]:
-	 * INFO: ram_bdev->ram_in_use_pmem=0, ram_bdev->ram_in_use_blockdev=0
-	 * [  533.998911] pmem_ram_bdev_release@110(): [7541/bc_tool]:
-	 * INFO: ram_bdev->ram_in_use_pmem=0, ram_bdev->ram_in_use_blockdev=1
-	 * [  534.018794] pmem_ram_bdev_open@90(): [7543/blockdev]:
-	 * INFO: ram_bdev->ram_in_use_pmem=0, ram_bdev->ram_in_use_blockdev=0
-	 * [  534.022910] pmem_ram_bdev_release@110(): [7543/blockdev]:
-	 * INFO: ram_bdev->ram_in_use_pmem=0, ram_bdev->ram_in_use_blockdev=1
-	 * [  534.033493] pmem_ram_bdev_open@90(): [7545/blkdiscard]:
-	 * INFO: ram_bdev->ram_in_use_pmem=0, ram_bdev->ram_in_use_blockdev=0
-	 * [  534.038256] pmem_ram_bdev_release@110(): [7545/blkdiscard]:
-	 * INFO: ram_bdev->ram_in_use_pmem=0, ram_bdev->ram_in_use_blockdev=1
-	 * [  534.050427] cache_ctr_entry@1581(): [7547/dmsetup]:
-	 * INFO: ctr_func, ti=ffffc90000cbe040, argc=6, argv=ffff8800b68d7840
-	 * [  534.055503] cache_ctr@336(): [7547/dmsetup]:
-	 * INFO: enter
-	 * [  534.060238] pmem_ram_bdev_open@90(): [7548/blkid]:
-	 * INFO: ram_bdev->ram_in_use_pmem=0, ram_bdev->ram_in_use_blockdev=0
-	 * [  534.066332] pmem_ram_bdev_release@110(): [7548/blkid]:
-	 * INFO: ram_bdev->ram_in_use_pmem=0, ram_bdev->ram_in_use_blockdev=1
-	 * [  534.075082] pmem_ram_bdev_open@90(): [7551/udisks-part-id]:
-	 * INFO: ram_bdev->ram_in_use_pmem=0, ram_bdev->ram_in_use_blockdev=0
-	 * [  534.079045] pmem_ram_bdev_release@110(): [7551/udisks-part-id]:
-	 * INFO: ram_bdev->ram_in_use_pmem=0, ram_bdev->ram_in_use_blockdev=1
-	 * [  539.059306] cache_ctr@338(): [7547/dmsetup]: INFO: argc 6
-	 * [  539.062776] cache_ctr@341(): [7547/dmsetup]:
-	 * INFO: argv[0] = 'create'
-	 * [  539.067110] cache_ctr@341(): [7547/dmsetup]:
-	 * INFO: argv[1] = '/dev/mapper/vg60-lvol0'
-	 *
-	 */
-	printk_info("beauty sleep\n");
-	msleep(100);
-
-	printk_info("enter\n");
 	printk_info("argc %d\n", argc);
-
 	for (i = 0; i < argc; i++)
 		printk_info("argv[%d] = '%s'\n", i, argv[i]);
 	if (argc != 3) {
@@ -309,7 +460,8 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	if (strlen(cached_device_name) >= BC_NAMELEN) {
 		ti->error = "cached device name too long";
-		printk_err("error : %s (max len is %d)\n", ti->error,
+		printk_err("error : %s (max len is %d)\n",
+			   ti->error,
 			   BC_NAMELEN - 1);
 		return -EINVAL;
 	}
@@ -341,7 +493,8 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		printk_err("error : %s\n", ti->error);
 		return -ENOMEM;
 	}
-	printk_info("vmalloc: bc = %p (sizeof = %lu)\n", bc,
+	printk_info("vmalloc: bc = %p (sizeof = %lu)\n",
+		    bc,
 		    (unsigned long)sizeof(struct bittern_cache));
 	memset(bc, 0, sizeof(struct bittern_cache));
 
@@ -350,22 +503,15 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	bc->bc_magic3 = BC_MAGIC3;
 	bc->bc_magic4 = BC_MAGIC4;
 
-	ret = dm_get_device(
-			ti,
-			cache_device_blockdev_path,
-			FMODE_READ | FMODE_WRITE | FMODE_EXCL,
-			&bc->bc_cache_dev);
+	ret = dm_get_device(ti,
+			    cache_device_blockdev_path,
+			    FMODE_READ | FMODE_WRITE | FMODE_EXCL,
+			    &bc->bc_cache_dev);
 	if (ret != 0) {
-		printk_err("error: dm_get_device %s failed with %d\n",
-				cache_device_blockdev_path, ret);
-		ti->error = "could not open cache block device";
-		goto bad_0;
-	}
-	if (IS_ERR(bc->bc_cache_dev->bdev)) {
-		printk_err("error: dm_get_device %s succeeded, but returned an error %ld\n",
+		printk_err("cache device lookup %s failed: ret=%d\n",
 			   cache_device_blockdev_path,
-			   PTR_ERR(bc->bc_cache_dev->bdev));
-		ti->error = "dm_get_device returned an error";
+			   ret);
+		ti->error = "cache device lookup failed";
 		goto bad_0;
 	}
 
@@ -373,12 +519,15 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	 * FIXME: need to make these string names in bittern_cache struct
 	 * consistent with arg names
 	 */
-	strlcpy(bc->bc_name, dm_device_name(dm_table_get_md(ti->table)),
-			sizeof(bc->bc_name));
-	strlcpy(bc->bc_cache_device_name, cache_device_blockdev_path,
-			sizeof(bc->bc_cache_device_name));
-	strlcpy(bc->bc_cached_device_name, cached_device_name,
-			sizeof(bc->bc_cached_device_name));
+	strlcpy(bc->bc_name,
+		dm_device_name(dm_table_get_md(ti->table)),
+		sizeof(bc->bc_name));
+	strlcpy(bc->bc_cache_device_name,
+		cache_device_blockdev_path,
+		sizeof(bc->bc_cache_device_name));
+	strlcpy(bc->bc_cached_device_name,
+		cached_device_name,
+		sizeof(bc->bc_cached_device_name));
 
 	bc->bc_replacement_mode = CACHE_REPLACEMENT_MODE_DEFAULT;
 	bc->bc_cache_mode_writeback = 1; /* we now default to writeback */
@@ -506,16 +655,18 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto bad_0;
 	}
 
-	if (dm_get_device
-	    (ti, cached_device_name, FMODE_EXCL | FMODE_READ | FMODE_WRITE,
-	     &bc->bc_dev) != 0) {
-		printk_err("error : cached device lookup %s failed\n",
-			   cached_device_name);
-		ti->error = "device lookup failed";
+	ret = dm_get_device(ti,
+			    cached_device_name,
+			    FMODE_EXCL | FMODE_READ | FMODE_WRITE,
+			    &bc->bc_dev);
+	if (ret != 0) {
+		printk_err("cached device lookup %s failed: ret=%d\n",
+			   cached_device_name,
+			   ret);
+		ti->error = "cached device lookup failed";
 		goto bad_1;
-	} else {
-		printk_info("cached device lookup %s ok\n", cached_device_name);
 	}
+	printk_info("cached device lookup %s ok\n", cached_device_name);
 
 	M_ASSERT(bc->bc_dev != NULL);
 	printk_info("cached device dm_dev=%p, bdev=%p\n", bc->bc_dev,
@@ -716,142 +867,24 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 
 	/*
-	 * now we have initialized everything we need to show sysfs.
+	 * now we have initialized everything we can show sysfs.
 	 */
 	cache_sysfs_init(bc);
 
+	/*
+	 * now restore or initialize
+	 */
 	printk_info("'%s' (0x%x) %llu cache entries\n",
 		    cache_operation_str,
 		    cache_operation,
 		    bc->bc_papi.papi_hdr.lm_cache_blocks);
-
-	for (block_id = 1; block_id <= bc->bc_papi.papi_hdr.lm_cache_blocks;
-	     block_id++) {
-		/* block_id starts from 1, array starts from 0 */
-		struct cache_block *bcb = &bc->bc_cache_blocks[block_id - 1];
-
-		M_ASSERT(bcb != NULL);
-		memset(bcb, 0, sizeof(struct cache_block));
-		bcb->bcb_block_id = block_id;
-		bcb->bcb_magic1 = BCB_MAGIC1;
-		bcb->bcb_magic3 = BCB_MAGIC3;
-		spin_lock_init(&bcb->bcb_spinlock);
-		atomic_set(&bcb->bcb_refcount, 0);
-		bcb->bcb_sector = SECTOR_NUMBER_INVALID;
-		bcb->bcb_state = CACHE_INVALID;
-		bcb->bcb_transition_path = CACHE_TRANSITION_PATH_NONE;
-		RB_CLEAR_NODE(&bcb->bcb_rb_node);
-
-		if (cache_operation == CACHE_DEVICE_OP_RESTORE) {
-			/*
-			 * cache restore
-			 */
-			int ret =
-			    cache_ctr_restore_data_block(bc, block_id,
-								 bcb);
-			if (ret < 0) {
-				ti->error = "corrupt cache entry or bad data";
-				printk_err("error : cache entry %d restore failed (corrupt/bad data)\n",
-					   block_id);
-				goto bad_2;
-			}
-		} else {
-			/*
-			 * cache create
-			 */
-			ret = pmem_metadata_initialize(bc, block_id);
-			M_ASSERT(ret == 0);
-		}
-
-		/*
-		 * printk_info("cache_ctr : cache entry %d:
-		 * bcb_sector=%lu, bcb_state=%d(%s)\n", block_id,
-		 * bcb->bcb_sector, bcb->bcb_state,
-		 * cache_state_to_str(bcb->bcb_state));
-		 */
-		M_ASSERT(bcb->bcb_state == CACHE_INVALID ||
-			 bcb->bcb_state == CACHE_VALID_CLEAN ||
-			 bcb->bcb_state == CACHE_VALID_DIRTY);
-
-		INIT_LIST_HEAD(&bcb->bcb_entry);
-		INIT_LIST_HEAD(&bcb->bcb_entry_cleandirty);
-
-		/*
-		 * this is init code so we don't need to grab spinlocks
-		 */
-		switch (bcb->bcb_state) {
-		case CACHE_INVALID:
-			M_ASSERT(is_sector_number_invalid(bcb->bcb_sector));
-			M_ASSERT(bcb->bcb_sector == SECTOR_NUMBER_INVALID);
-			/*
-			 * don't add invalid entries to the rb tree
-			 */
-			atomic_inc(&bc->bc_invalid_entries);
-			list_add_tail(&bcb->bcb_entry,
-				      &bc->bc_invalid_entries_list);
-			RB_CLEAR_NODE(&bcb->bcb_rb_node);
-			break;
-		case CACHE_VALID_CLEAN:
-			cache_track_hash_set(bc, bcb, bcb->bcb_hash_data);
-			M_ASSERT(is_sector_number_valid(bcb->bcb_sector));
-			M_ASSERT(bcb->bcb_sector >= 0);
-			atomic_inc(&bc->bc_valid_entries);
-			atomic_inc(&bc->bc_valid_entries_clean);
-			list_add_tail(&bcb->bcb_entry,
-				      &bc->bc_valid_entries_list);
-			RB_CLEAR_NODE(&bcb->bcb_rb_node);
-			cache_rb_insert(bc, bcb);
-			M_ASSERT(RB_NON_EMPTY_NODE(&bcb->bcb_rb_node));
-			M_ASSERT(RB_NON_EMPTY_ROOT(&bc->bc_rb_root));
-			/* add to clean list */
-			list_add_tail(&bcb->bcb_entry_cleandirty,
-				      &bc->bc_valid_entries_clean_list);
-			break;
-		case CACHE_VALID_DIRTY:
-			cache_track_hash_set(bc, bcb, bcb->bcb_hash_data);
-			M_ASSERT(is_sector_number_valid(bcb->bcb_sector));
-			M_ASSERT(bcb->bcb_sector >= 0);
-			atomic_inc(&bc->bc_valid_entries);
-			atomic_inc(&bc->bc_valid_entries_dirty);
-			list_add_tail(&bcb->bcb_entry,
-				      &bc->bc_valid_entries_list);
-			RB_CLEAR_NODE(&bcb->bcb_rb_node);
-			cache_rb_insert(bc, bcb);
-			M_ASSERT(RB_NON_EMPTY_NODE(&bcb->bcb_rb_node));
-			M_ASSERT(RB_NON_EMPTY_ROOT(&bc->bc_rb_root));
-			/* add to dirty list */
-			list_add_tail(&bcb->bcb_entry_cleandirty,
-				      &bc->bc_valid_entries_dirty_list);
-			break;
-		default:
-			M_ASSERT("unexpected cache state in _ctr switch" ==
-				 NULL);
-			break;
-		}
-		atomic_inc(&bc->bc_total_entries);
-
-		if (bcb->bcb_xid > cache_xid_get(bc)) {
-			printk_info("block id #%u: id=%u, status=%u(%s), xid=%llu, sector=%lu: xid=%llu, bc_xid=%llu, updating bc_xid\n",
-				    block_id, bcb->bcb_block_id, bcb->bcb_state,
-				    cache_state_to_str(bcb->bcb_state),
-				    bcb->bcb_xid, bcb->bcb_sector, bcb->bcb_xid,
-				    cache_xid_get(bc));
-			cache_xid_set(bc, bcb->bcb_xid);
-		}
-
-		if (__do_printk_in_loop
-		    (block_id, bc->bc_papi.papi_hdr.lm_cache_blocks))
-			printk_info("'%s' bcb=%p, id=#%d, cache_block=%lu, state=%d(%s)\n",
-				    cache_operation_str, bcb, bcb->bcb_block_id,
-				    bcb->bcb_sector, bcb->bcb_state,
-				    cache_state_to_str(bcb->bcb_state));
-		__ASSERT_CACHE_BLOCK(bcb, bc);
-
-		/*
-		 * pre-empt ourselves so we won't keep the CPU stuck during
-		 * this (potentially) long loop
-		 */
-		schedule();
+	ret = bittern_cache_restore_or_init(bc,
+					    cache_operation_str,
+					    cache_operation);
+	if (ret < 0) {
+		ti->error = "corrupt cache entry or bad data";
+		printk_err("error: cache entry restore failed (corrupt/bad data)\n");
+		goto bad_2;
 	}
 
 	printk_info("'%s' of incore metadata complete\n", cache_operation_str);
@@ -884,11 +917,11 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	M_ASSERT(bc->bc_papi.papi_hdr.lm_cache_blocks ==
 		 atomic_read(&bc->bc_total_entries));
 	M_ASSERT(atomic_read(&bc->bc_valid_entries) ==
-		 atomic_read(&bc->bc_valid_entries_dirty) +
-		 atomic_read(&bc->bc_valid_entries_clean));
+		 (atomic_read(&bc->bc_valid_entries_dirty) +
+		  atomic_read(&bc->bc_valid_entries_clean)));
 	M_ASSERT(atomic_read(&bc->bc_total_entries) ==
-		 atomic_read(&bc->bc_valid_entries) +
-		 atomic_read(&bc->bc_invalid_entries));
+		 (atomic_read(&bc->bc_valid_entries) +
+		  atomic_read(&bc->bc_invalid_entries)));
 
 	printk_info("updating pmem headers\n");
 	ret = pmem_header_update(bc, 1);
@@ -897,7 +930,8 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	ASSERT_BITTERN_CACHE(bc);
 
-	printk_info("device: bc_dev=%p, bdev=%p ok\n", bc->bc_dev,
+	printk_info("device: bc_dev=%p, bdev=%p ok\n",
+		    bc->bc_dev,
 		    bc->bc_dev->bdev);
 
 	ti->max_io_len = MAX_IO_LEN_SECTORS;
@@ -908,6 +942,9 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ti->discard_zeroes_data_unsupported = true;
 
 #if 0
+	/*
+	 * we don't support write_same yet
+	 */
 	/* WRITE_SAME */
 	ti->num_write_same_bios = true;
 #endif
@@ -936,45 +973,56 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	 */
 	printk_info("starting off kernel threads\n");
 
-	bc->bc_cache_block_verifier_task =
-	    kthread_create(cache_block_verifier_kthread, bc, "b_vrf/%s",
-			   bc->bc_name);
+	bc->bc_cache_block_verifier_task = kthread_create(
+					cache_block_verifier_kthread,
+					bc,
+					"b_vrf/%s",
+					bc->bc_name);
 	M_ASSERT_FIXME(bc->bc_cache_block_verifier_task != NULL);
 	printk_info("verifier instantiated, task=%p\n",
 		    bc->bc_cache_block_verifier_task);
 	wake_up_process(bc->bc_cache_block_verifier_task);
 
-	bc->bc_deferred_wait_busy.bc_defer_task =
-	    kthread_create(cache_deferred_busy_kthread, bc, "b_dfb/%s",
-			   bc->bc_name);
+	bc->bc_deferred_wait_busy.bc_defer_task = kthread_create(
+					cache_deferred_busy_kthread,
+					bc,
+					"b_dfb/%s",
+					bc->bc_name);
 	M_ASSERT_FIXME(bc->bc_deferred_wait_busy.bc_defer_task != NULL);
 	printk_info("bc_deferred_wait_busy.bc_defer_task task=%p\n",
 		    bc->bc_deferred_wait_busy.bc_defer_task);
 	wake_up_process(bc->bc_deferred_wait_busy.bc_defer_task);
 
-	bc->bc_deferred_wait_page.bc_defer_task =
-	    kthread_create(cache_deferred_page_kthread, bc, "b_dfp/%s",
-			   bc->bc_name);
+	bc->bc_deferred_wait_page.bc_defer_task = kthread_create(
+					cache_deferred_page_kthread,
+					bc,
+					"b_dfp/%s",
+					bc->bc_name);
 	M_ASSERT_FIXME(bc->bc_deferred_wait_page.bc_defer_task != NULL);
 	printk_info("bc_deferred_wait_page.bc_defer_task task=%p\n",
 		    bc->bc_deferred_wait_page.bc_defer_task);
 	wake_up_process(bc->bc_deferred_wait_page.bc_defer_task);
 
-	bc->bc_daemon_task = kthread_create(cache_daemon_kthread, bc,
-					    "b_dmn/%s", bc->bc_name);
+	bc->bc_daemon_task = kthread_create(cache_daemon_kthread,
+					    bc,
+					    "b_dmn/%s",
+					    bc->bc_name);
 	M_ASSERT_FIXME(bc->bc_daemon_task != NULL);
 	printk_info("daemon instantiated, task=%p\n", bc->bc_daemon_task);
 	wake_up_process(bc->bc_daemon_task);
 
-	bc->bc_bgwriter_task =
-	    kthread_create(cache_bgwriter_kthread, bc, "b_bgw/%s",
-			   bc->bc_name);
+	bc->bc_bgwriter_task = kthread_create(cache_bgwriter_kthread,
+					      bc,
+					      "b_bgw/%s",
+					      bc->bc_name);
 	M_ASSERT_FIXME(bc->bc_bgwriter_task != NULL);
 	printk_info("bgwriter instantiated, task=%p\n", bc->bc_bgwriter_task);
 	wake_up_process(bc->bc_bgwriter_task);
 
-	bc->bc_invalidator_task = kthread_create(cache_invalidator_kthread, bc,
-						 "b_inv/%s", bc->bc_name);
+	bc->bc_invalidator_task = kthread_create(cache_invalidator_kthread,
+						 bc,
+						 "b_inv/%s",
+						 bc->bc_name);
 	M_ASSERT_FIXME(bc->bc_invalidator_task != NULL);
 	printk_info("invalidator instantiated, task=%p\n",
 		    bc->bc_invalidator_task);
@@ -1000,15 +1048,15 @@ bad_1:
 	printk_info("done mem_info_deinitialize()\n");
 
 bad_0:
-	printk_err("error : %s\n", ti->error);
+	printk_err("error: %s\n", ti->error);
 	M_ASSERT(ti->error != NULL);
-	printk_err("error : bad\n");
+	printk_err("error: bad\n");
 	if (bc->bc_dev != NULL) {
-		printk_info("dm_put_device\n");
+		printk_err("dm_put_device\n");
 		dm_put_device(ti, bc->bc_dev);
 	}
 	if (bc->bc_cache_dev != NULL) {
-		printk_info("dm_put_device for cache\n");
+		printk_err("dm_put_device for cache\n");
 		dm_put_device(ti, bc->bc_cache_dev);
 	}
 	if (bc->bc_cache_blocks != NULL)

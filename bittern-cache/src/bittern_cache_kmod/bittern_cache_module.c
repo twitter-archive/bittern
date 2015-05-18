@@ -1412,8 +1412,6 @@ ssize_t cache_op_show_timers(struct bittern_cache *bc, char *result)
 	DMEMIT("%s: timers: "
 	       T_FMT_STRING("reads") " "
 	       T_FMT_STRING("writes") " "
-	       T_FMT_STRING("reads_elapsed") " "
-	       T_FMT_STRING("writes_elapsed") " "
 	       T_FMT_STRING("read_hits") " "
 	       T_FMT_STRING("write_hits") " "
 	       T_FMT_STRING("read_misses") " "
@@ -1422,8 +1420,6 @@ ssize_t cache_op_show_timers(struct bittern_cache *bc, char *result)
 	       bc->bc_name,
 	       T_FMT_ARGS(bc, bc_timer_reads),
 	       T_FMT_ARGS(bc, bc_timer_writes),
-	       T_FMT_ARGS(bc, bc_timer_reads_elapsed),
-	       T_FMT_ARGS(bc, bc_timer_writes_elapsed),
 	       T_FMT_ARGS(bc, bc_timer_read_hits),
 	       T_FMT_ARGS(bc, bc_timer_write_hits),
 	       T_FMT_ARGS(bc, bc_timer_read_misses),
@@ -1460,6 +1456,10 @@ ssize_t cache_op_show_timers(struct bittern_cache *bc, char *result)
 	       T_FMT_ARGS(bc, bc_timer_pending_queue),
 	       T_FMT_ARGS(bc, bc_deferred_wait_busy.bc_defer_timer),
 	       T_FMT_ARGS(bc, bc_deferred_wait_page.bc_defer_timer));
+	DMEMIT("%s: timers: " T_FMT_STRING("resource_alloc_reads") " " T_FMT_STRING("resource_alloc_writes") "\n",
+	       bc->bc_name,
+	       T_FMT_ARGS(bc, bc_timer_resource_alloc_reads),
+	       T_FMT_ARGS(bc, bc_timer_resource_alloc_writes));
 	DMEMIT("%s: timers: "
 	       T_FMT_STRING("make_request_wq_timer") " "
 	       "\n", bc->bc_name, T_FMT_ARGS(bc, bc_make_request_wq_timer));

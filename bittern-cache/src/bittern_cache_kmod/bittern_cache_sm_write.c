@@ -273,8 +273,6 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	    CACHE_VALID_DIRTY_WRITE_MISS_COPY_TO_CACHE_END) {
 		cache_timer_add(&bc->bc_timer_writes,
 					wi->wi_ts_started);
-		cache_timer_add(&bc->bc_timer_writes_elapsed,
-					wi->wi_ts_queued);
 		cache_timer_add(&bc->bc_timer_write_misses,
 					wi->wi_ts_started);
 		cache_timer_add(&bc->bc_timer_write_dirty_misses,
@@ -283,8 +281,6 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 		   CACHE_VALID_DIRTY_WRITE_HIT_COPY_TO_CACHE_END) {
 		cache_timer_add(&bc->bc_timer_writes,
 					wi->wi_ts_started);
-		cache_timer_add(&bc->bc_timer_writes_elapsed,
-					wi->wi_ts_queued);
 		cache_timer_add(&bc->bc_timer_write_hits,
 					wi->wi_ts_started);
 		cache_timer_add(&bc->bc_timer_write_dirty_hits,
@@ -294,8 +290,6 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 		       CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_COPY_TO_CACHE_END);
 		cache_timer_add(&bc->bc_timer_writes,
 					wi->wi_ts_started);
-		cache_timer_add(&bc->bc_timer_writes_elapsed,
-					wi->wi_ts_queued);
 		cache_timer_add(&bc->bc_timer_write_hits,
 					wi->wi_ts_started);
 	}
@@ -621,7 +615,6 @@ void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	cache_put_update_age(bc, cache_block, 1);
 
 	cache_timer_add(&bc->bc_timer_writes, wi->wi_ts_started);
-	cache_timer_add(&bc->bc_timer_writes_elapsed, wi->wi_ts_queued);
 	if (original_state ==
 	    CACHE_VALID_CLEAN_WRITE_MISS_COPY_TO_CACHE_END) {
 		cache_timer_add(&bc->bc_timer_write_misses,
@@ -905,7 +898,6 @@ void sm_dirty_write_hit_clone_copy_to_cache_end(struct bittern_cache *bc,
 	cache_put_update_age(bc, cache_block, 1);
 
 	cache_timer_add(&bc->bc_timer_writes, wi->wi_ts_started);
-	cache_timer_add(&bc->bc_timer_writes_elapsed, wi->wi_ts_queued);
 	cache_timer_add(&bc->bc_timer_write_hits, wi->wi_ts_started);
 	cache_timer_add(&bc->bc_timer_write_dirty_hits,
 				wi->wi_ts_started);

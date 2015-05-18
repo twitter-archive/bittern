@@ -66,7 +66,7 @@
  * Release codenames are National Wildlife Refuges wetlands where the Bittern
  * can be found.
  */
-#define BITTERN_CACHE_VERSION "0.26.2"
+#define BITTERN_CACHE_VERSION "0.26.1"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -267,11 +267,6 @@ struct work_item {
 	int wi_magic1;
 	/*! @ref wi_flags_bitvalues */
 	int wi_flags;
-	/*
-	 * access to this member is serialized with global relevant deferred
-	 * io lock
-	 */
-	struct list_head wi_deferred_io_list;
 	/* access to this member is serialized with global spinlock */
 	struct list_head wi_pending_io_list;
 	/* workstruct and workqueues used when a thread context is required */
@@ -307,7 +302,7 @@ struct work_item {
 	wi_io_endio_f wi_io_endio;
 	/* bypass cache for this workitem */
 	int wi_bypass;
-	/*
+	/*!
 	 * keep track here of the request type and block information.  we mainly
 	 * use this for tracking pending operations and it's on purpose
 	 * kept completely separate from everything else for debugging
@@ -316,8 +311,9 @@ struct work_item {
 	 * wi_op_type == 'm': _map() request
 	 * wi_op_type == 'w': writeback request
 	 * wi_op_type == 'b': bypass request
+	 *
+	 * \todo convert this to a 4 char string to give a bit more info
 	 */
-	/* 'm', 'w', 'b' */
 	char wi_op_type;
 	sector_t wi_op_sector;
 	/* bio rw flags */
@@ -325,11 +321,7 @@ struct work_item {
 	/* time in workqueue */
 	uint64_t wi_ts_workqueue;
 	/* io start time */
-	uint64_t wi_ts_queued;
-	/* io start time, excluding time spent in queued queue */
 	uint64_t wi_ts_started;
-	/* keeps track how long it stays in a wait queue */
-	uint64_t wi_ts_queue;
 	/* keeps track of physical io */
 	uint64_t wi_ts_physio;
 	/* pmem async context for cache operations */
@@ -493,7 +485,7 @@ struct deferred_queue {
 	 * protects all struct members except the fields above
 	 */
 	spinlock_t bc_defer_lock;
-	struct list_head bc_defer_list;
+	struct bio_list bc_defer_list;
 
 	volatile unsigned int bc_defer_curr_count;
 	unsigned int bc_defer_requeue_count;
@@ -758,10 +750,6 @@ struct bittern_cache {
 	struct cache_timer bc_timer_reads;
 	/* writes timer (pending i/o time only) */
 	struct cache_timer bc_timer_writes;
-	/* reads timer (includes initial queueing) */
-	struct cache_timer bc_timer_reads_elapsed;
-	/* reads timer (includes initial queueing) */
-	struct cache_timer bc_timer_writes_elapsed;
 	struct cache_timer bc_timer_read_hits;
 	struct cache_timer bc_timer_write_hits;
 	struct cache_timer bc_timer_read_misses;
@@ -777,6 +765,11 @@ struct bittern_cache {
 	struct cache_timer bc_timer_writebacks;
 	struct cache_timer bc_timer_invalidations;
 	struct cache_timer bc_timer_pending_queue;
+
+	/*! resource allocation read timer */
+	struct cache_timer bc_timer_resource_alloc_reads;
+	/*! resource allocation write timer */
+	struct cache_timer bc_timer_resource_alloc_writes;
 
 	/* requential access tracker for reads */
 	struct seq_io_bypass bc_seq_read;

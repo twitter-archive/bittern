@@ -621,8 +621,6 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	cache_timer_init(&bc->bc_timer_reads);
 	cache_timer_init(&bc->bc_timer_writes);
-	cache_timer_init(&bc->bc_timer_reads_elapsed);
-	cache_timer_init(&bc->bc_timer_writes_elapsed);
 	cache_timer_init(&bc->bc_timer_read_hits);
 	cache_timer_init(&bc->bc_timer_write_hits);
 	cache_timer_init(&bc->bc_timer_read_misses);
@@ -638,6 +636,8 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	cache_timer_init(&bc->bc_timer_writebacks);
 	cache_timer_init(&bc->bc_timer_invalidations);
 	cache_timer_init(&bc->bc_timer_pending_queue);
+	cache_timer_init(&bc->bc_timer_resource_alloc_reads);
+	cache_timer_init(&bc->bc_timer_resource_alloc_writes);
 	cache_timer_init(&bc->bc_deferred_wait_busy.bc_defer_timer);
 	cache_timer_init(&bc->bc_deferred_wait_page.bc_defer_timer);
 
@@ -736,15 +736,16 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	/*
 	 * this is also used very early
+	 * \todo should have its own init function for this
 	 */
 	atomic_set(&bc->bc_deferred_wait_busy.bc_defer_gennum, 0);
 	init_waitqueue_head(&bc->bc_deferred_wait_busy.bc_defer_wait);
 	spin_lock_init(&bc->bc_deferred_wait_busy.bc_defer_lock);
-	INIT_LIST_HEAD(&bc->bc_deferred_wait_busy.bc_defer_list);
+	bio_list_init(&bc->bc_deferred_wait_busy.bc_defer_list);
 	atomic_set(&bc->bc_deferred_wait_page.bc_defer_gennum, 0);
 	init_waitqueue_head(&bc->bc_deferred_wait_page.bc_defer_wait);
 	spin_lock_init(&bc->bc_deferred_wait_page.bc_defer_lock);
-	INIT_LIST_HEAD(&bc->bc_deferred_wait_page.bc_defer_list);
+	bio_list_init(&bc->bc_deferred_wait_page.bc_defer_list);
 
 	/*
 	 * we do a header restore no matter what.

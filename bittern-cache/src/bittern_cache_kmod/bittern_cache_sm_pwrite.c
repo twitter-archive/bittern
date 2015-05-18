@@ -380,7 +380,6 @@ void sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 	cache_put_update_age(bc, cache_block, 1);
 
 	cache_timer_add(&bc->bc_timer_writes, wi->wi_ts_started);
-	cache_timer_add(&bc->bc_timer_writes_elapsed, wi->wi_ts_queued);
 	cache_timer_add(&bc->bc_timer_write_misses, wi->wi_ts_started);
 	if (original_state ==
 	    CACHE_VALID_CLEAN_PARTIAL_WRITE_MISS_COPY_TO_CACHE_END) {

@@ -24,12 +24,6 @@ production ready:
 * *Error handling* currently unimplemented. The code will currently
   sane crash the machine whenever any kind of IO error or during some
   memory allocation in critical sections.
-* *Bound Resource Usage*
-  An excessive amount of memory is currently utilized in the book-keeping
-  of deferred requests during extreme IO workloads, linearly increasing
-  with the amount of main memory. mkfs.ext4 is the classic workload for this,
-  and or a 20 Gbytes machine, the consumption can fairly easily balloon to
-  512 Mbytes.
 * *Write Cloning* The current code only performs write-cloning for the dirty
   write hit case. This is incorrect. Write cloning must be performed on all
   write hits, clean or dirty.
@@ -83,6 +77,9 @@ if the fix is deemed to be very low-risk.
   the best way is to have kmem_cache pools and bioset allocators like most
   other block device drivers do (SCSI drivers and DM drivers are good
   examples for this).
+* *Memory Allocation* Right now a double buffer is always allocated for
+  every request. In most cases it is actually not needed, and this needs
+  to be optimized.
 * *Coding Style* For yet another set of historical reasons Bittern code has
   a lot of warts which need to be addressed, including coding style and
   excessive reinvention of the wheel.

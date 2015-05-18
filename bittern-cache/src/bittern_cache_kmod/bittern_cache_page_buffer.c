@@ -255,7 +255,13 @@ void *pagebuf_allocate_wait(struct bittern_cache *bc,
 	 * little bit (the number used in the assertion below is arbitrary,
 	 * callers really should never exceed the threshold by more than 1).
 	 */
-	M_ASSERT(pagebuf_in_use(bc, p) < pagebuf_max_bufs(bc) + 50);
+
+	/*
+	 * DO NOT CHECK FOR EXCESS USE. WITH THE NEW CODE SOMETIMES WE END UP
+	 * IN USING A BIT MORE PAGES IN THE WRITE CLONING PORTION.
+	 * THIS IS COMPLETELT HARMLESS AND IN ANY CASE WE ARE GOING TO
+	 * COMPLETELY REPLACE THIS CODE WITH kmem_cache SLABS.
+	 */
 
 	atomic_inc(&pool->stat_alloc_wait_vmalloc);
 

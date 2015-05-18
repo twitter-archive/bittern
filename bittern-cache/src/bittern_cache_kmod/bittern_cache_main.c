@@ -556,7 +556,9 @@ void cache_metadata_write_callback(struct bittern_cache *bc,
 }
 
 /*!
- * main state machine
+ * Main state machine.
+ * We can either be called in a process context or in a softirq.
+ * Either way, none of the code in here is allowed to sleep.
  */
 void cache_state_machine(struct bittern_cache *bc,
 			 struct work_item *wi,
@@ -1538,71 +1540,9 @@ void cache_handle_cache_miss(struct bittern_cache *bc,
 	cache_state_machine(bc, wi, bio);
 }
 
-void cache_handle_bypass(struct bittern_cache *bc, struct work_item *wi,
-			 struct bio *bio)
-{
-	struct bio *cloned_bio;
-
-	ASSERT(bc != NULL);
-	ASSERT(bio != NULL);
-	ASSERT(wi != NULL);
-	ASSERT_BITTERN_CACHE(bc);
-	ASSERT_WORK_ITEM(wi, bc);
-	ASSERT(wi->wi_original_bio == bio);
-	ASSERT(wi->wi_cache_block == NULL);
-	/*
-	 * sequential bypass, skip cache, but keep track of this io request
-	 */
-	ASSERT(wi->wi_bypass == 1);
-	ASSERT(wi->wi_cloned_bio == NULL);
-	ASSERT(wi->wi_original_bio == bio);
-	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, bio, NULL,
-		 "handle_bypass");
-	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
-	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
-	/*
-	 * clone bio
-	 */
-	cloned_bio = bio_clone(bio, GFP_NOIO | GFP_ATOMIC);
-	M_ASSERT_FIXME(cloned_bio != NULL);
-	cloned_bio->bi_bdev = bc->bc_dev->bdev;
-	cloned_bio->bi_end_io = cache_bio_endio;
-	cloned_bio->bi_private = wi;
-	wi->wi_cloned_bio = cloned_bio;
-	if (bio_data_dir(bio) == READ) {
-		atomic_inc(&bc->bc_seq_read.bypass_count);
-		atomic_inc(&bc->bc_pending_read_bypass_requests);
-	} else {
-		atomic_inc(&bc->bc_seq_write.bypass_count);
-		atomic_inc(&bc->bc_pending_write_bypass_requests);
-	}
-	cache_track_hash_clear(bc, bio_sector_to_cache_block_sector(bio));
-	/*
-	 * schedule request
-	 */
-	wi->wi_ts_physio = current_kernel_time_nsec();
-	generic_make_request(cloned_bio);
-}
-
-void bittern_dump_bio(struct bittern_cache *bc, struct bio *bio)
-{
-	struct bvec_iter bi_iterator;
-	struct bio_vec bvec;
-
-	printk_info("bc=%p, cached_dev=%p, bittern_dev=%p, dir=0x%lx, flags=0x%lx, bio=%p, bi_sector=%lu, bi_size=%u, bi_idx=%u, bi_vcnt=%u\n",
-	     bc, bc->bc_dev->bdev, bio->bi_bdev, bio_data_dir(bio),
-	     bio->bi_flags, bio, bio->bi_iter.bi_sector, bio->bi_iter.bi_size,
-	     bio->bi_iter.bi_idx, bio->bi_vcnt);
-	printk_info("bio_segments(bio)=%u\n", bio_segments(bio));
-	bio_for_each_segment(bvec, bio, bi_iterator) {
-		printk_info("         bio_vec:   bv_offset=%u, bv_len=%u, bv_offset+bv_len=%u, bv_page=%p\n",
-		     bvec.bv_offset, bvec.bv_len, bvec.bv_offset + bvec.bv_len,
-		     bvec.bv_page);
-	}
-}
-
 static inline void cache_update_pending(struct bittern_cache *bc,
-					struct bio *bio, bool is_sequential)
+					struct bio *bio,
+					bool is_sequential)
 {
 	struct seq_io_bypass *bsi;
 	int val;
@@ -1623,79 +1563,237 @@ static inline void cache_update_pending(struct bittern_cache *bc,
 }
 
 /*!
+ * Handle bypass requests. We still allocate a work_item because it makes it
+ * much easier to track what's going on. Later we'll need it anyway because
+ * we'll have to allocate a fake cache_block entry to avoid the only semantical
+ * difference between Bittern+RAID5 and hardware RAID (namely, the consistency
+ * between bypassed IO and in progress cached IO).
+ */
+void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
+{
+	struct bio *cloned_bio;
+	struct work_item *wi;
+	uint64_t tstamp = current_kernel_time_nsec();
+
+	ASSERT(bc != NULL);
+	ASSERT(bio != NULL);
+	ASSERT_BITTERN_CACHE(bc);
+
+	/*
+	 * here we are either in a process or kernel thread context,
+	 * i.e., we can sleep during resource allocation if needed.
+	 */
+	ASSERT(!in_interrupt());
+
+	wi = cache_work_item_allocate(bc,
+				      NULL,
+				      bio,
+				      (WI_FLAG_MAP_IO |
+				       WI_FLAG_BIO_CLONED |
+				       WI_FLAG_XID_NEW),
+				      NULL,
+				      GFP_ATOMIC);
+	M_ASSERT_FIXME(wi != NULL);
+	ASSERT_WORK_ITEM(wi, bc);
+	ASSERT(wi->wi_io_xid != 0);
+	ASSERT(wi->wi_original_bio == bio);
+	ASSERT(wi->wi_cache == bc);
+	ASSERT(wi->wi_cloned_bio == NULL);
+	ASSERT(wi->wi_original_bio == bio);
+	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
+	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
+	wi->wi_bypass = 1;
+	wi->wi_ts_started = tstamp;
+
+	/* inc pending counters, add to pending io list, and start bio  */
+	cache_update_pending(bc, bio, true);
+	cache_work_item_add_pending_io(bc,
+				       wi,
+				       'b',
+				       bio->bi_iter.
+				       bi_sector,
+				       bio->bi_rw);
+
+	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, bio, NULL, "handle_bypass");
+
+	/*
+	 * clone bio
+	 */
+	cloned_bio = bio_clone(bio, GFP_NOIO | GFP_ATOMIC);
+	M_ASSERT_FIXME(cloned_bio != NULL);
+	cloned_bio->bi_bdev = bc->bc_dev->bdev;
+	cloned_bio->bi_end_io = cache_bio_endio;
+	cloned_bio->bi_private = wi;
+	wi->wi_cloned_bio = cloned_bio;
+	if (bio_data_dir(bio) == READ) {
+		atomic_inc(&bc->bc_seq_read.bypass_count);
+		atomic_inc(&bc->bc_pending_read_bypass_requests);
+		cache_timer_add(&bc->bc_timer_resource_alloc_reads, tstamp);
+	} else {
+		atomic_inc(&bc->bc_seq_write.bypass_count);
+		atomic_inc(&bc->bc_pending_write_bypass_requests);
+		cache_timer_add(&bc->bc_timer_resource_alloc_writes, tstamp);
+	}
+
+
+	cache_track_hash_clear(bc, bio_sector_to_cache_block_sector(bio));
+	/*
+	 * schedule request
+	 */
+	wi->wi_ts_physio = current_kernel_time_nsec();
+	generic_make_request(cloned_bio);
+}
+
+/*!
  * Read/write hit.
  * We found a cache block and it's idle. We can now start IO on it.
  */
-int cache_map_workfunc_hit_idle(struct bittern_cache *bc,
-				struct work_item *wi,
-				struct cache_block *cache_block,
-				struct bio *bio)
+int cache_map_workfunc_hit(struct bittern_cache *bc,
+			   struct cache_block *cache_block,
+			   struct bio *bio,
+			   int do_writeback)
 {
+	struct work_item *wi;
+	struct cache_block *cloned_cache_block = NULL;
+	uint64_t tstamp = current_kernel_time_nsec();
+
+	/*
+	 * here we are either in a process or kernel thread context,
+	 * i.e., we can sleep during resource allocation if needed.
+	 */
+	ASSERT(!in_interrupt());
+
+	ASSERT(bc != NULL);
+	ASSERT(bio != NULL);
+	ASSERT_BITTERN_CACHE(bc);
+	ASSERT_CACHE_BLOCK(cache_block, bc);
+
+	/*
+	 * If write cloning is needed, allocate clone first. If there are no
+	 * resources, release the original cache_block and defer the request.
+	 */
+	if (bio_data_dir(bio) == WRITE &&
+	    cache_block->bcb_state == CACHE_VALID_DIRTY) {
+		int r;
+
+		r = cache_get_clone(bc, cache_block, &cloned_cache_block);
+		if (r == CACHE_GET_RET_MISS) {
+			ASSERT(cloned_cache_block == NULL);
+			/*
+			 * no cloned block, so we need to release
+			 * original block and defer the request.
+			 */
+			cache_put_update_age(bc, cache_block, 1);
+			atomic_inc(&bc->bc_write_hits_busy);
+			/*
+			 * defer request
+			 */
+			cache_queue_to_deferred(bc,
+						&bc->bc_deferred_wait_page,
+						bio);
+			BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+				 "dirty-write-hit-no-clone-deferring");
+			return 0;
+		}
+		BT_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, bio, NULL,
+			 "dirty-write-hit-cache-block");
+		BT_TRACE(BT_LEVEL_TRACE2, bc, NULL,
+			 cloned_cache_block, bio, NULL,
+			 "dirty-write-hit-cloned-cache-block");
+		ASSERT(r == CACHE_GET_RET_MISS_INVALID_IDLE);
+		ASSERT(cloned_cache_block != NULL);
+		/*
+		 * In the case of write cloning we need to handle the request
+		 * as if cache mode were writeback, even if the cache mode is
+		 * write-through. This can happen right after switching cache
+		 * mode from writeback to write-through while the dirty blocks
+		 * are being flushed asynchronously.
+		 */
+		do_writeback = 1;
+	} else {
+		BT_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, bio, NULL,
+			 "read-or-write-hit");
+	}
+
+	/*!
+	 * \todo this is messed up and will be fixed soon
+	 * when we clean up memory allocation in general - need to eventually
+	 * move to using mempool_t memory pools or a variant of it - it is
+	 * in any event no worse than the situation before this changeset.
+	 */
+	wi = cache_work_item_allocate(bc,
+				      cache_block,
+				      bio,
+				      (WI_FLAG_MAP_IO |
+				       WI_FLAG_BIO_CLONED |
+				       WI_FLAG_XID_NEW),
+				      NULL,
+				      GFP_ATOMIC);
+	M_ASSERT_FIXME(wi != NULL);
+	ASSERT_WORK_ITEM(wi, bc);
+	ASSERT(wi->wi_io_xid != 0);
+	ASSERT(wi->wi_original_bio == bio);
+	ASSERT(wi->wi_cache == bc);
+	ASSERT(wi->wi_cloned_bio == NULL);
+	ASSERT(wi->wi_original_bio == bio);
+	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
+	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
+	ASSERT(wi->wi_cache_block == cache_block);
+	ASSERT(wi->wi_bypass == 0);
+	wi->wi_ts_started = tstamp;
+	wi->wi_cache_mode_writeback = do_writeback;
+
+	/*!
+	 * \todo this is messed up and will be fixed soon
+	 * when we clean up memory allocation in general - need to eventually
+	 * move to using mempool_t memory pools or a variant of it - it is
+	 * in any event no worse than the situation before this changeset.
+	 */
+	pagebuf_allocate_dbi_wait(bc, PGPOOL_MAP, &wi->wi_cache_data);
+	M_ASSERT(wi->wi_cache_data.di_buffer_vmalloc_buffer != NULL);
+
+	if (bio_data_dir(bio) == READ)
+		cache_timer_add(&bc->bc_timer_resource_alloc_reads, tstamp);
+	else
+		cache_timer_add(&bc->bc_timer_resource_alloc_writes, tstamp);
+
+	/*
+	 * inc pending counters
+	 */
+	cache_update_pending(bc, bio, false);
+
 	if (bio_data_dir(bio) == WRITE &&
 				cache_block->bcb_state == CACHE_VALID_DIRTY) {
 		/*
 		 * handle write cloning
 		 */
-		struct cache_block *cloned_cache_block = NULL;
-		int r;
-
-		r = cache_get_clone(bc, cache_block, &cloned_cache_block);
-		if (r == CACHE_GET_RET_MISS_INVALID_IDLE) {
-			BT_TRACE(BT_LEVEL_TRACE1, bc, wi,
-				 cloned_cache_block, bio, NULL,
-				 "cache-hit-cloned-block");
-			ASSERT(cloned_cache_block != NULL);
-			/*
-			 * inc pending counters
-			 */
-			cache_update_pending(bc, bio, false);
-			/*
-			 * add to pending list and start state machine
-			 */
-			cache_work_item_add_pending_io(bc, wi, 'm',
-						       cache_block->
-						       bcb_sector,
-						       bio->bi_rw);
-			cache_handle_cache_hit_write_clone(bc,
-							   wi,
-							   cache_block,
-							   bio,
-							   cloned_cache_block);
-			return 1;
-		}
+		ASSERT(cloned_cache_block != NULL);
+		ASSERT(do_writeback == 1);
 		/*
-		 * couldn't get write clone, defer
+		 * add to pending list and start state machine
 		 */
-		BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block,
-			 bio, NULL,
-			 "cache-hit-no-cloned-block-deferring");
-		ASSERT(cloned_cache_block == NULL);
-		ASSERT(r == CACHE_GET_RET_MISS);
+		cache_work_item_add_pending_io(bc,
+					       wi,
+					       'm',
+					       cache_block->bcb_sector,
+					       bio->bi_rw);
+		cache_handle_cache_hit_write_clone(bc,
+						   wi,
+						   cache_block,
+						   bio,
+						   cloned_cache_block);
+	} else {
 		/*
-		 * no cloned block, so we need to release
-		 * original block and defer the request.
+		 * add to pending list and start state machine
 		 */
-		cache_put_update_age(bc, cache_block, 1);
-		atomic_inc(&bc->bc_write_hits_busy);
-		/*
-		 * defer request
-		 */
-		cache_queue_to_deferred(bc,
-					&bc->bc_deferred_wait_page,
-					wi);
-		return 0;
+		cache_work_item_add_pending_io(bc,
+					       wi,
+					       'M',
+					       cache_block->bcb_sector,
+					       bio->bi_rw);
+		cache_handle_cache_hit(bc, wi, cache_block, bio);
 	}
-	/*
-	 * inc pending counters
-	 */
-	cache_update_pending(bc, bio, false);
-	/*
-	 * add to pending list and start state machine
-	 */
-	cache_work_item_add_pending_io(bc, wi, 'm',
-				       cache_block->bcb_sector,
-				       bio->bi_rw);
-	cache_handle_cache_hit(bc, wi, cache_block, bio);
+
 	return 1;
 }
 
@@ -1703,44 +1801,93 @@ int cache_map_workfunc_hit_idle(struct bittern_cache *bc,
  * Handle resource busy case (we have a cache hit, but the cache block
  * is in use). All we can do is queue to deferred for later execution.
  */
-int cache_map_workfunc_hit_busy(struct bittern_cache *bc,
-				struct work_item *wi,
-				struct bio *bio)
+void cache_map_workfunc_resource_busy(struct bittern_cache *bc, struct bio *bio)
 {
-	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, bio, NULL,
-		 "cache-hit-busy");
 	/*
-	 * block is busy, we cannot do anything with it
+	 * here we are either in a process or kernel thread context,
+	 * i.e., we can sleep during resource allocation if needed.
 	 */
+	ASSERT(!in_interrupt());
+
+	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL, "cache-hit-busy");
 	if (bio_data_dir(bio) == WRITE)
 		atomic_inc(&bc->bc_write_hits_busy);
 	else
 		atomic_inc(&bc->bc_read_hits_busy);
-	/*
-	 * will have to reschedule this task again
-	 */
-	cache_queue_to_deferred(bc, &bc->bc_deferred_wait_busy, wi);
-	return 0;
+	cache_queue_to_deferred(bc, &bc->bc_deferred_wait_busy, bio);
 }
 
 /*!
  * Handle miss case (in this case we missed, but an idle invalid block
  * has been reallocated, so we can handle cache miss, i.e. do a cache fill).
- * \todo should rename "_miss_invalid" to "_miss_fill".
  */
-int cache_map_workfunc_miss_invalid_idle(struct bittern_cache *bc,
-					 struct work_item *wi,
-					 struct cache_block *cache_block,
-					 struct bio *bio)
+void cache_map_workfunc_miss(struct bittern_cache *bc,
+			     struct cache_block *cache_block,
+			     struct bio *bio,
+			     int do_writeback)
 {
+	struct work_item *wi;
+	uint64_t tstamp = current_kernel_time_nsec();
+
+	ASSERT(bc != NULL);
+	ASSERT(bio != NULL);
+	ASSERT_BITTERN_CACHE(bc);
+	ASSERT_CACHE_BLOCK(cache_block, bc);
+
+	/*
+	 * here we are either in a process or kernel thread context,
+	 * i.e., we can sleep during resource allocation if needed.
+	 */
+	ASSERT(!in_interrupt());
+
+	/*!
+	 * \todo this is messed up and will be fixed soon
+	 * when we clean up memory allocation in general - need to eventually
+	 * move to using mempool_t memory pools or a variant of it - it is
+	 * in any event no worse than the situation before this changeset.
+	 */
+	wi = cache_work_item_allocate(bc,
+				      cache_block,
+				      bio,
+				      (WI_FLAG_MAP_IO |
+				       WI_FLAG_BIO_CLONED |
+				       WI_FLAG_XID_NEW),
+				      NULL,
+				      GFP_ATOMIC);
+	M_ASSERT_FIXME(wi != NULL);
+	ASSERT_WORK_ITEM(wi, bc);
+	ASSERT(wi->wi_io_xid != 0);
+	ASSERT(wi->wi_original_bio == bio);
+	ASSERT(wi->wi_cache == bc);
+	ASSERT(wi->wi_cloned_bio == NULL);
+	ASSERT(wi->wi_original_bio == bio);
+	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
+	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
+	ASSERT(wi->wi_cache_block == cache_block);
+	ASSERT(wi->wi_bypass == 0);
+	wi->wi_ts_started = tstamp;
+	wi->wi_cache_mode_writeback = do_writeback;
+
+	/*!
+	 * \todo this is messed up and will be fixed soon
+	 * when we clean up memory allocation in general - need to eventually
+	 * move to using mempool_t memory pools or a variant of it - it is
+	 * in any event no worse than the situation before this changeset.
+	 */
+	pagebuf_allocate_dbi_wait(bc, PGPOOL_MAP, &wi->wi_cache_data);
+	M_ASSERT(wi->wi_cache_data.di_buffer_vmalloc_buffer != NULL);
+
+	if (bio_data_dir(bio) == READ)
+		cache_timer_add(&bc->bc_timer_resource_alloc_reads, tstamp);
+	else
+		cache_timer_add(&bc->bc_timer_resource_alloc_writes, tstamp);
+
 	/*
 	 * if we got a cache block back,
 	 * we'd better be not doing a bypass
 	 * */
-	ASSERT(wi->wi_bypass == 0);
 	ASSERT(cache_block->bcb_transition_path == CACHE_TRANSITION_PATH_NONE);
-	if (is_work_item_cache_mode_writeback(wi) &&
-	    bio_data_dir(bio) == WRITE)
+	if (is_work_item_cache_mode_writeback(wi) && bio_data_dir(bio) == WRITE)
 		ASSERT(cache_block->bcb_state == CACHE_VALID_DIRTY_NO_DATA);
 	else
 		ASSERT(cache_block->bcb_state == CACHE_VALID_CLEAN_NO_DATA);
@@ -1751,109 +1898,75 @@ int cache_map_workfunc_miss_invalid_idle(struct bittern_cache *bc,
 	/*
 	 * add to pending list and start state machine
 	 */
-	cache_work_item_add_pending_io(bc, wi, 'm',
+	cache_work_item_add_pending_io(bc,
+				       wi,
+				       'm',
 				       cache_block->bcb_sector,
 				       bio->bi_rw);
+
 	/* 0 means no replacement */
 	cache_handle_cache_miss(bc, wi, bio, cache_block, 0);
-	return 1;
 }
 
 /*!
  * Handle complete miss case (not only we have a cache miss, we also
- * do not have a cache block).
- * Do bypass if requested, otherwise defer.
+ * do not have a cache block). No choice but defer the IO request.
  */
-int cache_map_workfunc_miss(struct bittern_cache *bc,
-			    struct work_item *wi,
-			    struct bio *bio)
+void cache_map_workfunc_no_resources(struct bittern_cache *bc, struct bio *bio)
 {
-	if (wi->wi_bypass != 0) {
-		/*
-		 * inc pending counters
-		 */
-		cache_update_pending(bc, bio, true);
-		/*
-		 * queue request
-		 */
-		cache_work_item_add_pending_io(bc, wi, 'b',
-					       bio->bi_iter.
-					       bi_sector,
-					       bio->bi_rw);
-		cache_handle_bypass(bc, wi, bio);
-		return 1;
-	}
-	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, bio, NULL,
-		 "cache-miss-all-blocks-busy: bc_invalid(count=%u, list_empty=%d)",
-		 atomic_read(&bc->bc_invalid_entries),
-		 list_empty(&bc->bc_invalid_entries_list));
+
+	/*
+	 * here we are either in a process or kernel thread context,
+	 * i.e., we can sleep during resource allocation if needed.
+	 */
+	ASSERT(!in_interrupt());
+
+	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+		 "blocks-busy-defer (bc_invalid_entries=%u)",
+		 atomic_read(&bc->bc_invalid_entries));
 	if (bio_data_dir(bio) == WRITE)
 		atomic_inc(&bc->bc_write_misses_busy);
 	else
 		atomic_inc(&bc->bc_read_misses_busy);
-	/*
-	 * cannot process now, will have to reschedule this
-	 * task again with delay
-	 */
-	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, bio, NULL,
-		 "blocks-busy-reschedule-to-delayed queue (bc_invalid_entries=%u, list_empty=%d)",
-		 atomic_read(&bc->bc_invalid_entries),
-		 list_empty(&bc->bc_invalid_entries_list));
-	cache_queue_to_deferred(bc, &bc->bc_deferred_wait_page, wi);
-	return 0;
+	cache_queue_to_deferred(bc, &bc->bc_deferred_wait_page, bio);
 }
 
 /*!
- * mark io request as pending and start processing it thru the main state
- * machine. returns 1 if item has been processed, or 0 it if hasn't. in
+ * Mark io request as pending and start processing it thru the main state
+ * machine. Returns 1 if item has been processed, or 0 it if hasn't. In
  * the latter case the item was queued into one of the deferred queues for
  * later processing.
+ * \todo add to documentation the undefined case in which we break hardware
+ * RAID compatibility. It should not matter, but we need to document it and
+ * also document how to fix it if it turns out it matters.
  */
-int cache_map_workfunc(struct work_item *wi)
+int cache_map_workfunc(struct bittern_cache *bc, struct bio *bio)
 {
-	struct bittern_cache *bc;
-	struct bio *bio;
 	struct cache_block *cache_block;
 	int ret;
 	int cache_get_flags;
 	int do_bypass;
+	int do_writeback;
 
-	ASSERT(wi != NULL);
-	bc = wi->wi_cache;
-	bio = wi->wi_original_bio;
-	ASSERT(bio != NULL);
-	ASSERT_WORK_ITEM(wi, bc);
-	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, NULL, bio, NULL, "enter");
+	BT_TRACE(BT_LEVEL_TRACE2, bc, NULL, NULL, bio, NULL, "enter");
 	ASSERT_BITTERN_CACHE(bc);
 
 	/*
-	 * right now we always allocate a page buffer even for pmem_ram or
-	 * nvdimm
-	 * */
-	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_buffer != NULL);
-	ASSERT(PAGE_ALIGNED(wi->wi_cache_data.di_buffer_vmalloc_buffer));
-	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_page != NULL);
-	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_page ==
-	       vmalloc_to_page(wi->wi_cache_data.di_buffer_vmalloc_buffer));
+	 * here we are either in a process or kernel thread context,
+	 * i.e., we can sleep during resource allocation if needed.
+	 */
+	ASSERT(!in_interrupt());
 
-	if ((bio->bi_rw & REQ_FLUSH) && bio->bi_iter.bi_size == 0) {
-		BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, bio, NULL,
-			 "req-flush-no-data");
-		ASSERT(bio_is_pureflush_request(bio));
-		cache_work_item_free(bc, wi);
-		atomic_inc(&bc->bc_completed_requests);
-		/* wakeup possible waiters */
-		cache_wakeup_deferred(bc);
+	if (bio_is_pureflush_request(bio)) {
+		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+			 "req-pureflush");
 		bio_endio(bio, 0);
 		return 1;
 	}
 
-	if (bio->bi_rw & REQ_DISCARD) {
-		BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, bio, NULL,
+	if (bio_is_discard_request(bio)) {
+		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
 			 "req-discard");
-		ASSERT(bio_is_discard_request(bio));
-		cache_work_item_free(bc, wi);
-		atomic_inc(&bc->bc_completed_requests);
 		/*
 		 * wakeup possible waiters
 		 */
@@ -1862,7 +1975,7 @@ int cache_map_workfunc(struct work_item *wi)
 		return 1;
 	}
 
-	ASSERT(bio_is_data_request(bio));
+	M_ASSERT(bio_is_data_request(bio));
 
 	/*
 	 * This is a fundamental design feature of Bittern.
@@ -1872,49 +1985,52 @@ int cache_map_workfunc(struct work_item *wi)
 	M_ASSERT(bio_is_request_single_cache_block(bio));
 
 	/*
-	 * detect sequential access and see if we want to bypass the cache.
+	 * Detect sequential access and see if we want to bypass the cache.
 	 * for this latter case we rely on the fact that the upper layer will
 	 * never send a duplicate request Y for block N [ request(Y,N) ] while
 	 * the current request X for the same block is pending [ request(X,N) ].
-	 * this is standard block io cache layer behavior, and it should never
+	 * This is standard block io cache layer behavior, and it should never
 	 * be broken.
 	 *
-	 * there are however possible cases in which this could occur if raw io
-	 * is made at the same time. because unix/posix gives no guarantees in
+	 * There are however possible cases in which this could occur if raw io
+	 * is made at the same time. Because unix/posix gives no guarantees in
 	 * such case, we do not give them either (too much of a hassle to
 	 * track non-cache requests in flight).
+	 * Although inconsequential because the result is undefined regardless,
+	 * we are breaking compatibility with Hardware RAID in this case.
+	 * If we wanted to avoid it, we'd have to create transient cache entries
+	 * for the in-flight bypass requests and delete them at the end.
+	 * Not sure if this is worth doing it.
 	 */
 	/*
-	 * we need to carry the read_bypass status, because we still want to
+	 * We need to carry the read_bypass status, because we still want to
 	 * return a cache hit if we find the element in cache.
 	 *
-	 * FIXME sequential read will not be detected correctly if we have to
-	 * defer the request. this is not a big problem because:
-	 * - it's an optimization and not required for correctness
-	 * - deferrals very rarely happens
+	 * Sequential reads will not be detected correctly if we have to
+	 * defer the request. This is not a big problem because it's an
+	 * optimization anyway and not required for correctness.
+	 * Furthermore, deferrals very rarely happens.
 	 */
 	do_bypass = seq_bypass_is_sequential(bc, bio);
 	ASSERT(do_bypass == 0 || do_bypass == 1);
-	wi->wi_bypass = do_bypass;
-	wi->wi_ts_started = current_kernel_time_nsec();
-
-	if ((bio->bi_rw & REQ_FLUSH) != 0) {
-		BT_TRACE(BT_LEVEL_TRACE2, bc, wi, NULL, bio, NULL,
-			 "flush-request");
-	}
-	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, NULL, bio, NULL, "enter");
 
 	/*
-	 * Here we are in the worker function (may or may not be in a thread
-	 * context). By default we do want to get a "valid_no_valid" block if we
+	 * Cache operating mode can change mid-flight, so copy its value.
+	 * It's important for the operating mode to be stable within the
+	 * context of any single request.
+	 */
+	do_writeback = is_cache_mode_writeback(bc);
+	ASSERT(do_writeback == 0 || do_writeback == 1);
+
+	/*
+	 * By default we do want to get a "valid_no_valid" block if we
 	 * miss, exception when sequential read/write bypass is set, in
 	 * which case we want to bypass the cache and do the IO directly.
 	 */
 	cache_get_flags = CACHE_FL_HIT;
-	if (wi->wi_bypass == 0) {
+	if (do_bypass == 0) {
 		cache_get_flags |= CACHE_FL_MISS;
-		if (is_work_item_cache_mode_writeback(wi) &&
-		    bio_data_dir(bio) == WRITE)
+		if (do_writeback != 0 && bio_data_dir(bio) == WRITE)
 			cache_get_flags |= CACHE_FL_DIRTY;
 		else
 			cache_get_flags |= CACHE_FL_CLEAN;
@@ -1936,16 +2052,16 @@ int cache_map_workfunc(struct work_item *wi)
 		 * We can handle a read or write hit.
 		 */
 		ASSERT(cache_block != NULL);
-		wi->wi_cache_block = cache_block;
-		BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, bio, NULL,
-			 "cache-hit-idle");
-		ASSERT(cache_block != NULL);
 		ASSERT_CACHE_BLOCK(cache_block, bc);
 		ASSERT(cache_block->bcb_state == CACHE_VALID_CLEAN ||
 		       cache_block->bcb_state == CACHE_VALID_DIRTY);
 		ASSERT(cache_block->bcb_transition_path ==
 		       CACHE_TRANSITION_PATH_NONE);
-		return cache_map_workfunc_hit_idle(bc, wi, cache_block, bio);
+
+		return cache_map_workfunc_hit(bc,
+					      cache_block,
+					      bio,
+					      do_writeback);
 
 	case CACHE_GET_RET_HIT_BUSY:
 		/*
@@ -1953,36 +2069,41 @@ int cache_map_workfunc(struct work_item *wi)
 		 * We found a cache block but it's busy, need to defer.
 		 */
 		ASSERT(cache_block == NULL);
-		return cache_map_workfunc_hit_busy(bc, wi, bio);
+		cache_map_workfunc_resource_busy(bc, bio);
+		return 0;
 
 	case CACHE_GET_RET_MISS_INVALID_IDLE:
 		/*
 		 * Read/write miss.
 		 * There is no valid cache block, but got an invalid cache
 		 * block on which we can start IO.
-		 * \todo should set wi->wi_cache_block in here.
 		 */
 		ASSERT(cache_block != NULL);
-		BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, bio, NULL,
-			 "cache-miss-invalid-idle");
 		ASSERT_CACHE_BLOCK(cache_block, bc);
-		return cache_map_workfunc_miss_invalid_idle(bc,
-							    wi,
-							    cache_block,
-							    bio);
+		cache_map_workfunc_miss(bc, cache_block, bio, do_writeback);
+		return 1;
 
 	case CACHE_GET_RET_MISS:
 		/*
-		 * Read/write miss.
-		 * There is no valid cache block, and there are no free cache
-		 * blocks. Do bypass if requested, otherwise defer.
+		 * Read/write miss. There is no valid cache block, and there
+		 * are no free cache blocks, so either handle the bypass case
+		 * immediately or defer for execution when resources are
+		 * available.
 		 */
 		ASSERT(cache_block == NULL);
-		return cache_map_workfunc_miss(bc, wi, bio);
+		if (do_bypass) {
+			cache_map_workfunc_handle_bypass(bc, bio);
+			return 1;
+		}
+		cache_map_workfunc_no_resources(bc, bio);
+		return 0;
+
+	case CACHE_GET_RET_INVALID:
+		M_ASSERT("unexpected value of cache_get()" == NULL);
+		return 0;
 
 	default:
-		printk_err("xid=%llu, dev=%p, bittern_dev=%p, dir=0x%lx, flags=0x%lx, bio=%p, bi_sector=%lu, bi_vcnt=%u, bi_size=%u: unknown ret value=%d\n",
-			   wi->wi_io_xid,
+		printk_err("dev=%p, bittern_dev=%p, dir=0x%lx, flags=0x%lx, bio=%p, bi_sector=%lu, bi_vcnt=%u, bi_size=%u: unknown ret value=%d\n",
 			   bc->bc_dev->bdev,
 			   bio->bi_bdev,
 			   bio_data_dir(bio),
@@ -1996,28 +2117,32 @@ int cache_map_workfunc(struct work_item *wi)
 		return 0;
 	}
 
-	M_ASSERT("internal error" == NULL);
-	return 0;
+	/*NOTREACHED*/
 }
 
 /*!
- * this function is the main entry point for bittern cache.
- * all user-initiated requests go thru here.
+ * This function is the main entry point for bittern cache.
+ * All user-initiated requests go thru here.
+ *
+ * In order to avoid excessive resource allocation, the work_item structure
+ * for any given request is only allocated right before the request is about
+ * to go thru the state machine.
+ * In particular, no work_item structure is allocated for deferred requests.
+ * We lose the ability of calculating how much time a request spends in the
+ * deferred queue, but we save a significant amount of memory.
  */
 int bittern_cache_map(struct dm_target *ti, struct bio *bio)
 {
 	struct bittern_cache *bc = ti->private;
-	struct work_item *wi;
 
 	ASSERT_BITTERN_CACHE(bc);
 
 	ASSERT((bio->bi_rw & REQ_WRITE_SAME) == 0);
 
-	if ((bio->bi_rw & REQ_DISCARD) != 0) {
-		ASSERT(bio_is_discard_request(bio));
+	/* do this here (not workfunc) so to increment these counters once */
+	if (bio_is_discard_request(bio)) {
 		atomic_inc(&bc->bc_discard_requests);
-	} else if ((bio->bi_rw & REQ_FLUSH) != 0 && bio->bi_iter.bi_size == 0) {
-		ASSERT(bio_is_pureflush_request(bio));
+	} else if (bio_is_pureflush_request(bio)) {
 		atomic_inc(&bc->bc_flush_requests);
 		atomic_inc(&bc->bc_pure_flush_requests);
 	} else {
@@ -2030,25 +2155,6 @@ int bittern_cache_map(struct dm_target *ti, struct bio *bio)
 			atomic_inc(&bc->bc_read_requests);
 	}
 
-	wi = cache_work_item_allocate(bc, NULL, bio,
-				      (WI_FLAG_MAP_IO |
-				       WI_FLAG_BIO_CLONED |
-				       WI_FLAG_XID_NEW),
-				      NULL, GFP_ATOMIC);
-	ASSERT(wi != NULL);
-	ASSERT_WORK_ITEM(wi, bc);
-	ASSERT(wi->wi_io_xid != 0);
-	ASSERT(wi->wi_original_bio == bio);
-	ASSERT(wi->wi_cache == bc);
-
-	wi->wi_ts_queued = current_kernel_time_nsec();
-	/*
-	 * copy cache mode.
-	 * cache mode can change during an i/o operation, so we need a copy in
-	 * each work item.
-	 */
-	wi->wi_cache_mode_writeback = bc->bc_cache_mode_writeback;
-
 	/*
 	 * defer to queued queue if pending queue is too high,
 	 * or if any of the deferred queues are non-empty (so to avoid request
@@ -2056,7 +2162,7 @@ int bittern_cache_map(struct dm_target *ti, struct bio *bio)
 	 */
 	if (atomic_read(&bc->bc_pending_requests) > bc->bc_max_pending_requests
 	    || atomic_read(&bc->bc_deferred_requests) > 0) {
-		BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, bio, NULL,
+		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
 			 "queue-to-deferred (pending=%u, deferred=%u)",
 			 atomic_read(&bc->bc_pending_requests),
 			 atomic_read(&bc->bc_deferred_requests));
@@ -2065,35 +2171,19 @@ int bittern_cache_map(struct dm_target *ti, struct bio *bio)
 		 * note this is the only case in which we do not bump up the
 		 * pending request count.
 		 */
-		cache_queue_to_deferred(bc, &bc->bc_deferred_wait_page, wi);
-		return DM_MAPIO_SUBMITTED;
-	} else {
-		/*
-		 * now we always allocate in order to test the page allocation
-		 * mechanism. later we'll only allocate if pmem layer requires
-		 * double buffering. avoiding page allocation is only i
-		 * beneficial for NVDIMM type memory, so until then there is no
-		 * need to be fancy.
-		 */
-		pagebuf_allocate_dbi_nowait(bc, PGPOOL_MAP, &wi->wi_cache_data);
-		if (wi->wi_cache_data.di_buffer_vmalloc_buffer == NULL) {
-			/*
-			 * allocation failed, queue to queued queue and let
-			 * the deferred thread do the allocation
-			 */
-			BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, bio, NULL,
-				 "kmem_alloc_page_nowait failed, queueing to queued queue");
-			cache_queue_to_deferred(bc, &bc->bc_deferred_wait_page,
-						wi);
-			return DM_MAPIO_SUBMITTED;
-		}
-		/*
-		 * we have a buffer, handle immmediately
-		 */
-		cache_map_workfunc(wi);
+		cache_queue_to_deferred(bc, &bc->bc_deferred_wait_page, bio);
 
 		return DM_MAPIO_SUBMITTED;
 	}
+
+	/*
+	 * submit the request as normal.
+	 * it's possible that cache_map_workfunc may have to defer it,
+	 * but here we don't care, we are return DM_MAPIO_SUBMITTED anyway.
+	 */
+	cache_map_workfunc(bc, bio);
+
+	return DM_MAPIO_SUBMITTED;
 }
 
 /*!
@@ -2120,18 +2210,23 @@ void cache_wakeup_deferred(struct bittern_cache *bc)
 /*! queue a request for deferred execution */
 void cache_queue_to_deferred(struct bittern_cache *bc,
 			     struct deferred_queue *queue,
-			     struct work_item *wi)
+			     struct bio *bio)
 {
 	unsigned long flags;
 	int val;
 
+	/*
+	 * here we are either in a process or kernel thread context,
+	 * i.e., we can sleep during resource allocation if needed.
+	 */
+	ASSERT(!in_interrupt());
+
 	ASSERT(queue == &bc->bc_deferred_wait_busy ||
 	       queue == &bc->bc_deferred_wait_page);
-	wi->wi_ts_queue = current_kernel_time_nsec();
-	INIT_LIST_HEAD(&wi->wi_deferred_io_list);
 
 	spin_lock_irqsave(&queue->bc_defer_lock, flags);
-	list_add_tail(&wi->wi_deferred_io_list, &queue->bc_defer_list);
+	/* bio_list_add adds to tail */
+	bio_list_add(&queue->bc_defer_list, bio);
 	atomic_inc(&bc->bc_total_deferred_requests);
 	val = atomic_inc_return(&bc->bc_deferred_requests);
 	atomic_set_if_higher(&bc->bc_highest_deferred_requests, val);
@@ -2140,7 +2235,7 @@ void cache_queue_to_deferred(struct bittern_cache *bc,
 		queue->bc_defer_max_count = queue->bc_defer_curr_count;
 	spin_unlock_irqrestore(&queue->bc_defer_lock, flags);
 
-	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, NULL, NULL,
+	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
 		 "%s: deferred_gennum=%d/%d",
 		 (queue == &bc->bc_deferred_wait_busy ? "busy" : "page"),
 		 queue->bc_defer_curr_gennum,
@@ -2150,65 +2245,51 @@ void cache_queue_to_deferred(struct bittern_cache *bc,
 	wake_up_interruptible(&queue->bc_defer_wait);
 }
 
-struct work_item *cache_dequeue_from_deferred(struct bittern_cache *bc,
-					      struct deferred_queue *queue)
+struct bio *cache_dequeue_from_deferred(struct bittern_cache *bc,
+					struct deferred_queue *queue)
 {
 	unsigned long flags;
-	struct work_item *wi = NULL;
+	struct bio *bio = NULL;
 
 	ASSERT(queue == &bc->bc_deferred_wait_busy ||
 	       queue == &bc->bc_deferred_wait_page);
 
 	spin_lock_irqsave(&queue->bc_defer_lock, flags);
-	if (list_non_empty(&queue->bc_defer_list)) {
-		wi = list_first_entry(&queue->bc_defer_list, struct work_item,
-				      wi_deferred_io_list);
-		ASSERT(wi != NULL);
-		list_del_init(&wi->wi_deferred_io_list);
+	if (bio_list_non_empty(&queue->bc_defer_list)) {
+		bio = bio_list_pop(&queue->bc_defer_list);
+		ASSERT(bio != NULL);
+		ASSERT(atomic_read(&bc->bc_deferred_requests) > 0);
 		queue->bc_defer_curr_count--;
 		atomic_dec(&bc->bc_deferred_requests);
-		cache_timer_add(&queue->bc_defer_timer,
-					wi->wi_ts_queue);
-		ASSERT_WORK_ITEM(wi, bc);
+		if (queue->bc_defer_curr_count == 0)
+			ASSERT(bio_list_empty(&queue->bc_defer_list));
+	} else {
+		ASSERT(queue->bc_defer_curr_count == 0);
 	}
-	ASSERT(atomic_read(&bc->bc_deferred_requests) >= 0);
-	ASSERT(queue->bc_defer_curr_count >= 0);
 	spin_unlock_irqrestore(&queue->bc_defer_lock, flags);
 
-	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, NULL, NULL,
+	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
 		 "%s: deferred_gennum=%d/%d",
 		 (queue == &bc->bc_deferred_wait_busy ? "busy" : "page"),
 		 queue->bc_defer_curr_gennum,
 		 atomic_read(&queue->bc_defer_gennum));
-	return wi;
-}
-
-typedef bool(*deferred_queue_has_work_f) (struct bittern_cache *bc);
-
-/*!
- * returns true if there is work to do and if there enough resources
- * to queue work from this queue.
- */
-bool cache_deferred_busy_has_work(struct bittern_cache *bc)
-{
-	int cc = bc->bc_deferred_wait_busy.bc_defer_curr_count;
-	int can_queue = atomic_read(&bc->bc_pending_requests) <
-	    bc->bc_max_pending_requests;
-	return cc != 0 && can_queue != 0;
+	return bio;
 }
 
 /*!
  * returns true if there is work to do and if there enough resources
  * to queue work from this queue.
  */
-bool cache_deferred_page_has_work(struct bittern_cache *bc)
+bool cache_deferred_has_work(struct bittern_cache *bc,
+			     struct deferred_queue *queue)
 {
-	int available_entries = atomic_read(&bc->bc_invalid_entries) +
-				atomic_read(&bc->bc_valid_entries);
-	int cc = bc->bc_deferred_wait_page.bc_defer_curr_count;
+	int cc = queue->bc_defer_curr_count;
+	/* always expect to have some invalid entries */
+	int available_entries = atomic_read(&bc->bc_invalid_entries);
 	int can_queue = atomic_read(&bc->bc_pending_requests) <
 			bc->bc_max_pending_requests;
-	bool can_alloc = pagebuf_can_allocate(bc, PGPOOL_BGWRITER);
+	bool can_alloc = pagebuf_can_allocate(bc, PGPOOL_MAP);
+
 	return cc != 0 && available_entries != 0 && can_queue != 0 && can_alloc;
 }
 
@@ -2217,66 +2298,81 @@ int cache_handle_deferred(struct bittern_cache *bc,
 			  struct deferred_queue *queue)
 {
 	int ret, count;
-	struct work_item *wi = NULL;
+	struct bio *bio = NULL;
+	struct data_buffer_info dbi_on_stack;
 
 	ASSERT(queue == &bc->bc_deferred_wait_busy ||
 	       queue == &bc->bc_deferred_wait_page);
 
-	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, NULL, NULL,
+	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
 		 "enter: %s: deferred_gennum=%d/%d",
 		 (queue == &bc->bc_deferred_wait_busy ? "busy" : "page"),
 		 queue->bc_defer_curr_gennum,
 		 atomic_read(&queue->bc_defer_gennum));
 
-	wi = cache_dequeue_from_deferred(bc, queue);
-	if (wi == NULL) {
-		queue->bc_defer_no_work_count++;
+	/*
+	 * Only try to handle deferred requests if there are enough resources.
+	 */
+	if (pagebuf_can_allocate(bc, PGPOOL_MAP) == false) {
+		queue->bc_defer_nomem_count++;
+		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+			 "nomem: wait_%s: curr_c=%u, max_c=%u",
+			 (queue ==
+			  &bc->bc_deferred_wait_busy ? "busy" : "page"),
+			 queue->bc_defer_curr_count,
+			 queue->bc_defer_max_count);
 		return 0;
 	}
 
-	ASSERT_WORK_ITEM(wi, bc);
-	ASSERT(wi->wi_original_bio != NULL);
-
-	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, NULL, NULL,
-		 "vmalloc_buffer=%p: allocated=%d, max=%d, can_alloc=%d",
-		 wi->wi_cache_data.di_buffer_vmalloc_buffer,
-		 pagebuf_in_use(bc, PGPOOL_MAP),
-		 pagebuf_max_bufs(bc),
-		 pagebuf_can_allocate(bc, PGPOOL_MAP));
-	if (wi->wi_cache_data.di_buffer_vmalloc_buffer == NULL) {
-		/* this should only happen for this queue */
-		ASSERT(queue == &bc->bc_deferred_wait_page);
-		/*
-		 * the thread is woken up given certain conditions,
-		 * more specifically for this case, available buffers.
-		 * by the time we get here, however, we can potentially
-		 * be out of buffers, so we need to check for this and
-		 * requeue the request if we cannot allocate.
-		 */
-		if (pagebuf_can_allocate(bc, PGPOOL_MAP) == false) {
-			cache_queue_to_deferred(bc, queue, wi);
-			queue->bc_defer_requeue_count++;
-			queue->bc_defer_nomem_count++;
-			BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-				 "nomem: wait_%s: wi=%p, curr_c=%u, max_c=%u",
-				 (queue ==
-				  &bc->bc_deferred_wait_busy ? "busy" : "page"),
-				 wi, queue->bc_defer_curr_count,
-				 queue->bc_defer_max_count);
-			return 0;
-		}
-		pagebuf_allocate_dbi_wait(bc, PGPOOL_MAP, &wi->wi_cache_data);
-		ASSERT(wi->wi_cache_data.di_buffer_vmalloc_buffer != NULL);
+	bio = cache_dequeue_from_deferred(bc, queue);
+	if (bio == NULL) {
+		queue->bc_defer_no_work_count++;
+		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+			 "nowork: wait_%s: curr_c=%u, max_c=%u",
+			 (queue ==
+			  &bc->bc_deferred_wait_busy ? "busy" : "page"),
+			 queue->bc_defer_curr_count,
+			 queue->bc_defer_max_count);
+		return 0;
 	}
 
-	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_buffer != NULL);
-	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_page != NULL);
+	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+		 "has request: wait_%s: curr_c=%u, max_c=%u",
+		 (queue == &bc->bc_deferred_wait_busy ? "busy" : "page"),
+		 queue->bc_defer_curr_count,
+		 queue->bc_defer_max_count);
+
 	/*
-	 * now try resubmit the request. it's possible that it will be requeued
-	 * again. in the latter case, make sure we don't wake up ourselves
+	 * This is a temporary hack and deserves explanation.
+	 *
+	 * Being able to allocate buffers does not mean that there actually
+	 * are any, they could just not be allocated yet.
+	 * Because in the workfunc we do a no-wait allocation, make sure there
+	 * is a buffer for this by doing an allocation followed by a free.
+	 *
+	 * This hack will be cleaned up when memory allocation gets cleaned up.
+	 */
+	dbi_on_stack.di_buffer_vmalloc_buffer = NULL;
+	dbi_on_stack.di_buffer_vmalloc_page = NULL;
+	dbi_on_stack.di_buffer_vmalloc_pool = -1;
+	pagebuf_allocate_dbi_wait(bc, PGPOOL_MAP, &dbi_on_stack);
+	M_ASSERT(dbi_on_stack.di_buffer_vmalloc_buffer != NULL);
+
+	pagebuf_free_dbi(bc, &dbi_on_stack);
+	ASSERT(dbi_on_stack.di_buffer_vmalloc_buffer == NULL);
+
+	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+		 "after allocating vmalloc page: wait_%s: curr_c=%u, max_c=%u",
+		 (queue == &bc->bc_deferred_wait_busy ? "busy" : "page"),
+		 queue->bc_defer_curr_count,
+		 queue->bc_defer_max_count);
+
+	/*
+	 * Now try resubmit the request. It's possible that it will be requeued
+	 * again. In the latter case, make sure we don't wake up ourselves
 	 * again.
 	 */
-	ret = cache_map_workfunc(wi);
+	ret = cache_map_workfunc(bc, bio);
 
 	if (ret == 0) {
 		queue->bc_defer_requeue_count++;
@@ -2287,19 +2383,19 @@ int cache_handle_deferred(struct bittern_cache *bc,
 	}
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-		 "wait_%s: wi=%p, curr_c=%u, max_c=%u, ret=%d, count=%d",
+		 "wait_%s: curr_c=%u, max_c=%u, ret=%d, count=%d",
 		 (queue == &bc->bc_deferred_wait_busy ? "busy" : "pp"),
-		 wi,
 		 queue->bc_defer_curr_count,
-		 queue->bc_defer_max_count, ret, count);
+		 queue->bc_defer_max_count,
+		 ret,
+		 count);
 
 	return count;
 }
 
 /*! deferred io handler */
 void cache_deferred_io_handler(struct bittern_cache *bc,
-			       struct deferred_queue *queue,
-			       deferred_queue_has_work_f queue_has_work)
+			       struct deferred_queue *queue)
 {
 	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
@@ -2307,7 +2403,7 @@ void cache_deferred_io_handler(struct bittern_cache *bc,
 	 * for as long as we have queued deferred requests and
 	 * we can requeue, then we need to do this
 	 */
-	while ((*queue_has_work) (bc)) {
+	while (cache_deferred_has_work(bc, queue)) {
 		int count;
 
 		ASSERT(bc != NULL);
@@ -2387,8 +2483,7 @@ int cache_deferred_busy_kthread(void *__bc)
 		queue->bc_defer_curr_gennum =
 		    atomic_read(&bc->bc_completed_requests);
 
-		cache_deferred_io_handler(bc, queue,
-					  cache_deferred_busy_has_work);
+		cache_deferred_io_handler(bc, queue);
 
 		schedule();
 	}
@@ -2447,8 +2542,7 @@ int cache_deferred_page_kthread(void *__bc)
 		queue->bc_defer_curr_gennum =
 			atomic_read(&queue->bc_defer_gennum);
 
-		cache_deferred_io_handler(bc, queue,
-					  cache_deferred_page_has_work);
+		cache_deferred_io_handler(bc, queue);
 
 		schedule();
 	}

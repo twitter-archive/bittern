@@ -39,23 +39,26 @@
 
 #define CACHE_FL_CLEANDIRTY_MASK         (CACHE_FL_CLEAN | CACHE_FL_DIRTY)
 
+/*! possible return values from cache lookup functions */
 enum cache_get_ret {
-	/* caller hit a cache block -- caller owned */
+	/*! caller hit a cache block -- caller owned */
 	CACHE_GET_RET_HIT_IDLE = 1,
-	/* caller hit a cache block -- block busy, caller needs to release */
+	/*! caller hit a cache block -- block busy, caller needs to release */
 	CACHE_GET_RET_HIT_BUSY,
-	/*
+	/*!
 	 * caller missed, and an invalid idle block has been returned
 	 * -- caller owned
+	 * \todo rename to CACHE_GET_RET_MISS
 	 */
 	CACHE_GET_RET_MISS_INVALID_IDLE,
-	/*
+	/*!
 	* caller missed, no block returned.
 	* this happens if caller only wanted hits or
 	* caller allowed for misses, but all blocks are busy.
+	 * \todo rename to CACHE_GET_RET_MISS_NO_RESOURCES
 	*/
 	CACHE_GET_RET_MISS,
-	/* cache block is invalid -- only returned by get_by_id() */
+	/*! cache block is invalid -- only returned by get_by_id() */
 	CACHE_GET_RET_INVALID,
 };
 #define ASSERT_CACHE_GET_RET(__ret) \
@@ -297,36 +300,35 @@ extern void cache_wakeup_deferred(struct bittern_cache *bc);
 /*! queue request to deferred queue for execution in a thread context */
 extern void cache_queue_to_deferred(struct bittern_cache *bc,
 				    struct deferred_queue *queue,
-				    struct work_item *wi);
+				    struct bio *bio);
 /*! dequeue request from deferred queue -- used by @ref cache_handle_deferred */
-extern struct work_item *cache_dequeue_from_deferred(struct bittern_cache *bc,
-						struct deferred_queue *queue);
+extern struct bio *cache_dequeue_from_deferred(struct bittern_cache *bc,
+					       struct deferred_queue *queue);
 
-static inline int bio_is_pureflush_request(struct bio *bio)
+static inline bool bio_is_pureflush_request(struct bio *bio)
 {
 	if ((bio->bi_rw & REQ_FLUSH) != 0 && bio->bi_iter.bi_size == 0)
-		return 1;
-	return 0;
+		return true;
+	return false;
 }
 
-static inline int bio_is_discard_request(struct bio *bio)
+static inline bool bio_is_discard_request(struct bio *bio)
 {
 	if ((bio->bi_rw & REQ_DISCARD) != 0)
-		return 1;
-	return 0;
+		return true;
+	return false;
 }
 
-static inline int bio_is_pureflush_or_discard_request(struct bio *bio)
+static inline bool bio_is_pureflush_or_discard_request(struct bio *bio)
 {
-	if ((bio->bi_rw & REQ_DISCARD) != 0)
-		return 1;
-	if ((bio->bi_rw & REQ_FLUSH) != 0 && bio->bi_iter.bi_size == 0)
-		return 1;
-	return 0;
+	return bio_is_pureflush_request(bio) ||
+	       bio_is_discard_request(bio);
 }
 
-#define bio_is_data_request(__bio) \
-	(bio_is_pureflush_or_discard_request(__bio) == 0)
+static inline bool bio_is_data_request(struct bio *bio)
+{
+	return !bio_is_pureflush_or_discard_request(bio);
+}
 
 extern void cache_make_request_worker(struct work_struct *work);
 extern void cache_state_machine_endio(struct bio *cloned_bio, int err);

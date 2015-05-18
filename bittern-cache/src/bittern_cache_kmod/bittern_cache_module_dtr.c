@@ -91,9 +91,9 @@ void cache_dtr_pre(struct dm_target *ti)
 		    bc->bc_deferred_wait_busy.bc_defer_curr_count,
 		    bc->bc_deferred_wait_page.bc_defer_curr_count);
 	M_ASSERT(bc->bc_deferred_wait_busy.bc_defer_curr_count == 0);
-	M_ASSERT(list_empty(&bc->bc_deferred_wait_busy.bc_defer_list));
+	M_ASSERT(bio_list_empty(&bc->bc_deferred_wait_busy.bc_defer_list));
 	M_ASSERT(bc->bc_deferred_wait_page.bc_defer_curr_count == 0);
-	M_ASSERT(list_empty(&bc->bc_deferred_wait_page.bc_defer_list));
+	M_ASSERT(bio_list_empty(&bc->bc_deferred_wait_page.bc_defer_list));
 	printk_info("deferred_requests=%u\n",
 		    atomic_read(&bc->bc_deferred_requests));
 	M_ASSERT(atomic_read(&bc->bc_deferred_requests) == 0);

@@ -31,6 +31,8 @@
 	list_entry((__element)->__member.next, __type, __member)
 #define list_non_empty(__list) (!list_empty(__list))
 
+#define bio_list_non_empty(__list)	(!bio_list_empty(__list))
+
 #define jiffies_to_secs(__jiffies) \
 	((unsigned long)(jiffies_to_msecs(__jiffies)) / 1000UL)
 

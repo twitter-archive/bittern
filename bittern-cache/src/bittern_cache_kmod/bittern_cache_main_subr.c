@@ -874,11 +874,8 @@ struct work_item *cache_work_item_allocate(struct bittern_cache *bc,
 		ASSERT(bio == NULL);
 		wi->wi_original_bio = NULL;
 	}
-	if ((wi_flags & WI_FLAG_XID_NEW) != 0) {
-		ASSERT(cache_block == NULL);
+	if ((wi_flags & WI_FLAG_XID_NEW) != 0)
 		wi->wi_io_xid = cache_xid_inc(bc);
-		wi->wi_cache_block = NULL;
-	}
 	if ((wi_flags & WI_FLAG_XID_USE_CACHE_BLOCK) != 0) {
 		ASSERT(cache_block != NULL);
 		wi->wi_io_xid = cache_block->bcb_xid;
@@ -892,7 +889,6 @@ struct work_item *cache_work_item_allocate(struct bittern_cache *bc,
 		wi->wi_io_endio = NULL;
 	}
 	wi->wi_cache = bc;
-	INIT_LIST_HEAD(&wi->wi_deferred_io_list);
 	INIT_LIST_HEAD(&wi->wi_pending_io_list);
 	ASSERT_WORK_ITEM(wi, bc);
 
@@ -966,7 +962,6 @@ void cache_work_item_reallocate(struct bittern_cache *bc,
 		wi->wi_io_endio = NULL;
 	}
 	wi->wi_cache = bc;
-	ASSERT(list_empty(&wi->wi_deferred_io_list));
 	ASSERT(list_empty(&wi->wi_pending_io_list));
 	ASSERT_WORK_ITEM(wi, bc);
 
@@ -981,16 +976,15 @@ void cache_work_item_reallocate(struct bittern_cache *bc,
 	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 0);
 }
 
-/*! \todo what if vmalloc buffer hasn't been allocated? */
-void cache_work_item_free(struct bittern_cache *bc,
-				  struct work_item *wi)
+void cache_work_item_free(struct bittern_cache *bc, struct work_item *wi)
 {
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_WORK_ITEM(wi, bc);
 
 	cache_work_item_del_pending_io(bc, wi);
 
-	pagebuf_free_dbi(bc, &wi->wi_cache_data);
+	if (wi->wi_cache_data.di_buffer_vmalloc_buffer != NULL)
+		pagebuf_free_dbi(bc, &wi->wi_cache_data);
 
 	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_buffer == NULL);
 	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_page == NULL);

@@ -111,7 +111,7 @@ void cache_dump_deferred(struct bittern_cache *bc,
 {
 	unsigned long flags;
 	unsigned int curr_offset = 0, dump_count = 0;
-	struct work_item *wi;
+	struct bio *bio;
 
 	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
@@ -119,16 +119,13 @@ void cache_dump_deferred(struct bittern_cache *bc,
 		     start_offset);
 
 	spin_lock_irqsave(&queue->bc_defer_lock, flags);
-	list_for_each_entry(wi, &queue->bc_defer_list, wi_deferred_io_list) {
-		struct bio *bio = wi->wi_original_bio;
-
+	bio_list_for_each(bio, &queue->bc_defer_list) {
 		if (curr_offset++ < start_offset)
 			continue;
 		printk(KERN_DEBUG
-		       "%s[%u]: op=%c, dir=%s, s=%lu %s%s%s\n",
+		       "%s[%u]: dir=%s, s=%lu %s%s%s\n",
 		       queue_name,
 		       curr_offset,
-		       wi->wi_op_type,
 		       bio_data_dir(bio) == READ ? "read" : "write",
 		       bio->bi_iter.bi_sector,
 		       ((bio->bi_rw & REQ_FLUSH) != 0 ? "F" : ""),

@@ -66,7 +66,7 @@
  * Release codenames are National Wildlife Refuges wetlands where the Bittern
  * can be found.
  */
-#define BITTERN_CACHE_VERSION "0.26.1"
+#define BITTERN_CACHE_VERSION "0.26.2"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -234,7 +234,7 @@ struct data_buffer_info {
 	 * buffer pool used to allocate the vmalloc buffer
 	 * (valid if vmalloc buffer has been allocated)
 	 */
-	int di_buffer_vmalloc_pool;
+	struct kmem_cache *di_buffer_slab;
 	/*! buffer pointer used for PMEM accesses by bittern */
 	void *di_buffer;
 	/*! page pointer used for PMEM accesses by bittern */
@@ -339,7 +339,7 @@ struct work_item {
 	ASSERT((__wi)->wi_cache == (__bc));                                                     \
 	ASSERT((__wi)->wi_cache_mode_writeback == 1 || (__wi)->wi_cache_mode_writeback == 0);   \
 })
-#define is_work_item_cache_mode_writeback(__wi) ((__wi)->wi_cache_mode_writeback)
+#define is_work_item_mode_writeback(__wi) ((__wi)->wi_cache_mode_writeback)
 
 extern const char *transition_path_to_str(enum
 							transition_path
@@ -493,7 +493,6 @@ struct deferred_queue {
 	unsigned int bc_defer_no_work_count;
 	unsigned int bc_defer_work_count;
 	unsigned int bc_defer_loop_count;
-	unsigned int bc_defer_nomem_count;
 	/*
 	 * when we queue requests, or we know there are resources,
 	 * we increment the gennum above. this gennum is the current gennum.
@@ -504,79 +503,6 @@ struct deferred_queue {
 	 */
 	unsigned int bc_defer_curr_gennum;
 	struct cache_timer bc_defer_timer;
-};
-
-/*!
- * Page buffer pools.
- *
- * These pages are used during i/o requests if double buffering is required.
- * They are also used by the pmem layer as part of normal i/o and during
- * initialization.
- *
- * Three pools are used for normal operation, one for map_request from
- * application or file system initiated i/o requests (PGPOOL_MAP),
- * one for bgwriter (PGPOOL_BGWRITER),
- * and one for the invalidator thread (PGPOOL_INVALIDATOR).
- * These pools need to be accounted separately because we do not want to limit
- * the the maximum number of buffers for either.
- *
- * Most importantly, the separate pools are needed to avoid resource deadlock.
- * Imagine all buffers are used for normal request, and all requests are
- * pending because all buffers are dirty. In such case the bgwriter would need
- * to flush out dirty blocks, but with a single pool that wouldn't be possible
- * because all buffers are allocated already.
- * Deadlock would happen. QED.
- */
-#define PGPOOL_MAP 0
-/*! bgwriter PGPOOL */
-#define PGPOOL_BGWRITER 1
-/*! invalidator PGPOOL */
-#define PGPOOL_INVALIDATOR 2
-/*! misc PGPOOL (used for instance during initialization) */
-#define PGPOOL_MISC 3
-/*! number of PGPOOL pools */
-#define PGPOOL_POOLS 4
-
-/*!
- * This struct maintains a shared pool of page buffers which can be allocated
- * in a non-blocking context. The non-blocking behavior is dictated by the need
- * of avoiding a 3 microsecond vmalloc() overhead on each allocation -- consider
- * that NVDIMM a read hit has about the same overhead, we would have double
- * overhead in the most critical paths for NVDIMM caches.
- * Note that the caller is responsible for not exceeding a maximum threshold
- * when allocating resources.
- * For more details on page pools and how they are used, see @ref PGPOOL__MAP.
- */
-struct pagebuf {
-	/*!
-	 * We use just one spinlock for freelist syncronization and
-	 * one wait queue for all queues. this is basically by design
-	 * given we have a shared freelist.
-	 */
-	spinlock_t freelist_spinlock;
-	struct list_head freelist;
-	/*! current number of pages */
-	atomic_t pages;
-	/*! max ever reached of pages */
-	atomic_t max_pages;
-	/*! free page count */
-	atomic_t free_pages;
-	atomic_t stat_alloc_wait_count;
-	atomic_t stat_alloc_nowait_count;
-	atomic_t stat_free_count;
-	struct pool {
-		atomic_t in_use_pages;
-		atomic_t stat_alloc_wait_count;
-		atomic_t stat_alloc_nowait_count;
-		atomic_t stat_free_count;
-		atomic_t stat_alloc_nowait_nopage;
-		atomic_t stat_alloc_nowait_toomany;
-		atomic_t stat_alloc_wait_vmalloc;
-		struct cache_timer stat_wait_timer;
-	} pools[PGPOOL_POOLS];
-	atomic_t stat_vmalloc_count;
-	atomic_t stat_vfree_count;
-	struct cache_timer stat_vmalloc_timer;
 };
 
 struct pmem_api {
@@ -895,7 +821,6 @@ struct bittern_cache {
 	unsigned int bc_bgwriter_stalls_nowait_count;
 	unsigned int bc_bgwriter_cache_block_busy_count;
 	unsigned int bc_bgwriter_queue_full_count;
-	unsigned int bc_bgwriter_too_many_buffers_count;
 	unsigned int bc_bgwriter_too_young_count;
 	unsigned int bc_bgwriter_ready_count;
 	unsigned int bc_bgwriter_hint_block_clean_count;
@@ -1030,7 +955,10 @@ struct bittern_cache {
 	int bc_cache_block_verifier_verify_errors_cumulative;
 	int bc_cache_block_verifier_bug_on_verify_errors;
 
-	struct pagebuf bc_pagebuf;
+	/*! slab used at init time and DM map entry point */
+	struct kmem_cache *bc_kmem_map;
+	/*! slab used by bgwriter and invalidator threads */
+	struct kmem_cache *bc_kmem_threads;
 
 	int bc_magic4;
 };
@@ -1153,30 +1081,6 @@ static inline uint64_t cache_xid_get(struct bittern_cache *bc)
 {
 	return atomic64_read(&bc->bc_xid);
 }
-
-extern void *pagebuf_allocate_nowait(struct bittern_cache *bc,
-				     int pool,
-				     struct page **out_page);
-extern void *pagebuf_allocate_wait(struct bittern_cache *bc,
-				   int pool,
-				   struct page **out_page);
-extern void pagebuf_free(struct bittern_cache *bc, int pool, void *page_buf);
-extern int pagebuf_in_use(struct bittern_cache *bc, int pool);
-/*!
- * pagebuf_max_bufs() changes dynamically and is
- * tied to @ref bittern_cache::bc_max_pending_requests
- */
-static inline int pagebuf_max_bufs(struct bittern_cache *bc)
-{
-	return bc->bc_max_pending_requests;
-}
-static inline bool pagebuf_can_allocate(struct bittern_cache *bc, int pool)
-{
-	return pagebuf_in_use(bc, pool) < pagebuf_max_bufs(bc);
-}
-extern void pagebuf_initialize(struct bittern_cache *bc);
-extern void pagebuf_deinitialize(struct bittern_cache *bc);
-extern void pagebuf_callout(struct bittern_cache *bc);
 
 /*
  * red-black tree operations

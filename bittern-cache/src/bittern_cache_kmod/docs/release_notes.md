@@ -2,7 +2,7 @@
 
 [TOC]
 
-## Current release
+## Current stable release
 
 The current stable release is version 0.25.10, nicknamed "El Bosque del Apache".
 (Bitten releases are nicknamed after U.S. National Wildlife Refuge
@@ -16,6 +16,10 @@ release.
 It is however suitable for use in stress testing, performance evaluation
 and non-production workloads such as write-only mirroring of live traffic.
 The pending list of issues below refers to the most recent development version.
+
+## Current dev branch
+
+The current dev branch is version 0.26.x, nicknamed "Klamath".
 
 ## Issues to be fixed by Production
 

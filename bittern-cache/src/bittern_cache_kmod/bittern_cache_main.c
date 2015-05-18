@@ -232,7 +232,7 @@ void cache_bio_endio(struct bio *cloned_bio, int err)
 	cache_timer_add(&bc->bc_timer_cached_device_reads,
 				wi->wi_ts_physio);
 
-	cache_work_item_free(bc, wi);
+	work_item_free(bc, wi);
 
 	/* all done */
 	bio_endio(original_bio, 0);
@@ -581,7 +581,7 @@ void cache_state_machine(struct bittern_cache *bc,
 	ASSERT(PAGE_ALIGNED(wi->wi_cache_data.di_buffer_vmalloc_buffer));
 	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_page != NULL);
 	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_page ==
-	       vmalloc_to_page(wi->wi_cache_data.di_buffer_vmalloc_buffer));
+	       virtual_to_page(wi->wi_cache_data.di_buffer_vmalloc_buffer));
 
 	BT_TRACE(BT_LEVEL_TRACE2,
 		 bc, wi, cache_block, bio, wi->wi_cloned_bio,
@@ -1068,7 +1068,7 @@ void cache_handle_cache_hit(struct bittern_cache *bc, struct work_item *wi,
 	cache_block->bcb_xid = wi->wi_io_xid;
 	if (bio_data_dir(bio) == WRITE) {
 		atomic_inc(&bc->bc_total_write_hits);
-		if (is_work_item_cache_mode_writeback(wi)) {
+		if (is_work_item_mode_writeback(wi)) {
 			/*
 			 * this a clean write hit
 			 * write cloning on dirty write hit is handled in a separate function
@@ -1408,7 +1408,7 @@ void cache_handle_cache_miss(struct bittern_cache *bc,
 	if (bio_data_dir(bio) == WRITE) {
 		atomic_inc(&bc->bc_total_write_misses);
 		atomic_inc(&bc->bc_dirty_write_misses);
-		if (is_work_item_cache_mode_writeback(wi)) {
+		if (is_work_item_mode_writeback(wi)) {
 			ASSERT(cache_block->bcb_state ==
 			       CACHE_VALID_DIRTY_NO_DATA);
 			atomic_inc(&bc->bc_dirty_write_misses);
@@ -1585,14 +1585,13 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 	 */
 	ASSERT(!in_interrupt());
 
-	wi = cache_work_item_allocate(bc,
-				      NULL,
-				      bio,
-				      (WI_FLAG_MAP_IO |
-				       WI_FLAG_BIO_CLONED |
-				       WI_FLAG_XID_NEW),
-				      NULL,
-				      GFP_ATOMIC);
+	wi = work_item_allocate(bc,
+				NULL,
+				bio,
+				(WI_FLAG_MAP_IO |
+				 WI_FLAG_BIO_CLONED |
+				 WI_FLAG_XID_NEW),
+				NULL);
 	M_ASSERT_FIXME(wi != NULL);
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_io_xid != 0);
@@ -1607,19 +1606,18 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 
 	/* inc pending counters, add to pending io list, and start bio  */
 	cache_update_pending(bc, bio, true);
-	cache_work_item_add_pending_io(bc,
-				       wi,
-				       'b',
-				       bio->bi_iter.
-				       bi_sector,
-				       bio->bi_rw);
+	work_item_add_pending_io(bc,
+				 wi,
+				 'B',
+				 bio->bi_iter.bi_sector,
+				 bio->bi_rw);
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, bio, NULL, "handle_bypass");
 
 	/*
 	 * clone bio
 	 */
-	cloned_bio = bio_clone(bio, GFP_NOIO | GFP_ATOMIC);
+	cloned_bio = bio_clone(bio, GFP_NOIO);
 	M_ASSERT_FIXME(cloned_bio != NULL);
 	cloned_bio->bi_bdev = bc->bc_dev->bdev;
 	cloned_bio->bi_end_io = cache_bio_endio;
@@ -1715,20 +1713,13 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 			 "read-or-write-hit");
 	}
 
-	/*!
-	 * \todo this is messed up and will be fixed soon
-	 * when we clean up memory allocation in general - need to eventually
-	 * move to using mempool_t memory pools or a variant of it - it is
-	 * in any event no worse than the situation before this changeset.
-	 */
-	wi = cache_work_item_allocate(bc,
-				      cache_block,
-				      bio,
-				      (WI_FLAG_MAP_IO |
-				       WI_FLAG_BIO_CLONED |
-				       WI_FLAG_XID_NEW),
-				      NULL,
-				      GFP_ATOMIC);
+	wi = work_item_allocate(bc,
+				cache_block,
+				bio,
+				(WI_FLAG_MAP_IO |
+				 WI_FLAG_BIO_CLONED |
+				 WI_FLAG_XID_NEW),
+				NULL);
 	M_ASSERT_FIXME(wi != NULL);
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_io_xid != 0);
@@ -1743,13 +1734,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 	wi->wi_ts_started = tstamp;
 	wi->wi_cache_mode_writeback = do_writeback;
 
-	/*!
-	 * \todo this is messed up and will be fixed soon
-	 * when we clean up memory allocation in general - need to eventually
-	 * move to using mempool_t memory pools or a variant of it - it is
-	 * in any event no worse than the situation before this changeset.
-	 */
-	pagebuf_allocate_dbi_wait(bc, PGPOOL_MAP, &wi->wi_cache_data);
+	pagebuf_allocate_dbi(bc, bc->bc_kmem_map, &wi->wi_cache_data);
 	M_ASSERT(wi->wi_cache_data.di_buffer_vmalloc_buffer != NULL);
 
 	if (bio_data_dir(bio) == READ)
@@ -1772,11 +1757,11 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 		/*
 		 * add to pending list and start state machine
 		 */
-		cache_work_item_add_pending_io(bc,
-					       wi,
-					       'm',
-					       cache_block->bcb_sector,
-					       bio->bi_rw);
+		work_item_add_pending_io(bc,
+					 wi,
+					 'H',
+					 cache_block->bcb_sector,
+					 bio->bi_rw);
 		cache_handle_cache_hit_write_clone(bc,
 						   wi,
 						   cache_block,
@@ -1786,11 +1771,11 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 		/*
 		 * add to pending list and start state machine
 		 */
-		cache_work_item_add_pending_io(bc,
-					       wi,
-					       'M',
-					       cache_block->bcb_sector,
-					       bio->bi_rw);
+		work_item_add_pending_io(bc,
+					 wi,
+					 'I',
+					 cache_block->bcb_sector,
+					 bio->bi_rw);
 		cache_handle_cache_hit(bc, wi, cache_block, bio);
 	}
 
@@ -1840,20 +1825,13 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 	 */
 	ASSERT(!in_interrupt());
 
-	/*!
-	 * \todo this is messed up and will be fixed soon
-	 * when we clean up memory allocation in general - need to eventually
-	 * move to using mempool_t memory pools or a variant of it - it is
-	 * in any event no worse than the situation before this changeset.
-	 */
-	wi = cache_work_item_allocate(bc,
-				      cache_block,
-				      bio,
-				      (WI_FLAG_MAP_IO |
-				       WI_FLAG_BIO_CLONED |
-				       WI_FLAG_XID_NEW),
-				      NULL,
-				      GFP_ATOMIC);
+	wi = work_item_allocate(bc,
+				cache_block,
+				bio,
+				(WI_FLAG_MAP_IO |
+				 WI_FLAG_BIO_CLONED |
+				 WI_FLAG_XID_NEW),
+				NULL);
 	M_ASSERT_FIXME(wi != NULL);
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_io_xid != 0);
@@ -1868,13 +1846,7 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 	wi->wi_ts_started = tstamp;
 	wi->wi_cache_mode_writeback = do_writeback;
 
-	/*!
-	 * \todo this is messed up and will be fixed soon
-	 * when we clean up memory allocation in general - need to eventually
-	 * move to using mempool_t memory pools or a variant of it - it is
-	 * in any event no worse than the situation before this changeset.
-	 */
-	pagebuf_allocate_dbi_wait(bc, PGPOOL_MAP, &wi->wi_cache_data);
+	pagebuf_allocate_dbi(bc, bc->bc_kmem_map, &wi->wi_cache_data);
 	M_ASSERT(wi->wi_cache_data.di_buffer_vmalloc_buffer != NULL);
 
 	if (bio_data_dir(bio) == READ)
@@ -1887,7 +1859,7 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 	 * we'd better be not doing a bypass
 	 * */
 	ASSERT(cache_block->bcb_transition_path == CACHE_TRANSITION_PATH_NONE);
-	if (is_work_item_cache_mode_writeback(wi) && bio_data_dir(bio) == WRITE)
+	if (is_work_item_mode_writeback(wi) && bio_data_dir(bio) == WRITE)
 		ASSERT(cache_block->bcb_state == CACHE_VALID_DIRTY_NO_DATA);
 	else
 		ASSERT(cache_block->bcb_state == CACHE_VALID_CLEAN_NO_DATA);
@@ -1898,11 +1870,11 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 	/*
 	 * add to pending list and start state machine
 	 */
-	cache_work_item_add_pending_io(bc,
-				       wi,
-				       'm',
-				       cache_block->bcb_sector,
-				       bio->bi_rw);
+	work_item_add_pending_io(bc,
+				 wi,
+				 'N',
+				 cache_block->bcb_sector,
+				 bio->bi_rw);
 
 	/* 0 means no replacement */
 	cache_handle_cache_miss(bc, wi, bio, cache_block, 0);
@@ -2288,9 +2260,7 @@ bool cache_deferred_has_work(struct bittern_cache *bc,
 	int available_entries = atomic_read(&bc->bc_invalid_entries);
 	int can_queue = atomic_read(&bc->bc_pending_requests) <
 			bc->bc_max_pending_requests;
-	bool can_alloc = pagebuf_can_allocate(bc, PGPOOL_MAP);
-
-	return cc != 0 && available_entries != 0 && can_queue != 0 && can_alloc;
+	return cc != 0 && available_entries != 0 && can_queue != 0;
 }
 
 /*! handle one or more deferred requests on a given queue */
@@ -2299,7 +2269,6 @@ int cache_handle_deferred(struct bittern_cache *bc,
 {
 	int ret, count;
 	struct bio *bio = NULL;
-	struct data_buffer_info dbi_on_stack;
 
 	ASSERT(queue == &bc->bc_deferred_wait_busy ||
 	       queue == &bc->bc_deferred_wait_page);
@@ -2309,20 +2278,6 @@ int cache_handle_deferred(struct bittern_cache *bc,
 		 (queue == &bc->bc_deferred_wait_busy ? "busy" : "page"),
 		 queue->bc_defer_curr_gennum,
 		 atomic_read(&queue->bc_defer_gennum));
-
-	/*
-	 * Only try to handle deferred requests if there are enough resources.
-	 */
-	if (pagebuf_can_allocate(bc, PGPOOL_MAP) == false) {
-		queue->bc_defer_nomem_count++;
-		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
-			 "nomem: wait_%s: curr_c=%u, max_c=%u",
-			 (queue ==
-			  &bc->bc_deferred_wait_busy ? "busy" : "page"),
-			 queue->bc_defer_curr_count,
-			 queue->bc_defer_max_count);
-		return 0;
-	}
 
 	bio = cache_dequeue_from_deferred(bc, queue);
 	if (bio == NULL) {
@@ -2341,25 +2296,6 @@ int cache_handle_deferred(struct bittern_cache *bc,
 		 (queue == &bc->bc_deferred_wait_busy ? "busy" : "page"),
 		 queue->bc_defer_curr_count,
 		 queue->bc_defer_max_count);
-
-	/*
-	 * This is a temporary hack and deserves explanation.
-	 *
-	 * Being able to allocate buffers does not mean that there actually
-	 * are any, they could just not be allocated yet.
-	 * Because in the workfunc we do a no-wait allocation, make sure there
-	 * is a buffer for this by doing an allocation followed by a free.
-	 *
-	 * This hack will be cleaned up when memory allocation gets cleaned up.
-	 */
-	dbi_on_stack.di_buffer_vmalloc_buffer = NULL;
-	dbi_on_stack.di_buffer_vmalloc_page = NULL;
-	dbi_on_stack.di_buffer_vmalloc_pool = -1;
-	pagebuf_allocate_dbi_wait(bc, PGPOOL_MAP, &dbi_on_stack);
-	M_ASSERT(dbi_on_stack.di_buffer_vmalloc_buffer != NULL);
-
-	pagebuf_free_dbi(bc, &dbi_on_stack);
-	ASSERT(dbi_on_stack.di_buffer_vmalloc_buffer == NULL);
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
 		 "after allocating vmalloc page: wait_%s: curr_c=%u, max_c=%u",

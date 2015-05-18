@@ -356,11 +356,6 @@ void cache_dtr(struct dm_target *ti)
 	M_ASSERT(list_empty(&bc->bc_pending_requests_list));
 
 	/*
-	 * deinit page_buffer cache
-	 */
-	pagebuf_deinitialize(bc);
-
-	/*
 	 * deallocate and deinitialize pmem resources.
 	 */
 	printk_info("deallocating %llu cache entries (%llu bytes)\n",
@@ -370,6 +365,12 @@ void cache_dtr(struct dm_target *ti)
 	printk_info("mem_info_deinitialize()\n");
 	pmem_info_deinitialize(bc);
 	printk_info("done mem_info_deinitialize()\n");
+
+	printk_info("destroying slabs\n");
+	M_ASSERT(bc->bc_kmem_map != NULL);
+	kmem_cache_destroy(bc->bc_kmem_map);
+	M_ASSERT(bc->bc_kmem_threads != NULL);
+	kmem_cache_destroy(bc->bc_kmem_threads);
 
 	printk_info("dm_put_device\n");
 	dm_put_device(ti, bc->bc_dev);

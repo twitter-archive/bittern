@@ -195,4 +195,20 @@ static inline void atomic64_set_if_higher(atomic64_t *v, long long new)
 		__printk_err_ratelimited(__func__, __LINE__,		\
 					 fmt, ##__VA_ARGS__)
 
+/*!
+ * Converts a virtual address to a page.
+ * Works with both vmalloc buffers and "regular" addresses.
+ */
+static inline struct page *virtual_to_page(void *buf)
+{
+	struct page *pg;
+
+	if (is_vmalloc_addr(buf))
+		pg = vmalloc_to_page(buf);
+	else
+		pg = virt_to_page(buf);
+	M_ASSERT(pg != NULL);
+	return pg;
+}
+
 #endif /* BITTERN_CACHE_LINUX_H */

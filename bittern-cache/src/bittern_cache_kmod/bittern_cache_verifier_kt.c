@@ -50,21 +50,22 @@ int cache_block_verify(struct bittern_cache *bc, int block_id,
 	M_ASSERT(block_id == cache_block->bcb_block_id);
 
 	async_context = kmem_alloc(sizeof(struct async_context),
-			GFP_KERNEL | GFP_NOIO);
+			GFP_NOIO);
 	M_ASSERT_FIXME(async_context != NULL);
 
 	dbi_data = kmem_alloc(sizeof(struct data_buffer_info),
-			      GFP_KERNEL | GFP_NOIO);
+			      GFP_NOIO);
 	M_ASSERT_FIXME(dbi_data != NULL);
 
 	dbi_data->di_buffer = NULL;
 	dbi_data->di_page = NULL;
 	dbi_data->di_flags = 0x0;
-	dbi_data->di_buffer_vmalloc_pool = -1;
+	dbi_data->di_buffer_slab = NULL;
 	atomic_set(&dbi_data->di_busy, 0);
 	dbi_data->di_buffer_vmalloc_buffer = NULL;
 	dbi_data->di_buffer_vmalloc_page = NULL;
-	pagebuf_allocate_dbi_wait(bc, PGPOOL_MISC, dbi_data);
+
+	pagebuf_allocate_dbi(bc, bc->bc_kmem_threads, dbi_data);
 
 	t_start = current_kernel_time_nsec();
 	sema_init(&sema, 0);
@@ -105,7 +106,7 @@ int cache_block_verify(struct bittern_cache *bc, int block_id,
 		int ret;
 
 		pmbm = kmem_alloc(sizeof(struct pmem_block_metadata),
-			       GFP_KERNEL | GFP_NOIO);
+			       GFP_NOIO);
 		M_ASSERT_FIXME(pmbm != NULL);
 
 		ret = pmem_metadata_sync_read(bc, block_id, cache_block, pmbm);

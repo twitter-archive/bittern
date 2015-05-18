@@ -294,7 +294,7 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 					wi->wi_ts_started);
 	}
 
-	cache_work_item_free(bc, wi);
+	work_item_free(bc, wi);
 
 	atomic_dec(&bc->bc_pending_requests);
 	if (bio_data_dir(bio) == WRITE) {
@@ -632,7 +632,7 @@ void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 					wi->wi_ts_started);
 	}
 
-	cache_work_item_free(bc, wi);
+	work_item_free(bc, wi);
 
 	atomic_dec(&bc->bc_pending_requests);
 	if (bio_data_dir(bio) == WRITE) {
@@ -912,7 +912,7 @@ void sm_dirty_write_hit_clone_copy_to_cache_end(struct bittern_cache *bc,
 	}
 	atomic_inc(&bc->bc_completed_requests);
 
-	cache_work_item_del_pending_io(bc, wi);
+	work_item_del_pending_io(bc, wi);
 
 	bio_endio(bio, 0);
 
@@ -933,15 +933,15 @@ void sm_dirty_write_hit_clone_copy_to_cache_end(struct bittern_cache *bc,
 	ASSERT(original_cache_block->bcb_state ==
 	       CACHE_VALID_DIRTY_INVALIDATE_START);
 
-	cache_work_item_reallocate(bc,
-					   original_cache_block,
-					   wi,
-					   NULL,
-					   (WI_FLAG_MAP_IO |
-					    WI_FLAG_BIO_NOT_CLONED |
-					    WI_FLAG_XID_USE_CACHE_BLOCK |
-					    WI_FLAG_HAS_ENDIO),
-					   cache_invalidate_block_io_end);
+	work_item_reallocate(bc,
+			     original_cache_block,
+			     wi,
+			     NULL,
+			     (WI_FLAG_MAP_IO |
+			      WI_FLAG_BIO_NOT_CLONED |
+			      WI_FLAG_XID_USE_CACHE_BLOCK |
+			      WI_FLAG_HAS_ENDIO),
+			     cache_invalidate_block_io_end);
 
 	wi->wi_ts_started = current_kernel_time_nsec();
 
@@ -953,11 +953,11 @@ void sm_dirty_write_hit_clone_copy_to_cache_end(struct bittern_cache *bc,
 	 * kick off state machine to write this out.
 	 * cache_bgwriter_io_endio() will be called on completion.
 	 */
-	cache_work_item_add_pending_io(bc,
-					       wi,
-					       '1',
-					       original_cache_block->bcb_sector,
-					       WRITE);
+	work_item_add_pending_io(bc,
+				 wi,
+				 'L',
+				 original_cache_block->bcb_sector,
+				 WRITE);
 	ASSERT(wi->wi_cache_block == original_cache_block);
 	cache_state_machine(bc, wi, NULL);
 }

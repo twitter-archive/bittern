@@ -58,7 +58,7 @@ void cache_bgwriter_io_endio(struct bittern_cache *bc,
 
 	cache_timer_add(&bc->bc_timer_writebacks, wi->wi_ts_started);
 
-	cache_work_item_free(bc, wi);
+	work_item_free(bc, wi);
 
 	atomic_dec(&bc->bc_pending_writeback_requests);
 	atomic_dec(&bc->bc_pending_requests);
@@ -228,15 +228,14 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 	/*
 	 * allocate work_item and initialize it
 	 */
-	wi = cache_work_item_allocate(bc,
-				      cache_block,
-				      NULL,
-				      (WI_FLAG_WRITEBACK_IO |
-				       WI_FLAG_BIO_NOT_CLONED |
-				       WI_FLAG_XID_USE_CACHE_BLOCK |
-				       WI_FLAG_HAS_ENDIO),
-				       cache_bgwriter_io_endio,
-				       GFP_NOIO);
+	wi = work_item_allocate(bc,
+				cache_block,
+				NULL,
+				(WI_FLAG_WRITEBACK_IO |
+				 WI_FLAG_BIO_NOT_CLONED |
+				 WI_FLAG_XID_USE_CACHE_BLOCK |
+				 WI_FLAG_HAS_ENDIO),
+				cache_bgwriter_io_endio);
 	M_ASSERT_FIXME(wi != NULL);
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_io_xid != 0);
@@ -245,12 +244,7 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 	ASSERT(wi->wi_cloned_bio == NULL);
 	ASSERT(wi->wi_cache == bc);
 
-	/*
-	 * we need to use high pri allocation, but we need to be careful not to
-	 * exceed the normal quota, so at the beginning of the loop we bail out
-	 * if we exceed max buffer pages
-	 */
-	pagebuf_allocate_dbi_wait(bc, PGPOOL_BGWRITER, &wi->wi_cache_data);
+	pagebuf_allocate_dbi(bc, bc->bc_kmem_threads, &wi->wi_cache_data);
 
 	wi->wi_ts_started = current_kernel_time_nsec();
 
@@ -282,17 +276,17 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 	 * cache_bgwriter_io_endio() will be called on completion.
 	 */
 	if (update_state == CACHE_INVALID)
-		cache_work_item_add_pending_io(bc,
-						       wi,
-						       'W',
-						       cache_block->bcb_sector,
-						       WRITE);
+		work_item_add_pending_io(bc,
+					 wi,
+					 'W',
+					 cache_block->bcb_sector,
+					 WRITE);
 	else
-		cache_work_item_add_pending_io(bc,
-						       wi,
-						       'w',
-						       cache_block->bcb_sector,
-						       WRITE);
+		work_item_add_pending_io(bc,
+					 wi,
+					 'F',
+					 cache_block->bcb_sector,
+					 WRITE);
 	ASSERT(wi->wi_cache_block == cache_block);
 	cache_state_machine(bc, wi, NULL);
 
@@ -312,22 +306,13 @@ int cache_bgwriter_wait_for_resources(struct bittern_cache *bc,
 
 	ASSERT(do_wait == false || do_wait == true);
 
-	if (pending == 0) {
-		ASSERT(pagebuf_in_use(bc, PGPOOL_BGWRITER) == 0);
+	if (pending == 0)
 		return 0;
-	}
 	if (pending >= bc->bc_bgwriter_curr_queue_depth) {
 		/*
 		 * writeback queue busy
 		 */
 		bc->bc_bgwriter_queue_full_count++;
-		needs_to_wait = true;
-	}
-	if (pagebuf_in_use(bc, PGPOOL_BGWRITER) >= pagebuf_max_bufs(bc)) {
-		/*
-		 * too many buffers
-		 */
-		bc->bc_bgwriter_too_many_buffers_count++;
 		needs_to_wait = true;
 	}
 	if (needs_to_wait) {

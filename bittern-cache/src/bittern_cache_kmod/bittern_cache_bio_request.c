@@ -24,7 +24,7 @@ int cache_bio_request_initialize(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT(bio_req != NULL);
 	*bio_req = kmem_zalloc(sizeof(struct cache_bio_request),
-			       GFP_KERNEL | GFP_NOIO);
+			       GFP_NOIO);
 	M_ASSERT_FIXME((*bio_req) != NULL);
 	(*bio_req)->bbr_magic = BBR_MAGIC;
 	(*bio_req)->bbr_bc = bc;
@@ -100,7 +100,7 @@ int cache_bio_request_start_async_page(struct bittern_cache *bc,
 	 * in this case the bio argument is the original bio.
 	 * clone bio, start i/o to write data to device.
 	 */
-	bio_req->bbr_bio = bio_alloc(GFP_KERNEL, 1);
+	bio_req->bbr_bio = bio_alloc(GFP_NOIO, 1);
 	M_ASSERT_FIXME(bio_req->bbr_bio != NULL);
 	if (dir == READ)
 		bio_set_data_dir_read(bio_req->bbr_bio);
@@ -112,7 +112,7 @@ int cache_bio_request_start_async_page(struct bittern_cache *bc,
 	bio_req->bbr_bio->bi_end_io = cache_bio_request_endbio;
 	bio_req->bbr_bio->bi_private = (void *)bio_req;
 	bio_req->bbr_bio->bi_io_vec[0].bv_page =
-	    vmalloc_to_page(bio_req->bbr_vmalloc_buffer_page);
+	    virtual_to_page(bio_req->bbr_vmalloc_buffer_page);
 	ASSERT(bio_req->bbr_bio->bi_io_vec[0].bv_page != NULL);
 	bio_req->bbr_bio->bi_io_vec[0].bv_len = PAGE_SIZE;
 	bio_req->bbr_bio->bi_io_vec[0].bv_offset = 0;

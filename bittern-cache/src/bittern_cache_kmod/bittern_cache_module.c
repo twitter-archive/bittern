@@ -42,10 +42,6 @@
  *
  * example:
  *
- * <pagebuf entry>
- * bitcache0: pagebuf: pages=66 max_pages=66
- * bitcache0: pagebuf: in_use_pages_0=0 stat_alloc_wait_c=79028
- *
  * <stats entry>
  * bitcache0: stats: io_xid=339264 read_requests=97 write_requests=278159
  * bitcache0: stats: read+write_requests=278256 deferred_requests=0
@@ -841,43 +837,6 @@ ssize_t cache_op_show_stats_extra(struct bittern_cache *bc,
 	return sz;
 }
 
-ssize_t cache_op_show_pagebuf(struct bittern_cache *bc, char *result)
-{
-	size_t sz = 0, maxlen = PAGE_SIZE;
-	int p;
-	struct pagebuf *pg = &bc->bc_pagebuf;
-
-	DMEMIT("%s: pagebuf: pages=%u max_pages=%u free_pages=%u stat_alloc_wait_count=%u stat_alloc_nowait_count=%u stat_free_count=%u\n",
-	       bc->bc_name,
-	       atomic_read(&pg->pages),
-	       atomic_read(&pg->max_pages),
-	       atomic_read(&pg->free_pages),
-	       atomic_read(&pg->stat_alloc_wait_count),
-	       atomic_read(&pg->stat_alloc_nowait_count),
-	       atomic_read(&pg->stat_free_count));
-	for (p = 0; p < PGPOOL_POOLS; p++) {
-		struct pool *pool = &pg->pools[p];
-
-		DMEMIT("%s: pagebuf: in_use_pages_%u=%u stat_alloc_wait_count_%u=%u stat_alloc_nowait_count_%u=%u stat_free_count_%u=%u stat_alloc_nowait_nopage_%u=%u stat_alloc_nowait_toomany_%u=%u stat_alloc_wait_vmalloc_%u=%u max_buffer_pages_%u=%u " T_FMT_STRING_SUFFIX("stat_wait_timer") "\n",
-		       bc->bc_name,
-		       p, atomic_read(&pool->in_use_pages),
-		       p, atomic_read(&pool->stat_alloc_wait_count),
-		       p, atomic_read(&pool->stat_alloc_nowait_count),
-		       p, atomic_read(&pool->stat_free_count),
-		       p, atomic_read(&pool->stat_alloc_nowait_nopage),
-		       p, atomic_read(&pool->stat_alloc_nowait_toomany),
-		       p, atomic_read(&pool->stat_alloc_wait_vmalloc),
-		       p, pagebuf_max_bufs(bc),
-		       T_FMT_ARGS_SUFFIX(pool, p, stat_wait_timer));
-	}
-	DMEMIT("%s: pagebuf: stat_vmalloc_count=%u stat_vfree_count=%u " T_FMT_STRING("pagebuf_stat_vmalloc_timer") "\n",
-	       bc->bc_name,
-	       atomic_read(&pg->stat_vmalloc_count),
-	       atomic_read(&pg->stat_vfree_count),
-	       T_FMT_ARGS(pg, stat_vmalloc_timer));
-	return sz;
-}
-
 ssize_t cache_op_show_stats(struct bittern_cache *bc, char *result)
 {
 	size_t sz = 0, maxlen = PAGE_SIZE;
@@ -1018,6 +977,7 @@ ssize_t cache_op_show_pmem_stats(struct bittern_cache *bc,
 ssize_t cache_op_show_info(struct bittern_cache *bc, char *result)
 {
 	size_t sz = 0, maxlen = PAGE_SIZE;
+	uint64_t s;
 
 	DMEMIT("%s: info: version=%s codename=%s build_timestamp=%s max_io_len_pages=%u memcpy_nt_type=%s\n",
 	       bc->bc_name,
@@ -1050,6 +1010,15 @@ ssize_t cache_op_show_info(struct bittern_cache *bc, char *result)
 	       bc->bc_name,
 	       (uint64_t)bc,
 	       (uint64_t)(bc->bc_cache_blocks));
+	s = bc->bc_papi.papi_hdr.lm_cache_blocks * sizeof(struct cache_block);
+	DMEMIT("%s: info: cache_blocks_metadata_size_bytes=%llu, cache_blocks_metadata_size_mbytes=%llu\n",
+	       bc->bc_name,
+	       s,
+	       s / (1024ULL * 1024ULL));
+	DMEMIT("%s: info: kmem_map=0x%llx kmem_threads=0x%llx\n",
+	       bc->bc_name,
+	       (uint64_t)(bc->bc_kmem_map),
+	       (uint64_t)(bc->bc_kmem_threads));
 	return sz;
 }
 
@@ -1291,42 +1260,30 @@ ssize_t cache_op_show_kthreads(struct bittern_cache *bc, char *result)
 	       KT_FMT_ARGS(bc, "invalidator_task", bc_invalidator_task),
 	       bc->bc_invalidator_no_work_count, bc->bc_invalidator_work_count);
 	q = &bc->bc_deferred_wait_busy;
-	DMEMIT("%s: kthreads: " KT_FMT_STRING ": "
-	       "deferred_wait_busy_curr_count=%u "
-	       "deferred_wait_busy_requeue_count=%u "
-	       "deferred_wait_busy_max_count=%u "
-	       "deferred_wait_busy_no_work_count=%u "
-	       "deferred_wait_busy_work_count=%u "
-	       "deferred_wait_busy_loop_count=%u "
-	       "deferred_wait_busy_nomem_count=%u "
-	       "deferred_wait_busy_gennum=%u/%u "
-	       "\n",
+	DMEMIT("%s: kthreads: " KT_FMT_STRING ": deferred_wait_busy_curr_count=%u deferred_wait_busy_requeue_count=%u deferred_wait_busy_max_count=%u deferred_wait_busy_no_work_count=%u deferred_wait_busy_work_count=%u deferred_wait_busy_loop_count=%u deferred_wait_busy_gennum=%u/%u\n",
 	       bc->bc_name,
 	       KT_FMT_ARGS(bc, "deferred_busy_task",
 			   bc_deferred_wait_busy.bc_defer_task),
-	       q->bc_defer_curr_count, q->bc_defer_requeue_count,
-	       q->bc_defer_max_count, q->bc_defer_no_work_count,
-	       q->bc_defer_work_count, q->bc_defer_loop_count,
-	       q->bc_defer_nomem_count, q->bc_defer_curr_gennum,
+	       q->bc_defer_curr_count,
+	       q->bc_defer_requeue_count,
+	       q->bc_defer_max_count,
+	       q->bc_defer_no_work_count,
+	       q->bc_defer_work_count,
+	       q->bc_defer_loop_count,
+	       q->bc_defer_curr_gennum,
 	       atomic_read(&q->bc_defer_gennum));
 	q = &bc->bc_deferred_wait_page;
-	DMEMIT("%s: kthreads: " KT_FMT_STRING ": "
-	       "deferred_wait_page_curr_count=%u "
-	       "deferred_wait_page_requeue_count=%u "
-	       "deferred_wait_page_max_count=%u "
-	       "deferred_wait_page_no_work_count=%u "
-	       "deferred_wait_page_work_count=%u "
-	       "deferred_wait_page_loop_count=%u "
-	       "deferred_wait_page_nomem_count=%u "
-	       "deferred_wait_page_gennum=%u/%u "
-	       "\n",
+	DMEMIT("%s: kthreads: " KT_FMT_STRING ": deferred_wait_page_curr_count=%u deferred_wait_page_requeue_count=%u deferred_wait_page_max_count=%u deferred_wait_page_no_work_count=%u deferred_wait_page_work_count=%u deferred_wait_page_loop_count=%u deferred_wait_page_gennum=%u/%u\n",
 	       bc->bc_name,
 	       KT_FMT_ARGS(bc, "deferred_page_task",
 			   bc_deferred_wait_page.bc_defer_task),
-	       q->bc_defer_curr_count, q->bc_defer_requeue_count,
-	       q->bc_defer_max_count, q->bc_defer_no_work_count,
-	       q->bc_defer_work_count, q->bc_defer_loop_count,
-	       q->bc_defer_nomem_count, q->bc_defer_curr_gennum,
+	       q->bc_defer_curr_count,
+	       q->bc_defer_requeue_count,
+	       q->bc_defer_max_count,
+	       q->bc_defer_no_work_count,
+	       q->bc_defer_work_count,
+	       q->bc_defer_loop_count,
+	       q->bc_defer_curr_gennum,
 	       atomic_read(&q->bc_defer_gennum));
 	return sz;
 }
@@ -1385,14 +1342,13 @@ ssize_t cache_op_show_bgwriter(struct bittern_cache *bc, char *result)
 	       bc->bc_bgwriter_curr_cluster_count, avg_cluster_size / 100,
 	       avg_cluster_size % 100, bc->bc_bgwriter_curr_cluster_count_sum,
 	       avg_cluster_size_sum / 100, avg_cluster_size_sum % 100);
-	DMEMIT("%s: bgwriter: " "stalls_count=%u " "cache_block_busy_count=%u "
-	       "queue_full_count=%u " "too_many_buffers_count=%u "
-	       "too_young_count=%u " "ready_count=%u " "\n", bc->bc_name,
+	DMEMIT("%s: bgwriter: stalls_count=%u cache_block_busy_count=%u queue_full_count=%u too_young_count=%u ready_count=%u\n",
+	       bc->bc_name,
 	       bc->bc_bgwriter_stalls_count,
 	       bc->bc_bgwriter_cache_block_busy_count,
 	       bc->bc_bgwriter_queue_full_count,
-	       bc->bc_bgwriter_too_many_buffers_count,
-	       bc->bc_bgwriter_too_young_count, bc->bc_bgwriter_ready_count);
+	       bc->bc_bgwriter_too_young_count,
+	       bc->bc_bgwriter_ready_count);
 	DMEMIT("%s: bgwriter: " "curr_policy_0=%lu " "curr_policy_1=%lu "
 	       "curr_policy_2=%lu " "curr_policy_3=%lu " "\n", bc->bc_name,
 	       bc->bc_bgwriter_curr_policy[0], bc->bc_bgwriter_curr_policy[1],
@@ -1583,9 +1539,6 @@ ssize_t cache_op_show(struct kobject *kobj, struct attribute *attr, char *buf)
 	if (strncmp(attr->name, "stats_extra", 11) == 0)
 		return cache_op_show_stats_extra(bc, buf);
 
-	if (strncmp(attr->name, "pagebuf", 7) == 0)
-		return cache_op_show_pagebuf(bc, buf);
-
 	if (strncmp(attr->name, "stats", 5) == 0)
 		return cache_op_show_stats(bc, buf);
 
@@ -1731,11 +1684,6 @@ struct attribute cache_sysfs_stats_extra = {
 	.mode = 0444,
 };
 
-struct attribute cache_sysfs_pagebuf = {
-	.name = "pagebuf",
-	.mode = 0444,
-};
-
 struct attribute cache_sysfs_pmem_stats = {
 	.name = "pmem_stats",
 	.mode = 0444,
@@ -1825,7 +1773,6 @@ struct attribute *cache_stats_files[] = {
 	&cache_sysfs_conf,
 	&cache_sysfs_stats,
 	&cache_sysfs_stats_extra,
-	&cache_sysfs_pagebuf,
 	&cache_sysfs_pmem_stats,
 	&cache_sysfs_info,
 	&cache_sysfs_git_info,

@@ -50,7 +50,7 @@ void cache_invalidate_block_io_end(struct bittern_cache *bc,
 
 	cache_timer_add(&bc->bc_timer_invalidations, wi->wi_ts_started);
 
-	cache_work_item_free(bc, wi);
+	work_item_free(bc, wi);
 
 	atomic_inc(&bc->bc_completed_requests);
 	atomic_inc(&bc->bc_completed_invalidations);
@@ -105,13 +105,14 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 	/*
 	 * allocate work_item and initialize it
 	 */
-	wi = cache_work_item_allocate(bc, cache_block, NULL,
-				      (WI_FLAG_INVALIDATE_IO |
-				       WI_FLAG_BIO_NOT_CLONED |
-				       WI_FLAG_XID_USE_CACHE_BLOCK |
-				       WI_FLAG_HAS_ENDIO),
-				       cache_invalidate_block_io_end,
-				      GFP_NOIO);
+	wi = work_item_allocate(bc,
+				cache_block,
+				NULL,
+				(WI_FLAG_INVALIDATE_IO |
+				 WI_FLAG_BIO_NOT_CLONED |
+				 WI_FLAG_XID_USE_CACHE_BLOCK |
+				 WI_FLAG_HAS_ENDIO),
+				cache_invalidate_block_io_end);
 	M_ASSERT_FIXME(wi != NULL);
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_io_xid != 0);
@@ -120,12 +121,7 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 	ASSERT(wi->wi_cloned_bio == NULL);
 	ASSERT(wi->wi_cache == bc);
 
-	/*
-	 * we are not trying to limit the maximum number of invalidations,
-	 * reason being if we don't have enough invalid blocks we cannot really
-	 * do anything else when a new request comes in.
-	 */
-	pagebuf_allocate_dbi_wait(bc, PGPOOL_INVALIDATOR, &wi->wi_cache_data);
+	pagebuf_allocate_dbi(bc, bc->bc_kmem_threads, &wi->wi_cache_data);
 
 	wi->wi_ts_started = current_kernel_time_nsec();
 
@@ -136,8 +132,11 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 	 * kick off state machine to write this out.
 	 * cache_bgwriter_io_endio() will be called on completion.
 	 */
-	cache_work_item_add_pending_io(bc, wi, 'i', cache_block->bcb_sector,
-				       WRITE);
+	work_item_add_pending_io(bc,
+				 wi,
+				 'I',
+				 cache_block->bcb_sector,
+				 WRITE);
 	ASSERT(wi->wi_cache_block == cache_block);
 	cache_state_machine(bc, wi, NULL);
 }

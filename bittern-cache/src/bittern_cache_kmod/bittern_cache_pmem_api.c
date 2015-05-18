@@ -613,7 +613,7 @@ int pmem_block_restore(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_block_id == block_id);
 
 	pmbm = kmem_alloc(sizeof(struct pmem_block_metadata),
-			  GFP_KERNEL | GFP_NOIO);
+			  GFP_NOIO);
 	M_ASSERT_FIXME(pmbm != NULL);
 
 	ret = pmem_read_sync(bc,
@@ -709,10 +709,11 @@ int pmem_block_restore(struct bittern_cache *bc,
 	ASSERT(block_id == pmbm->pmbm_block_id);
 	ASSERT(is_sector_cache_aligned(pmbm->pmbm_device_sector));
 
-	buffer_vaddr = pagebuf_allocate_wait(bc, PGPOOL_MISC, &buffer_page);
+	buffer_vaddr = kmem_cache_alloc(bc->bc_kmem_map, GFP_NOIO);
+	M_ASSERT_FIXME(buffer_vaddr != NULL);
 	ASSERT(PAGE_ALIGNED(buffer_vaddr));
+	buffer_page = virtual_to_page(buffer_vaddr);
 	ASSERT(buffer_page != NULL);
-	ASSERT(buffer_page == vmalloc_to_page(buffer_vaddr));
 
 	ret = pmem_read_sync(bc,
 			     __cache_block_id_2_data_pmem_offset(bc, block_id),
@@ -724,8 +725,8 @@ int pmem_block_restore(struct bittern_cache *bc,
 
 	ASSERT(PAGE_ALIGNED(buffer_vaddr));
 	ASSERT(buffer_page != NULL);
-	ASSERT(buffer_page == vmalloc_to_page(buffer_vaddr));
-	pagebuf_free(bc, PGPOOL_MISC, buffer_vaddr);
+	ASSERT(buffer_page == virtual_to_page(buffer_vaddr));
+	kmem_cache_free(bc->bc_kmem_map, buffer_vaddr);
 
 	if (uint128_ne(computed_hash_metadata, pmbm->pmbm_hash_metadata)) {
 		printk_err("block id #%u: data hash mismatch: stored_hash_data=" UINT128_FMT ", computed_hash_data" UINT128_FMT "\n",
@@ -868,7 +869,7 @@ int pmem_metadata_initialize(struct bittern_cache *bc, unsigned int block_id)
 	ASSERT(pa->papi_bdev != NULL);
 
 	pmbm = kmem_zalloc(sizeof(struct pmem_block_metadata),
-			GFP_KERNEL | GFP_NOIO);
+			GFP_NOIO);
 	M_ASSERT_FIXME(pmbm != NULL);
 
 	pmbm->pmbm_magic = MCBM_MAGIC;
@@ -1083,7 +1084,7 @@ int pmem_metadata_sync_write(struct bittern_cache *bc,
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
 	pmbm = kmem_zalloc(sizeof(struct pmem_block_metadata),
-			   GFP_KERNEL | GFP_NOIO);
+			   GFP_NOIO);
 	M_ASSERT_FIXME(pmbm != NULL);
 
 	ASSERT(metadata_update_state == CACHE_INVALID ||

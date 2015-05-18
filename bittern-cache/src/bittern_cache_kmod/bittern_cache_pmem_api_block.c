@@ -134,10 +134,11 @@ int pmem_read_sync_block(struct bittern_cache *bc,
 	 * requester doesn't necessarily have a page aligned buffer (or size),
 	 * so we need to use an intermediate buffer
 	 */
-	buffer_vaddr = pagebuf_allocate_wait(bc, PGPOOL_MISC, &buffer_page);
-	M_ASSERT(PAGE_ALIGNED(buffer_vaddr));
-	M_ASSERT(buffer_page != NULL);
-	M_ASSERT(buffer_page == vmalloc_to_page(buffer_vaddr));
+	buffer_vaddr = kmem_cache_alloc(bc->bc_kmem_map, GFP_NOIO);
+	M_ASSERT_FIXME(buffer_vaddr != NULL);
+	ASSERT(PAGE_ALIGNED(buffer_vaddr));
+	buffer_page = virtual_to_page(buffer_vaddr);
+	ASSERT(buffer_page != NULL);
 
 	/*
 	 * setup bio context, alloc bio and start io
@@ -181,7 +182,7 @@ int pmem_read_sync_block(struct bittern_cache *bc,
 
 	memcpy(to_buffer, buffer_vaddr, size);
 
-	pagebuf_free(bc, PGPOOL_MISC, buffer_vaddr);
+	kmem_cache_free(bc->bc_kmem_map, buffer_vaddr);
 
 	if (size == PAGE_SIZE) {
 		atomic_dec(&pa->papi_stats.pmem_read_4k_pending);
@@ -234,10 +235,11 @@ int pmem_write_sync_block(struct bittern_cache *bc,
 	 * requester doesn't necessarily have a page aligned buffer (or size),
 	 * so we need to use an intermediate buffer
 	 */
-	buffer_vaddr = pagebuf_allocate_wait(bc, PGPOOL_MISC, &buffer_page);
-	M_ASSERT(PAGE_ALIGNED(buffer_vaddr));
-	M_ASSERT(buffer_page != NULL);
-	M_ASSERT(buffer_page == vmalloc_to_page(buffer_vaddr));
+	buffer_vaddr = kmem_cache_alloc(bc->bc_kmem_map, GFP_NOIO);
+	M_ASSERT_FIXME(buffer_vaddr != NULL);
+	ASSERT(PAGE_ALIGNED(buffer_vaddr));
+	buffer_page = virtual_to_page(buffer_vaddr);
+	ASSERT(buffer_page != NULL);
 
 	if (size < PAGE_SIZE) {
 		/*
@@ -289,7 +291,7 @@ int pmem_write_sync_block(struct bittern_cache *bc,
 
 	kmem_free(ctx, sizeof(struct pmem_rw_sync_block_ctx));
 
-	pagebuf_free(bc, PGPOOL_MISC, buffer_vaddr);
+	kmem_cache_free(bc->bc_kmem_map, buffer_vaddr);
 
 	if (size == PAGE_SIZE) {
 		atomic_dec(&pa->papi_stats.pmem_write_4k_pending);

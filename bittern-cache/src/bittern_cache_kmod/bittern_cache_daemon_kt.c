@@ -18,13 +18,6 @@
 
 #include "bittern_cache.h"
 
-void cache_task_page_buffer_timeout(struct bittern_cache *bc)
-{
-	ASSERT_BITTERN_CACHE(bc);
-	BT_TRACE(BT_LEVEL_TRACE3, bc, NULL, NULL, NULL, NULL, "bc=%p", bc);
-	pagebuf_callout(bc);
-}
-
 void cache_task_pmem_header_update_timeout(struct bittern_cache *bc)
 {
 	ASSERT_BITTERN_CACHE(bc);
@@ -45,7 +38,6 @@ struct cache_tasks {
 } cache_tasks[] = {
 	{ cache_task_sequential_timeout, 500, },
 	{ cache_task_pmem_header_update_timeout, (30 * 1000), },
-	{ cache_task_page_buffer_timeout, 1000, },
 };
 
 void cache_daemon_run_tasks(struct bittern_cache *bc, unsigned long *lastrun)

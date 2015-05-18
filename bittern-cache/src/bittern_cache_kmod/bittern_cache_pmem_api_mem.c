@@ -665,7 +665,7 @@ int pmem_data_put_page_write_mem(struct bittern_cache *bc,
 		ASSERT(PAGE_ALIGNED(dbi_data->di_buffer_vmalloc_buffer));
 		ASSERT(dbi_data->di_buffer_vmalloc_page != NULL);
 		ASSERT(dbi_data->di_buffer_vmalloc_page ==
-		       vmalloc_to_page(dbi_data->di_buffer_vmalloc_buffer));
+		       virtual_to_page(dbi_data->di_buffer_vmalloc_buffer));
 
 		ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 		memset(pmbm, 0, sizeof(*pmbm));

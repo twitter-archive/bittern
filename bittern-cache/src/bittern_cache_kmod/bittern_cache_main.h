@@ -244,28 +244,41 @@ extern int __cache_validate_state_transition(struct bittern_cache *bc,
 })
 
 /*! \todo
- * @ref cache_work_item_allocate and
- * @ref cache_work_item_reallocate have a lot in common,
+ * @ref work_item_allocate and
+ * @ref work_item_reallocate have a lot in common,
  * can be simplified.
  */
-extern struct work_item *cache_work_item_allocate(struct bittern_cache *bc,
-						  struct cache_block *cache_block,
-						  struct bio *bio,
-						  int wi_flags,
-						  wi_io_endio_f  wi_io_endio,
-						  int gfp_flags);
-extern void cache_work_item_reallocate(struct bittern_cache *bc,
-				       struct cache_block *cache_block,
-				       struct work_item *wi,
-				       struct bio *bio, int wi_flags,
-				       wi_io_endio_f wi_io_endio);
-extern void cache_work_item_free(struct bittern_cache *bc,
-				 struct work_item *wi);
+extern struct work_item *work_item_allocate(struct bittern_cache *bc,
+					    struct cache_block *cache_block,
+					    struct bio *bio,
+					    int wi_flags,
+					    wi_io_endio_f wi_io_endio);
+extern void work_item_reallocate(struct bittern_cache *bc,
+				 struct cache_block *cache_block,
+				 struct work_item *wi,
+				 struct bio *bio,
+				 int wi_flags,
+				 wi_io_endio_f wi_io_endio);
+extern void work_item_free(struct bittern_cache *bc,
+			   struct work_item *wi);
 
+/*!
+ * op_type has the following values:
+ * 'W': writeback invalidate
+ * 'F': writeback flush
+ * 'I': invalidate
+ * 'M': read or write miss
+ * 'L': invalidate original block of a write clone
+ * 'B': read or write bypass
+ * 'H': write hit write clone
+ * 'I': write hit no clone
+ */
 static inline void
-cache_work_item_add_pending_io(struct bittern_cache *bc, struct work_item *wi,
-			       char op_type, sector_t op_sector,
-			       unsigned long op_rw)
+work_item_add_pending_io(struct bittern_cache *bc,
+			 struct work_item *wi,
+			 char op_type,
+			 sector_t op_sector,
+			 unsigned long op_rw)
 {
 	unsigned long flags;
 
@@ -278,8 +291,8 @@ cache_work_item_add_pending_io(struct bittern_cache *bc, struct work_item *wi,
 }
 
 static inline void
-cache_work_item_del_pending_io(struct bittern_cache *bc,
-			       struct work_item *wi)
+work_item_del_pending_io(struct bittern_cache *bc,
+			 struct work_item *wi)
 {
 	unsigned long flags;
 
@@ -547,52 +560,25 @@ __cache_verify_hash_data_buffer(struct bittern_cache *bc,
  */
 
 /*!
- * Allocate a pagebuf from the specified pool.
- * This is a non-suspensive version, allocation will fail if there are no free
- * buffers in the page pool.
- */
-static inline void
-pagebuf_allocate_dbi_nowait(struct bittern_cache *bc,
-			    int pool,
-			    struct data_buffer_info *dbi)
-{
-	ASSERT(dbi->di_buffer_vmalloc_buffer == NULL);
-	ASSERT(dbi->di_buffer_vmalloc_page == NULL);
-	ASSERT(dbi->di_buffer_vmalloc_pool == -1);
-	dbi->di_buffer_vmalloc_buffer = pagebuf_allocate_nowait(bc,
-						pool,
-						&dbi->di_buffer_vmalloc_page);
-	if (dbi->di_buffer_vmalloc_buffer != NULL) {
-		ASSERT(PAGE_ALIGNED(dbi->di_buffer_vmalloc_buffer));
-		ASSERT(dbi->di_buffer_vmalloc_page != NULL);
-		ASSERT(dbi->di_buffer_vmalloc_page ==
-		       vmalloc_to_page(dbi->di_buffer_vmalloc_buffer));
-		dbi->di_buffer_vmalloc_pool = pool;
-	} else {
-		ASSERT(dbi->di_buffer_vmalloc_page == NULL);
-	}
-}
-
-/*!
  * Allocate a vmalloc buffer from the specified pool.
  */
 static inline void
-pagebuf_allocate_dbi_wait(struct bittern_cache *bc,
-			  int pool,
-			  struct data_buffer_info *dbi)
+pagebuf_allocate_dbi(struct bittern_cache *bc,
+		     struct kmem_cache *kmem_slab,
+		     struct data_buffer_info *dbi)
 {
 	ASSERT(dbi->di_buffer_vmalloc_buffer == NULL);
 	ASSERT(dbi->di_buffer_vmalloc_page == NULL);
-	ASSERT(dbi->di_buffer_vmalloc_pool == -1);
-	dbi->di_buffer_vmalloc_buffer = pagebuf_allocate_wait(bc,
-						pool,
-						&dbi->di_buffer_vmalloc_page);
-	ASSERT(dbi->di_buffer_vmalloc_buffer != NULL);
+	ASSERT(dbi->di_buffer_slab == NULL);
+	ASSERT(kmem_slab == bc->bc_kmem_map ||
+	       kmem_slab == bc->bc_kmem_threads);
+	dbi->di_buffer_vmalloc_buffer = kmem_cache_alloc(kmem_slab, GFP_NOIO);
+	M_ASSERT_FIXME(dbi->di_buffer_vmalloc_buffer != NULL);
 	ASSERT(PAGE_ALIGNED(dbi->di_buffer_vmalloc_buffer));
+	dbi->di_buffer_vmalloc_page =
+				virtual_to_page(dbi->di_buffer_vmalloc_buffer);
 	ASSERT(dbi->di_buffer_vmalloc_page != NULL);
-	ASSERT(dbi->di_buffer_vmalloc_page ==
-	       vmalloc_to_page(dbi->di_buffer_vmalloc_buffer));
-	dbi->di_buffer_vmalloc_pool = pool;
+	dbi->di_buffer_slab = kmem_slab;
 }
 
 /*!
@@ -607,14 +593,14 @@ static inline void pagebuf_free_dbi(struct bittern_cache *bc,
 	ASSERT(PAGE_ALIGNED(dbi->di_buffer_vmalloc_buffer));
 	ASSERT(dbi->di_buffer_vmalloc_page != NULL);
 	ASSERT(dbi->di_buffer_vmalloc_page ==
-	       vmalloc_to_page(dbi->di_buffer_vmalloc_buffer));
-	ASSERT(dbi->di_buffer_vmalloc_pool != -1);
-	pagebuf_free(bc,
-		     dbi->di_buffer_vmalloc_pool,
-		     dbi->di_buffer_vmalloc_buffer);
+	       virtual_to_page(dbi->di_buffer_vmalloc_buffer));
+	ASSERT(dbi->di_buffer_slab != NULL);
+	ASSERT(dbi->di_buffer_slab == bc->bc_kmem_map ||
+	       dbi->di_buffer_slab == bc->bc_kmem_threads);
+	kmem_cache_free(dbi->di_buffer_slab, dbi->di_buffer_vmalloc_buffer);
 	dbi->di_buffer_vmalloc_buffer = NULL;
 	dbi->di_buffer_vmalloc_page = NULL;
-	dbi->di_buffer_vmalloc_pool = -1;
+	dbi->di_buffer_slab = NULL;
 }
 
 /*! \todo right now we always allocate the double buffer even when not needed */
@@ -625,7 +611,7 @@ static inline void pagebuf_free_dbi(struct bittern_cache *bc,
 	ASSERT(PAGE_ALIGNED(__dbi->di_buffer_vmalloc_buffer));		     \
 	ASSERT(__dbi->di_buffer_vmalloc_page != NULL);			     \
 	ASSERT(__dbi->di_buffer_vmalloc_page ==				     \
-	       vmalloc_to_page(__dbi->di_buffer_vmalloc_buffer));	     \
+	       virtual_to_page(__dbi->di_buffer_vmalloc_buffer));	     \
 	ASSERT((__dbi->di_flags & (__flags)) == (__flags));		     \
 	if ((__dbi->di_flags & CACHE_DI_FLAGS_DOUBLE_BUFFERING) != 0) {	     \
 		ASSERT(__dbi->di_buffer == __dbi->di_buffer_vmalloc_buffer); \
@@ -672,7 +658,7 @@ cache_set_page_dbi_double_buffering(struct data_buffer_info *dbi, int flags)
 	ASSERT(PAGE_ALIGNED(dbi->di_buffer_vmalloc_buffer));
 	ASSERT(dbi->di_buffer_vmalloc_page != NULL);
 	ASSERT(dbi->di_buffer_vmalloc_page ==
-	       vmalloc_to_page(dbi->di_buffer_vmalloc_buffer));
+	       virtual_to_page(dbi->di_buffer_vmalloc_buffer));
 	dbi->di_buffer = dbi->di_buffer_vmalloc_buffer;
 	dbi->di_page = dbi->di_buffer_vmalloc_page;
 	dbi->di_flags = flags;

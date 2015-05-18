@@ -392,7 +392,7 @@ void sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 					wi->wi_ts_started);
 	}
 
-	cache_work_item_free(bc, wi);
+	work_item_free(bc, wi);
 
 	atomic_dec(&bc->bc_pending_requests);
 	if (bio_data_dir(bio) == WRITE) {

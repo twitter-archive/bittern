@@ -69,9 +69,6 @@ my($help_msg) =
                 Bypass read requests issued to the cached device.
         (cached-device) wrseq:
                 Bypass write requests issued to the cached device.
-
-        (m) pgbuf:
-                How many page buffers are curreently allocated for cache use.
 ";
 sub do_help {
 	print "$0:\n$help_msg\n";
@@ -131,7 +128,7 @@ sub parse_cache_stats {
 	my($name) = @_;
 	my($hash_ret) = undef;
 
-	for my $file (qw(stats stats_extra pagebuf bgwriter)) {
+	for my $file (qw(stats stats_extra bgwriter)) {
 		my $full_path = "/sys/fs/bittern/$name/$file";
 		$hash_ret->{$file} = parse_cache_stat($name, $full_path);
 		# Make it simple and just behave all-or-nothing.
@@ -201,7 +198,6 @@ sub do_stats {
 	   $print_hdr,
 	   $stats,
 	   $stats_extra,
-	   $stats_pagebuf,
 	   $stats_bgwriter) = @_;
 
 	my($s_hdr0) = "";
@@ -282,12 +278,6 @@ sub do_stats {
 			  $stats->{d}->{write_cached_device_requests},
 			  $stats_extra->{d}->{read_sequential_bypass_count},
 			  $stats_extra->{d}->{write_sequential_bypass_count});
-	#
-	# misc
-	#
-	$s_hdr0 .= sprintf("%4s", str_pad_dashes("m", 4));
-	$s_hdr .= sprintf("%4s", "pgbf");
-	$s_val .= sprintf("%4d", $stats_pagebuf->{c}->{pages});
 
 	if ($print_hdr != 0) {
 		printf("%s\n", $s_hdr0);
@@ -346,8 +336,6 @@ while (1) {
 				       $prev->{'stats'});
 		my($stats_extra) = do_deltas($curr->{'stats_extra'},
 					     $prev->{'stats_extra'});
-		my($stats_pagebuf) = do_deltas($curr->{'pagebuf'},
-					       $prev->{'pagebuf'});
 		my($stats_bgwriter) = do_deltas($curr->{'bgwriter'},
 						$prev->{'bgwriter'});
 
@@ -355,7 +343,6 @@ while (1) {
 			 $print_hdr,
 			 $stats,
 			 $stats_extra,
-			 $stats_pagebuf,
 			 $stats_bgwriter);
 
 		$print_hdr = 0;

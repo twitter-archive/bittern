@@ -824,13 +824,11 @@ int __cache_validate_state_transition(struct bittern_cache *bc,
 
 #endif /*ENABLE_ASSERT */
 
-struct work_item *cache_work_item_allocate(struct bittern_cache *bc,
-						   struct cache_block
-						   *cache_block,
+struct work_item *work_item_allocate(struct bittern_cache *bc,
+				     struct cache_block *cache_block,
 						   struct bio *bio,
 						   int wi_flags,
-						   wi_io_endio_f wi_io_endio,
-						   int gfp_flags)
+				     wi_io_endio_f wi_io_endio)
 {
 	struct work_item *wi;
 
@@ -854,12 +852,10 @@ struct work_item *cache_work_item_allocate(struct bittern_cache *bc,
 	ASSERT((wi_flags & (WI_FLAG_XID_NEW | WI_FLAG_XID_USE_CACHE_BLOCK)) !=
 	       (WI_FLAG_XID_NEW | WI_FLAG_XID_USE_CACHE_BLOCK));
 	ASSERT((wi_flags & WI_FLAG_WRITE_CLONING) == 0);
-	ASSERT(gfp_flags == 0 || gfp_flags == GFP_NOIO
-	       || gfp_flags == GFP_ATOMIC);
-	if (gfp_flags == 0)
-		gfp_flags = GFP_NOIO;
-	wi = kmem_zalloc(sizeof(struct work_item), gfp_flags);
+
+	wi = kmem_zalloc(sizeof(struct work_item), GFP_NOIO);
 	M_ASSERT_FIXME(wi != NULL);
+
 	wi->wi_magic1 = WI_MAGIC1;
 	wi->wi_magic2 = WI_MAGIC2;
 	wi->wi_magic3 = WI_MAGIC3;
@@ -894,7 +890,7 @@ struct work_item *cache_work_item_allocate(struct bittern_cache *bc,
 
 	wi->wi_cache_data.di_buffer_vmalloc_buffer = NULL;
 	wi->wi_cache_data.di_buffer_vmalloc_page = NULL;
-	wi->wi_cache_data.di_buffer_vmalloc_pool = -1;
+	wi->wi_cache_data.di_buffer_slab = NULL;
 	wi->wi_cache_data.di_buffer = NULL;
 	wi->wi_cache_data.di_page = NULL;
 	wi->wi_cache_data.di_flags = 0x0;
@@ -903,11 +899,12 @@ struct work_item *cache_work_item_allocate(struct bittern_cache *bc,
 	return wi;
 }
 
-void cache_work_item_reallocate(struct bittern_cache *bc,
-					struct cache_block *cache_block,
-					struct work_item *wi,
-					struct bio *bio,
-					int wi_flags, wi_io_endio_f wi_io_endio)
+void work_item_reallocate(struct bittern_cache *bc,
+			  struct cache_block *cache_block,
+			  struct work_item *wi,
+			  struct bio *bio,
+			  int wi_flags,
+			  wi_io_endio_f wi_io_endio)
 {
 	ASSERT_BITTERN_CACHE(bc);
 	if (cache_block != NULL)
@@ -976,19 +973,19 @@ void cache_work_item_reallocate(struct bittern_cache *bc,
 	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 0);
 }
 
-void cache_work_item_free(struct bittern_cache *bc, struct work_item *wi)
+void work_item_free(struct bittern_cache *bc, struct work_item *wi)
 {
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_WORK_ITEM(wi, bc);
 
-	cache_work_item_del_pending_io(bc, wi);
+	work_item_del_pending_io(bc, wi);
 
 	if (wi->wi_cache_data.di_buffer_vmalloc_buffer != NULL)
 		pagebuf_free_dbi(bc, &wi->wi_cache_data);
 
 	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_buffer == NULL);
 	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_page == NULL);
-	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_pool == -1);
+	ASSERT(wi->wi_cache_data.di_buffer_slab == NULL);
 	ASSERT(wi->wi_cache_data.di_buffer == NULL);
 	ASSERT(wi->wi_cache_data.di_page == NULL);
 	ASSERT(wi->wi_cache_data.di_flags == 0x0);

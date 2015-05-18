@@ -729,10 +729,22 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	bc->bc_enable_extra_checksum_check = 0;
 #endif /*ENABLE_EXTRA_CHECKSUM_CHECK */
 
-	/*
-	 * this is used very early
-	 */
-	pagebuf_initialize(bc);
+	bc->bc_kmem_map = kmem_cache_create("bc_kmem_map",
+					    PAGE_SIZE,
+					    PAGE_SIZE,
+					    0,
+					    NULL);
+	printk_info("kem_cache_create: bc_kmem_map=%p\n", bc->bc_kmem_map);
+	M_ASSERT_FIXME(bc->bc_kmem_map != NULL);
+
+	bc->bc_kmem_threads = kmem_cache_create("bc_kmem_threads",
+						PAGE_SIZE,
+						PAGE_SIZE,
+						0,
+						NULL);
+	printk_info("kem_cache_create: bc_kmem_threads=%p\n",
+		    bc->bc_kmem_threads);
+	M_ASSERT_FIXME(bc->bc_kmem_threads != NULL);
 
 	/*
 	 * this is also used very early
@@ -1029,6 +1041,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	return 0;
 
+	/*! \todo this can be made common with _dtr() code */
 bad_2:
 	if (bc->bc_make_request_wq != NULL) {
 		printk_info("destroying make_request workqueue\n");
@@ -1039,6 +1052,12 @@ bad_2:
 	cache_sysfs_deinit(bc);
 
 bad_1:
+	printk_info("destroying slabs\n");
+	if (bc->bc_kmem_map != NULL)
+		kmem_cache_destroy(bc->bc_kmem_map);
+	if (bc->bc_kmem_threads != NULL)
+		kmem_cache_destroy(bc->bc_kmem_threads);
+
 	pmem_deallocate(bc);
 	printk_info("mem_info_deinitialize()\n");
 	pmem_info_deinitialize(bc);

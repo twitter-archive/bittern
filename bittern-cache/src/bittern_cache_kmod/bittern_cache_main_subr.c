@@ -1059,3 +1059,116 @@ void __cache_verify_hash_data_buffer(struct bittern_cache *bc,
 	__cache_verify_hash_data_ret(bc, cache_block, hash_data, func, line);
 	M_ASSERT(uint128_eq(hash_data, cache_block->bcb_hash_data));
 }
+
+/*! allocate bio and make the request */
+void cache_do_make_request(struct bittern_cache *bc, struct work_item *wi)
+{
+	struct bio *bio;
+	struct cache_block *cache_block;
+
+	ASSERT_BITTERN_CACHE(bc);
+	ASSERT_WORK_ITEM(wi, bc);
+
+	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
+		     "in_irq=%lu, in_softirq=%lu, bc=%p, wi=%p",
+		     in_irq(),
+		     in_softirq(),
+		     bc,
+		     wi);
+
+	M_ASSERT(!in_irq());
+	M_ASSERT(!in_softirq());
+
+	cache_block = wi->wi_cache_block;
+	ASSERT_CACHE_BLOCK(cache_block, bc);
+
+	bio = bio_alloc(GFP_NOIO, 1);
+	M_ASSERT_FIXME(bio != NULL);
+
+	if (wi->bi_datadir == WRITE)
+		bio_set_data_dir_write(bio);
+	else
+		bio_set_data_dir_read(bio);
+	M_ASSERT(cache_block->bcb_sector == wi->bi_sector);
+	bio->bi_iter.bi_sector = cache_block->bcb_sector;
+	bio->bi_iter.bi_size = PAGE_SIZE;
+	bio->bi_bdev = bc->bc_dev->bdev;
+	bio->bi_end_io = wi->bi_endio;
+	bio->bi_private = wi;
+	bio->bi_vcnt = 1;
+	bio->bi_io_vec[0].bv_page = wi->bi_page;
+	M_ASSERT(pmem_context_data_page(&wi->wi_pmem_ctx) == wi->bi_page);
+	bio->bi_io_vec[0].bv_len = PAGE_SIZE;
+	bio->bi_io_vec[0].bv_offset = 0;
+	ASSERT(cache_block->bcb_sector ==
+	       bio_sector_to_cache_block_sector(bio));
+	if (wi->bi_set_original_bio)
+		wi->wi_original_bio = bio;
+	if (wi->bi_set_cloned_bio)
+		wi->wi_cloned_bio = bio;
+	ASSERT(wi->wi_cache == bc);
+	ASSERT(wi->wi_cache_block == cache_block);
+
+	cache_timer_add(&bc->bc_make_request_wq_timer,
+			wi->wi_ts_workqueue);
+
+	atomic_inc(&bc->bc_make_request_count);
+
+	wi->wi_ts_physio = current_kernel_time_nsec();
+	generic_make_request(bio);
+}
+
+void cache_make_request_worker(struct work_struct *work)
+{
+	struct work_item *wi;
+	struct bittern_cache *bc;
+
+	ASSERT(!in_irq());
+	ASSERT(!in_softirq());
+
+	wi = container_of(work, struct work_item, wi_work);
+	__ASSERT_WORK_ITEM(wi);
+	bc = wi->wi_cache;
+	ASSERT_BITTERN_CACHE(bc);
+	ASSERT_WORK_ITEM(wi, bc);
+
+	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
+		     "in_irq=%lu, in_softirq=%lu, bc=%p, wi=%p, work=%p",
+		     in_irq(),
+		     in_softirq(),
+		     bc,
+		     wi,
+		     &wi->wi_work);
+
+	cache_timer_add(&bc->bc_make_request_wq_timer, wi->wi_ts_workqueue);
+
+	cache_do_make_request(bc, wi);
+}
+
+/*!
+ * This function indirectly calls generic_make_request. Because call to
+ * generic_make_request() cannot be done in softirq, we defer it to a
+ * work_queue in such case.
+ */
+void cache_make_request_defer(struct bittern_cache *bc, struct work_item *wi)
+{
+	int ret;
+
+	ASSERT_BITTERN_CACHE(bc);
+
+	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
+		     "in_irq=%lu, in_softirq=%lu, bc=%p, wi=%p, work=%p",
+		     in_irq(),
+		     in_softirq(),
+		     bc,
+		     wi,
+		     &wi->wi_work);
+
+	atomic_inc(&bc->bc_make_request_wq_count);
+	wi->wi_ts_workqueue = current_kernel_time_nsec();
+
+	/* defer to worker thread, which will start io */
+	INIT_WORK(&wi->wi_work, cache_make_request_worker);
+	ret = queue_work(bc->bc_make_request_wq, &wi->wi_work);
+	ASSERT(ret == 1);
+}

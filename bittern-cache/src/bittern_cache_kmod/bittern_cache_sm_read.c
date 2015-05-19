@@ -199,7 +199,6 @@ void sm_read_miss_copy_from_device_startio(struct bittern_cache *bc,
 						 struct work_item *wi,
 						 struct bio *bio)
 {
-	struct bio *cloned_bio;
 	int ret;
 	struct cache_block *cache_block;
 	int val;
@@ -232,40 +231,15 @@ void sm_read_miss_copy_from_device_startio(struct bittern_cache *bc,
 
 	cache_page = pmem_context_data_page(&wi->wi_pmem_ctx);
 
-	cloned_bio = bio_alloc(GFP_ATOMIC, 1);
-	M_ASSERT_FIXME(cloned_bio != NULL);
-
-	ASSERT(wi->wi_original_bio == bio);
-	ASSERT(wi->wi_cloned_bio == NULL);
-	wi->wi_cloned_bio = cloned_bio;
-	ASSERT(wi->wi_cache == bc);
-	ASSERT(wi->wi_cache_block == cache_block);
-
-	/*
-	 * here we always read the full page.
-	 * in the next state we copy only the portion of the page that is requested
-	 */
-
-	/*
-	 * we are reading from the cached device into the cache
-	 */
-	bio_set_data_dir_read(cloned_bio);
-	ASSERT(bio_data_dir(cloned_bio) == READ);
-
-	cloned_bio->bi_iter.bi_sector = bio_sector_to_cache_block_sector(bio);
-	cloned_bio->bi_iter.bi_size = PAGE_SIZE;
-	cloned_bio->bi_bdev = bc->bc_dev->bdev;
-	cloned_bio->bi_end_io = cache_state_machine_endio;
-	cloned_bio->bi_private = wi;
-	cloned_bio->bi_io_vec[0].bv_page = cache_page;
-	cloned_bio->bi_io_vec[0].bv_len = PAGE_SIZE;
-	cloned_bio->bi_io_vec[0].bv_offset = 0;
-	cloned_bio->bi_vcnt = 1;
-
-	if (bio->bi_iter.bi_size == PAGE_SIZE) {
-		ASSERT(bio->bi_iter.bi_sector == cloned_bio->bi_iter.bi_sector);
-		ASSERT(bio->bi_iter.bi_size == cloned_bio->bi_iter.bi_size);
-	}
+	/* set up args for cache_make_request */
+	wi->bi_datadir = READ;
+	wi->bi_sector = cache_block->bcb_sector;
+	ASSERT(cache_block->bcb_sector ==
+	       bio_sector_to_cache_block_sector(bio));
+	wi->bi_endio = cache_state_machine_endio;
+	wi->bi_page = cache_page;
+	wi->bi_set_original_bio = false;
+	wi->bi_set_cloned_bio = true;
 
 	atomic_inc(&bc->bc_read_cached_device_requests);
 	val = atomic_inc_return(&bc->bc_pending_cached_device_requests);
@@ -286,8 +260,9 @@ void sm_read_miss_copy_from_device_startio(struct bittern_cache *bc,
 	/*
 	 * we are in the first state -- process context
 	 */
-	wi->wi_ts_physio = current_kernel_time_nsec();
-	generic_make_request(cloned_bio);
+	M_ASSERT(!in_irq() && !in_softirq());
+	wi->wi_ts_workqueue = current_kernel_time_nsec();
+	cache_do_make_request(bc, wi);
 }
 
 void sm_read_miss_copy_from_device_endio(struct bittern_cache *bc,

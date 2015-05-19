@@ -74,10 +74,9 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 	 * there is no bio in this case.
 	 * clone bio, start i/o to write data to device.
 	 */
-	int ret;
 	struct cache_block *cache_block;
-	int val;
 	struct page *cache_page;
+	int val;
 
 	ASSERT(bio == NULL);
 	ASSERT(wi->wi_original_bio == NULL);
@@ -109,29 +108,15 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 	cache_track_hash_check(bc, cache_block,
 					 cache_block->bcb_hash_data);
 
-	bio = bio_alloc(GFP_ATOMIC, 1);
-	M_ASSERT_FIXME(bio != NULL);
+	/* set up args for cache_make_request */
+	wi->bi_datadir = WRITE;
+	wi->bi_sector = cache_block->bcb_sector;
+	wi->bi_endio = cache_state_machine_endio;
+	wi->bi_page = cache_page;
+	wi->bi_set_original_bio = true;
+	wi->bi_set_cloned_bio = true;
 
-	bio_set_data_dir_write(bio);
-	ASSERT(bio_data_dir(bio) == WRITE);
-	bio->bi_iter.bi_sector = cache_block->bcb_sector;
-	bio->bi_iter.bi_size = PAGE_SIZE;
-	bio->bi_bdev = bc->bc_dev->bdev;
-	bio->bi_end_io = cache_state_machine_endio;
-	bio->bi_private = wi;
-	bio->bi_vcnt = 1;
-	bio->bi_io_vec[0].bv_page = cache_page;
-	bio->bi_io_vec[0].bv_len = PAGE_SIZE;
-	bio->bi_io_vec[0].bv_offset = 0;
-	ASSERT(cache_block->bcb_sector ==
-	       bio_sector_to_cache_block_sector(bio));
-
-	wi->wi_original_bio = bio;
-	wi->wi_cloned_bio = bio;
-	ASSERT(wi->wi_cache == bc);
-	ASSERT(wi->wi_cache_block == cache_block);
-
-	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, bio, wi->wi_cloned_bio,
+	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, NULL, NULL,
 		 "writeback-to-device");
 
 	ASSERT_BITTERN_CACHE(bc);
@@ -160,19 +145,9 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 			     val);
 
 	/*
-	 * we are not in a process context here, so use work queues to defer
-	 * calling generic_make_request() to a thread
+	 * potentially in a softirq
 	 */
-	/*
-	 * FIXME: add API to tell us if asyncread is sync or async and decide
-	 * based on it
-	 */
-	wi->wi_ts_workqueue = current_kernel_time_nsec();
-	INIT_WORK(&wi->wi_work, cache_make_request_worker);
-	ret = queue_work(bc->bc_make_request_wq, &wi->wi_work);
-	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, bio, wi->wi_cloned_bio,
-		 "queue_work=%d", ret);
-	ASSERT(ret == 1);
+	cache_make_request_defer(bc, wi);
 }
 
 void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,

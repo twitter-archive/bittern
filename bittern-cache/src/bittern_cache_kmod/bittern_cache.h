@@ -66,7 +66,7 @@
  * Release codenames are National Wildlife Refuges wetlands where the Bittern
  * can be found.
  */
-#define BITTERN_CACHE_VERSION "0.26.4"
+#define BITTERN_CACHE_VERSION "0.26.5"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -293,16 +293,35 @@ struct work_item {
 	int wi_magic2;
 	struct async_context wi_async_context;
 	int wi_magic3;
+	/*! bi_data_dir used for deferred worker */
+	int bi_datadir;
+	/*! bi_sector used for deferred worker */
+	sector_t bi_sector;
+	/*! bi_endio used for deferred worker */
+	void (*bi_endio)(struct bio *bio, int err);
+	/*! bi_page used for deferred worker */
+	struct page *bi_page;
+	/*! bi_set_original_bio used for deferred worker */
+	bool bi_set_original_bio;
+	/*! bi_set_cloned_bio used for deferred worker */
+	bool bi_set_cloned_bio;
 };
-#define ASSERT_WORK_ITEM(__wi, __bc) ({                                                         \
-	__wi = (__wi); /* make sure it's an l-value; compiler will optimize this away */        \
-	ASSERT((__wi) != NULL);                                                                 \
-	ASSERT((__wi)->wi_magic1 == WI_MAGIC1);                                                 \
-	ASSERT((__wi)->wi_magic2 == WI_MAGIC2);                                                 \
-	ASSERT((__wi)->wi_magic3 == WI_MAGIC3);                                                 \
-	ASSERT(((__wi)->wi_flags & ~WI_FLAG_MASK) == 0);                                        \
-	ASSERT((__wi)->wi_cache == (__bc));                                                     \
-	ASSERT((__wi)->wi_cache_mode_writeback == 1 || (__wi)->wi_cache_mode_writeback == 0);   \
+#define __ASSERT_WORK_ITEM(__wi) ({					\
+	/* make sure it's l-value, compiler will optimize this away */	\
+	__wi = (__wi);							\
+	ASSERT((__wi) != NULL);						\
+	ASSERT((__wi)->wi_magic1 == WI_MAGIC1);				\
+	ASSERT((__wi)->wi_magic2 == WI_MAGIC2);				\
+	ASSERT((__wi)->wi_magic3 == WI_MAGIC3);				\
+	ASSERT(((__wi)->wi_flags & ~WI_FLAG_MASK) == 0);		\
+	ASSERT((__wi)->wi_cache_mode_writeback == 1 ||			\
+	       (__wi)->wi_cache_mode_writeback == 0);			\
+})
+#define ASSERT_WORK_ITEM(__wi, __bc) ({					\
+	/* make sure it's l-value, compiler will optimize this away */	\
+	__wi = (__wi);							\
+	__ASSERT_WORK_ITEM(__wi);					\
+	ASSERT((__wi)->wi_cache == (__bc));				\
 })
 #define is_work_item_mode_writeback(__wi) ((__wi)->wi_cache_mode_writeback)
 
@@ -740,6 +759,8 @@ struct bittern_cache {
 
 	struct workqueue_struct *bc_make_request_wq;
 	struct cache_timer bc_make_request_wq_timer;
+	atomic_t bc_make_request_wq_count;
+	atomic_t bc_make_request_count;
 
 #ifdef ENABLE_TRACK_CRC32C
 #define CACHE_TRACK_HASH_MAGIC0       UINT128_FROM_UINT(0xf10c6a4a)

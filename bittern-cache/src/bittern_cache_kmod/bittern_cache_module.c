@@ -824,8 +824,6 @@ ssize_t cache_op_show_stats_extra(struct bittern_cache *bc,
 	       atomic_read(&bc->bc_seq_write.seq_io_count),
 	       atomic_read(&bc->bc_seq_write.non_seq_io_count),
 	       atomic_read(&bc->bc_seq_write.bypass_hit));
-
-
 	DMEMIT("%s: stats_extra: "
 	       "dirty_write_clone_alloc_ok=%u dirty_write_clone_alloc_fail=%u "
 	       "list_empty_pending=%u "
@@ -834,6 +832,10 @@ ssize_t cache_op_show_stats_extra(struct bittern_cache *bc,
 	       atomic_read(&bc->bc_dirty_write_clone_alloc_ok),
 	       atomic_read(&bc->bc_dirty_write_clone_alloc_fail),
 	       list_empty(&bc->bc_pending_requests_list));
+	DMEMIT("%s: stats_extra: bc_make_request_count=%u bc_make_request_wq_count=%u\n",
+	       bc->bc_name,
+	       atomic_read(&bc->bc_make_request_wq_count),
+	       atomic_read(&bc->bc_make_request_wq_count));
 	return sz;
 }
 

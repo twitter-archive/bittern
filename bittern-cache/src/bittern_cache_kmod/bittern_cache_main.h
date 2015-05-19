@@ -343,7 +343,13 @@ static inline bool bio_is_data_request(struct bio *bio)
 	return !bio_is_pureflush_or_discard_request(bio);
 }
 
-extern void cache_make_request_worker(struct work_struct *work);
+/*! do generic_make_request() immediately */
+extern void cache_do_make_request(struct bittern_cache *bc,
+				  struct work_item *wi);
+/*! defer generic_make_request() to thread (workqueue) */
+extern void cache_make_request_defer(struct bittern_cache *bc,
+				     struct work_item *wi);
+
 extern void cache_state_machine_endio(struct bio *cloned_bio, int err);
 /*! main state machine */
 extern void cache_state_machine(struct bittern_cache *bc,

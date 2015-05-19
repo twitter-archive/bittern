@@ -1203,8 +1203,6 @@ int pmem_data_put_page_write_block(struct bittern_cache *bc,
 
 	block_id = cache_block->bcb_block_id;
 
-	block_id = cache_block->bcb_block_id;
-
 	/*
 	 * required because we use the page to hold a temporary copy of the
 	 * metadata buffer

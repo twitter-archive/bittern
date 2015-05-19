@@ -307,7 +307,6 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 						      struct work_item *wi,
 						      struct bio *bio)
 {
-	struct bio *cloned_bio;
 	int ret;
 	uint128_t hash_data;
 	struct cache_block *cache_block;
@@ -378,44 +377,15 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 	 */
 	cache_track_hash_set(bc, cache_block, cache_block->bcb_hash_data);
 
-	/*
-	 * set up a new bio for write
-	 */
-	cloned_bio = bio_alloc(GFP_ATOMIC, 1);
-	M_ASSERT_FIXME(cloned_bio != NULL);
-
-	ASSERT(wi->wi_original_bio == bio);
-	ASSERT(wi->wi_cloned_bio == NULL);
-	wi->wi_cloned_bio = cloned_bio;
-	ASSERT(wi->wi_cache == bc);
-	ASSERT(wi->wi_cache_block == cache_block);
-
-	/*
-	 * Here we always write the full page.
-	 * For partial writes, we previously read-in the whole page,
-	 * then modified a part of it with data from userland.
-	 */
-
-	/*
-	 * we are writing from cache into the device
-	 */
-	bio_set_data_dir_write(cloned_bio);
-	ASSERT(bio_data_dir(cloned_bio) == WRITE);
-
-	cloned_bio->bi_iter.bi_sector = bio_sector_to_cache_block_sector(bio);
-	cloned_bio->bi_iter.bi_size = PAGE_SIZE;
-	cloned_bio->bi_bdev = bc->bc_dev->bdev;
-	cloned_bio->bi_end_io = cache_state_machine_endio;
-	cloned_bio->bi_private = wi;
-	cloned_bio->bi_io_vec[0].bv_page = cache_page;
-	cloned_bio->bi_io_vec[0].bv_len = PAGE_SIZE;
-	cloned_bio->bi_io_vec[0].bv_offset = 0;
-	cloned_bio->bi_vcnt = 1;
-
-	if (bio->bi_iter.bi_size == PAGE_SIZE) {
-		ASSERT(bio->bi_iter.bi_sector == cloned_bio->bi_iter.bi_sector);
-		ASSERT(bio->bi_iter.bi_size == cloned_bio->bi_iter.bi_size);
-	}
+	/* set up args for cache_make_request_block */
+	wi->bi_datadir = WRITE;
+	wi->bi_sector = cache_block->bcb_sector;
+	ASSERT(cache_block->bcb_sector ==
+	       bio_sector_to_cache_block_sector(bio));
+	wi->bi_endio = cache_state_machine_endio;
+	wi->bi_page = cache_page;
+	wi->bi_set_original_bio = false;
+	wi->bi_set_cloned_bio = true;
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "copy-to-device");
@@ -441,8 +411,9 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 		/*
 		 * first step in state machine -- in a process context
 		 */
-		wi->wi_ts_physio = current_kernel_time_nsec();
-		generic_make_request(cloned_bio);
+		M_ASSERT(!in_irq() && !in_softirq());
+		wi->wi_ts_workqueue = current_kernel_time_nsec();
+		cache_do_make_request(bc, wi);
 	} else if (cache_block->bcb_state ==
 		   CACHE_VALID_CLEAN_WRITE_HIT_COPY_TO_DEVICE_STARTIO) {
 		cache_state_transition3(bc, cache_block,
@@ -452,8 +423,9 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 		/*
 		 * first step in state machine -- in a process context
 		 */
-		wi->wi_ts_physio = current_kernel_time_nsec();
-		generic_make_request(cloned_bio);
+		M_ASSERT(!in_irq() && !in_softirq());
+		wi->wi_ts_workqueue = current_kernel_time_nsec();
+		cache_do_make_request(bc, wi);
 	} else {
 		ASSERT(cache_block->bcb_state ==
 		       CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_DEVICE_STARTIO);
@@ -462,18 +434,9 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 						CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_DEVICE_STARTIO,
 						CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_DEVICE_ENDIO);
 		/*
-		 * we are potentially in interrupt context
+		 * can be in softirq
 		 */
-		/*
-		 * FIXME: add API to tell us if asyncread is sync or async and
-		 * decide based on it
-		 */
-		wi->wi_ts_workqueue = current_kernel_time_nsec();
-		INIT_WORK(&wi->wi_work, cache_make_request_worker);
-		ret = queue_work(bc->bc_make_request_wq, &wi->wi_work);
-		BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, bio,
-			 wi->wi_cloned_bio, "queue_work=%d", ret);
-		ASSERT(ret == 1);
+		cache_make_request_defer(bc, wi);
 	}
 }
 

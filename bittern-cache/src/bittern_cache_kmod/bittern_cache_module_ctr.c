@@ -876,6 +876,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 						 1, bc->bc_name);
 	M_ASSERT_FIXME(bc->bc_make_request_wq != NULL);
 	cache_timer_init(&bc->bc_make_request_wq_timer);
+	atomic_set(&bc->bc_make_request_wq_count, 0);
 
 
 	/*

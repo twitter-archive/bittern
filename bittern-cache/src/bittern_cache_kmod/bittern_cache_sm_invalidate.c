@@ -66,14 +66,12 @@ void sm_invalidate_start(struct bittern_cache *bc,
 	/*
 	 * start updating metadata
 	 */
-	ret = pmem_metadata_async_write(
-		bc,
-		cache_block->bcb_block_id,
-		cache_block, &wi->wi_cache_data,
-		&wi->wi_async_context,
-		wi, /* callback context */
-		cache_metadata_write_callback, /* callback function */
-		CACHE_INVALID);
+	ret = pmem_metadata_async_write(bc,
+					cache_block,
+					&wi->wi_pmem_ctx,
+					wi, /* callback context */
+					cache_metadata_write_callback,
+					CACHE_INVALID);
 	M_ASSERT_FIXME(ret == 0);
 }
 

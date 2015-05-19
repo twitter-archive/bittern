@@ -71,6 +71,7 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 	unsigned long cache_flags;
 	struct work_item *wi;
 	int val;
+	int ret;
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL, "enter");
 	ASSERT_BITTERN_CACHE(bc);
@@ -121,7 +122,12 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 	ASSERT(wi->wi_cloned_bio == NULL);
 	ASSERT(wi->wi_cache == bc);
 
-	pagebuf_allocate_dbi(bc, bc->bc_kmem_threads, &wi->wi_cache_data);
+	ret = pmem_context_setup(bc,
+				 bc->bc_kmem_threads,
+				 cache_block,
+				 NULL,
+				 &wi->wi_pmem_ctx);
+	M_ASSERT_FIXME(ret == 0);
 
 	wi->wi_ts_started = current_kernel_time_nsec();
 

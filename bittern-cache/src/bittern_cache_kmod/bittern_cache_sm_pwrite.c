@@ -26,6 +26,7 @@ void sm_pwrite_miss_copy_from_device_startio(struct bittern_cache *bc,
 	int ret;
 	struct cache_block *cache_block;
 	int val;
+	struct page *cache_page;
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT((wi->wi_flags & WI_FLAG_HAS_ENDIO) == 0);
@@ -46,15 +47,12 @@ void sm_pwrite_miss_copy_from_device_startio(struct bittern_cache *bc,
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 0);
 	ret = pmem_data_get_page_write(bc,
-							   cache_block->
-							   bcb_block_id,
-							   cache_block,
-							   &wi->wi_cache_data);
+				       cache_block,
+				       &wi->wi_pmem_ctx);
 	M_ASSERT_FIXME(ret == 0);
-	ASSERT(wi->wi_cache_data.di_page != NULL);
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 1);
+
+	cache_page = pmem_context_data_page(&wi->wi_pmem_ctx);
 
 	cloned_bio = bio_alloc(GFP_ATOMIC, 1);
 	M_ASSERT_FIXME(cloned_bio != NULL);
@@ -81,7 +79,7 @@ void sm_pwrite_miss_copy_from_device_startio(struct bittern_cache *bc,
 	cloned_bio->bi_bdev = bc->bc_dev->bdev;
 	cloned_bio->bi_end_io = cache_state_machine_endio;
 	cloned_bio->bi_private = wi;
-	cloned_bio->bi_io_vec[0].bv_page = wi->wi_cache_data.di_page;
+	cloned_bio->bi_io_vec[0].bv_page = cache_page;
 	cloned_bio->bi_io_vec[0].bv_len = PAGE_SIZE;
 	cloned_bio->bi_io_vec[0].bv_offset = 0;
 	cloned_bio->bi_vcnt = 1;
@@ -131,6 +129,8 @@ void sm_pwrite_miss_copy_from_device_endio(struct bittern_cache *bc,
 	uint128_t hash_data;
 	int ret;
 	struct cache_block *cache_block;
+	char *cache_vaddr;
+	struct page *cache_page;
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT((wi->wi_flags & WI_FLAG_HAS_ENDIO) == 0);
@@ -153,16 +153,15 @@ void sm_pwrite_miss_copy_from_device_endio(struct bittern_cache *bc,
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL, "endio");
 
+	cache_vaddr = pmem_context_data_vaddr(&wi->wi_pmem_ctx);
+	cache_page = pmem_context_data_page(&wi->wi_pmem_ctx);
+
 	atomic_dec(&bc->bc_pending_cached_device_requests);
 
 	/*
 	 * we can check the original hash
 	 */
-	ASSERT(wi->wi_cache_data.di_buffer != NULL);
-	ASSERT(wi->wi_cache_data.di_page != NULL);
-	cache_track_hash_check_buffer(bc,
-					cache_block,
-					wi->wi_cache_data.di_buffer);
+	cache_track_hash_check_buffer(bc, cache_block, cache_vaddr);
 
 	/*
 	 * copy to cache from bio, aka userland writes
@@ -185,8 +184,6 @@ void sm_pwrite_miss_copy_from_device_endio(struct bittern_cache *bc,
 	{
 		struct bio *cloned_bio;
 		int val;
-
-		ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 1);
 
 		cloned_bio = bio_alloc(GFP_ATOMIC, 1);
 		M_ASSERT_FIXME(cloned_bio != NULL);
@@ -214,7 +211,7 @@ void sm_pwrite_miss_copy_from_device_endio(struct bittern_cache *bc,
 		cloned_bio->bi_bdev = bc->bc_dev->bdev;
 		cloned_bio->bi_end_io = cache_state_machine_endio;
 		cloned_bio->bi_private = wi;
-		cloned_bio->bi_io_vec[0].bv_page = wi->wi_cache_data.di_page;
+		cloned_bio->bi_io_vec[0].bv_page = cache_page;
 		cloned_bio->bi_io_vec[0].bv_len = PAGE_SIZE;
 		cloned_bio->bi_io_vec[0].bv_offset = 0;
 		cloned_bio->bi_vcnt = 1;
@@ -261,9 +258,12 @@ void sm_pwrite_miss_copy_from_device_endio(struct bittern_cache *bc,
 						CACHE_VALID_DIRTY_PARTIAL_WRITE_MISS_COPY_FROM_DEVICE_ENDIO,
 						CACHE_VALID_DIRTY_PARTIAL_WRITE_MISS_COPY_TO_CACHE_END);
 
-		ret = pmem_data_put_page_write(bc, cache_block->bcb_block_id, cache_block, &wi->wi_cache_data, &wi->wi_async_context, wi,	/*callback context */
-								   cache_put_page_write_callback,	/*callback function */
-								   CACHE_VALID_DIRTY);
+		ret = pmem_data_put_page_write(bc,
+					       cache_block,
+					       &wi->wi_pmem_ctx,
+					       wi, /*callback context */
+					       cache_put_page_write_callback,
+					       CACHE_VALID_DIRTY);
 		M_ASSERT_FIXME(ret == 0);
 
 	}
@@ -300,8 +300,6 @@ void sm_pwrite_miss_copy_to_device_endio(struct bittern_cache *bc,
 
 	atomic_dec(&bc->bc_pending_cached_device_requests);
 
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 1);
-
 	/*
 	 * for writeback we commit to cache and then we are done
 	 */
@@ -311,9 +309,12 @@ void sm_pwrite_miss_copy_to_device_endio(struct bittern_cache *bc,
 					CACHE_VALID_DIRTY_PARTIAL_WRITE_MISS_COPY_FROM_DEVICE_ENDIO,
 					CACHE_VALID_DIRTY_PARTIAL_WRITE_MISS_COPY_TO_CACHE_END);
 
-	ret = pmem_data_put_page_write(bc, cache_block->bcb_block_id, cache_block, &wi->wi_cache_data, &wi->wi_async_context, wi,	/*callback context */
-							   cache_put_page_write_callback,	/*callback function */
-							   CACHE_VALID_CLEAN);
+	ret = pmem_data_put_page_write(bc,
+				       cache_block,
+				       &wi->wi_pmem_ctx,
+				       wi, /*callback context */
+				       cache_put_page_write_callback,
+				       CACHE_VALID_CLEAN);
 	M_ASSERT_FIXME(ret == 0);
 }
 
@@ -347,8 +348,6 @@ void sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 		 "copy-to-cache-end");
-
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 0);
 
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);

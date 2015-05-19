@@ -63,10 +63,11 @@ void sm_read_hit_copy_from_cache_start(struct bittern_cache *bc,
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 		 "start_async_read (get_page_read): wi=%p, bc=%p, cache_block=%p, bio=%p",
 		 wi, bc, cache_block, bio);
-	ret = pmem_data_get_page_read(bc, cache_block->bcb_block_id, cache_block, &wi->wi_cache_data, &wi->wi_async_context, wi,	/*callback context */
-							  cache_get_page_read_callback
-							  /*callback function */
-							  );
+	ret = pmem_data_get_page_read(bc,
+				      cache_block,
+				      &wi->wi_pmem_ctx,
+				      wi, /*callback context */
+				      cache_get_page_read_callback);
 	M_ASSERT_FIXME(ret == 0);
 }
 
@@ -98,7 +99,6 @@ void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
 	       CACHE_VALID_DIRTY_READ_HIT_COPY_FROM_CACHE_END);
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) != 0);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "bio_copy_from_cache");
@@ -129,12 +129,9 @@ void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
 	/*
 	 * release cache page
 	 */
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) != 0);
 	pmem_data_put_page_read(bc,
-				cache_block->bcb_block_id,
 				cache_block,
-				&wi->wi_cache_data);
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 0);
+				&wi->wi_pmem_ctx);
 
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT_BITTERN_CACHE(bc);
@@ -206,6 +203,7 @@ void sm_read_miss_copy_from_device_startio(struct bittern_cache *bc,
 	int ret;
 	struct cache_block *cache_block;
 	int val;
+	struct page *cache_page;
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT((wi->wi_flags & WI_FLAG_HAS_ENDIO) == 0);
@@ -224,13 +222,15 @@ void sm_read_miss_copy_from_device_startio(struct bittern_cache *bc,
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
+	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
+		 "copy-from-device-0");
+
 	ret = pmem_data_get_page_write(bc,
-							   cache_block->
-							   bcb_block_id,
-							   cache_block,
-							   &wi->wi_cache_data);
+				       cache_block,
+				       &wi->wi_pmem_ctx);
 	M_ASSERT_FIXME(ret == 0);
-	ASSERT(wi->wi_cache_data.di_page != NULL);
+
+	cache_page = pmem_context_data_page(&wi->wi_pmem_ctx);
 
 	cloned_bio = bio_alloc(GFP_ATOMIC, 1);
 	M_ASSERT_FIXME(cloned_bio != NULL);
@@ -257,7 +257,7 @@ void sm_read_miss_copy_from_device_startio(struct bittern_cache *bc,
 	cloned_bio->bi_bdev = bc->bc_dev->bdev;
 	cloned_bio->bi_end_io = cache_state_machine_endio;
 	cloned_bio->bi_private = wi;
-	cloned_bio->bi_io_vec[0].bv_page = wi->wi_cache_data.di_page;
+	cloned_bio->bi_io_vec[0].bv_page = cache_page;
 	cloned_bio->bi_io_vec[0].bv_len = PAGE_SIZE;
 	cloned_bio->bi_io_vec[0].bv_offset = 0;
 	cloned_bio->bi_vcnt = 1;
@@ -351,20 +351,16 @@ void sm_read_miss_copy_from_device_endio(struct bittern_cache *bc,
 	/*
 	 * release cache page
 	 */
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 1);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 		 "start_async_write (put_page_write): callback_context/wi=%p, bc=%p, cache_block=%p, bio=%p",
 		 wi, bc, cache_block, bio);
 	ret = pmem_data_put_page_write(bc,
-				       cache_block->bcb_block_id,
 				       cache_block,
-				       &wi->wi_cache_data,
-				       &wi->wi_async_context,
+				       &wi->wi_pmem_ctx,
 				       wi, /*callback context */
 				       cache_put_page_write_callback,
-							   CACHE_VALID_CLEAN);
-
+				       CACHE_VALID_CLEAN);
 	M_ASSERT_FIXME(ret == 0);
 
 	ASSERT_BITTERN_CACHE(bc);
@@ -393,8 +389,6 @@ void sm_read_miss_copy_to_cache_end(struct bittern_cache *bc,
 	       CACHE_VALID_CLEAN_READ_MISS_COPY_TO_CACHE_END);
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
-
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 0);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "end");

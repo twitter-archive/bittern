@@ -79,7 +79,10 @@ int cache_ctr_restore_data_block(struct bittern_cache *bc,
 {
 	struct cache_block *existing_bcb;
 	unsigned int existing_block_id;
-	int ret = pmem_block_restore(bc, block_id, bcb);
+	int ret;
+
+	ASSERT(block_id == bcb->bcb_block_id);
+	ret = pmem_block_restore(bc, bcb);
 
 	if (ret < 0) {
 		/*

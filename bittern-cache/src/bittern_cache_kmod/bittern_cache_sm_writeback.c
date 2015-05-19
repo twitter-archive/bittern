@@ -59,10 +59,8 @@ void sm_writeback_copy_from_cache_start(struct bittern_cache *bc,
 			CACHE_VALID_DIRTY_WRITEBACK_INV_COPY_FROM_CACHE_END);
 
 	ret = pmem_data_get_page_read(bc,
-				      cache_block->bcb_block_id,
 				      cache_block,
-				      &wi->wi_cache_data,
-				      &wi->wi_async_context,
+				      &wi->wi_pmem_ctx,
 				      wi, /*callback context */
 				      cache_get_page_read_callback);
 	M_ASSERT_FIXME(ret == 0);
@@ -79,6 +77,7 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 	int ret;
 	struct cache_block *cache_block;
 	int val;
+	struct page *cache_page;
 
 	ASSERT(bio == NULL);
 	ASSERT(wi->wi_original_bio == NULL);
@@ -91,17 +90,17 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 	       CACHE_VALID_DIRTY_WRITEBACK_COPY_FROM_CACHE_END
 	       || cache_block->bcb_state ==
 	       CACHE_VALID_DIRTY_WRITEBACK_INV_COPY_FROM_CACHE_END);
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 1);
-	ASSERT(wi->wi_cache_data.di_page != NULL);
-	ASSERT(wi->wi_cache_data.di_buffer != NULL);
-
 	ASSERT(bc->bc_enable_extra_checksum_check == 0
 	       || bc->bc_enable_extra_checksum_check == 1);
+
+	cache_page = pmem_context_data_page(&wi->wi_pmem_ctx);
+
 	if (bc->bc_enable_extra_checksum_check != 0) {
+		char *cache_vaddr;
+
+		cache_vaddr = pmem_context_data_vaddr(&wi->wi_pmem_ctx);
 		/* verify that crc32c is correct */
-		cache_verify_hash_data_buffer(bc,
-						cache_block,
-						wi->wi_cache_data.di_buffer);
+		cache_verify_hash_data_buffer(bc, cache_block, cache_vaddr);
 	}
 
 	/*
@@ -113,7 +112,6 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 	bio = bio_alloc(GFP_ATOMIC, 1);
 	M_ASSERT_FIXME(bio != NULL);
 
-	ASSERT(wi->wi_cache_data.di_page != NULL);
 	bio_set_data_dir_write(bio);
 	ASSERT(bio_data_dir(bio) == WRITE);
 	bio->bi_iter.bi_sector = cache_block->bcb_sector;
@@ -122,7 +120,7 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 	bio->bi_end_io = cache_state_machine_endio;
 	bio->bi_private = wi;
 	bio->bi_vcnt = 1;
-	bio->bi_io_vec[0].bv_page = wi->wi_cache_data.di_page;
+	bio->bi_io_vec[0].bv_page = cache_page;
 	bio->bi_io_vec[0].bv_len = PAGE_SIZE;
 	bio->bi_io_vec[0].bv_offset = 0;
 	ASSERT(cache_block->bcb_sector ==
@@ -202,8 +200,6 @@ void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,
 	       CACHE_VALID_DIRTY_WRITEBACK_COPY_TO_DEVICE_ENDIO
 	       || cache_block->bcb_state ==
 	       CACHE_VALID_DIRTY_WRITEBACK_INV_COPY_TO_DEVICE_ENDIO);
-	ASSERT(wi->wi_cache_data.di_page != NULL);
-	ASSERT(wi->wi_cache_data.di_buffer != NULL);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "writeback-copy-to-device-endio");
@@ -211,12 +207,9 @@ void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,
 	/*
 	 * release cache page
 	 */
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 1);
 	pmem_data_put_page_read(bc,
-						    cache_block->bcb_block_id,
-						    cache_block,
-						    &wi->wi_cache_data);
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 0);
+				cache_block,
+				&wi->wi_pmem_ctx);
 
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
@@ -247,10 +240,8 @@ void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,
 	 * start updating metadata
 	 */
 	ret = pmem_metadata_async_write(bc,
-					cache_block->bcb_block_id,
 					cache_block,
-					&wi->wi_cache_data,
-					&wi->wi_async_context,
+					&wi->wi_pmem_ctx,
 					wi, /* callback context */
 					cache_metadata_write_callback,
 					metadata_state);

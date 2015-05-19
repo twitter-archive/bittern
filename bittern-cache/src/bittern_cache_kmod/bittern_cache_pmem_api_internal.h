@@ -20,10 +20,12 @@
 
 extern int pmem_read_sync(struct bittern_cache *bc,
 			  uint64_t from_pmem_offset,
-			  void *to_buffer, size_t size);
+			  void *to_buffer,
+			  size_t size);
 extern int pmem_write_sync(struct bittern_cache *bc,
 			   uint64_t to_pmem_offset,
-			   void *from_buffer, size_t size);
+			   void *from_buffer,
+			   size_t size);
 
 typedef int
 (*pmem_allocate_f)(struct bittern_cache *bc,
@@ -42,49 +44,38 @@ typedef int
 		     size_t size);
 typedef int
 (*pmem_metadata_async_write_f)(struct bittern_cache *bc,
-			       unsigned int block_id,
 			       struct cache_block *cache_block,
-			       struct data_buffer_info *dbi_data,
-			       struct async_context *async_context,
+			       struct pmem_context *pmem_ctx,
 			       void *callback_context,
 			       pmem_callback_t callback_function,
 			       enum cache_state metadata_update_state);
 typedef int
 (*pmem_data_cache_get_page_read_f)(struct bittern_cache *bc,
-				   unsigned int block_id,
 				   struct cache_block *cache_block,
-				   struct data_buffer_info *dbi_data,
-				   struct async_context *async_context,
+				   struct pmem_context *pmem_ctx,
 				   void *callback_context,
 				   pmem_callback_t callback_function);
 typedef int
 (*pmem_data_cache_put_page_read_f)(struct bittern_cache *bc,
-				   unsigned int block_id,
 				   struct cache_block *cache_block,
-				   struct data_buffer_info *dbi_data);
+				   struct pmem_context *pmem_ctx);
 typedef int
 (*pmem_data_cache_convert_read_to_write_f)(struct bittern_cache *bc,
-					   unsigned int block_id,
 					   struct cache_block *cache_block,
-					   struct data_buffer_info *dbi_data);
+					   struct pmem_context *pmem_ctx);
 typedef int
 (*pmem_data_cache_clone_read_to_write_f)(struct bittern_cache *bc,
-					 unsigned int from_block_id,
 					 struct cache_block *from_cache_block,
-					 unsigned int to_block_id,
 					 struct cache_block *to_cache_block,
-					 struct data_buffer_info *dbi_data);
+					 struct pmem_context *pmem_ctx);
 typedef int
 (*pmem_data_cache_get_page_write_f)(struct bittern_cache *bc,
-				    unsigned int block_id,
 				    struct cache_block *cache_block,
-				    struct data_buffer_info *dbi_data);
+				    struct pmem_context *pmem_ctx);
 typedef int
 (*pmem_data_cache_put_page_write_f)(struct bittern_cache *bc,
-				    unsigned int block_id,
 				    struct cache_block *cache_block,
-				    struct data_buffer_info *dbi_data,
-				    struct async_context *async_context,
+				    struct pmem_context *pmem_ctx,
 				    void *callback_context,
 				    pmem_callback_t callback_function,
 				    enum cache_state metadata_update_state);
@@ -307,3 +298,56 @@ __cache_block_id_2_data_pmem_offset(struct bittern_cache *bc,
 	ASSERT(ret + PAGE_SIZE <= pa->papi_bdev_size_bytes);
 	return ret;
 }
+
+static inline void pmem_set_dbi(struct data_buffer_info *dbi,
+				int flags,
+				void *vaddr,
+				struct page *page)
+{
+	ASSERT((flags & CACHE_DI_FLAGS_DOUBLE_BUFFERING) == 0);
+	ASSERT(vaddr != NULL);
+	ASSERT(page != NULL);
+	ASSERT(dbi->di_buffer == NULL);
+	ASSERT(dbi->di_page == NULL);
+	ASSERT(dbi->di_flags == 0x0);
+	ASSERT(atomic_read(&dbi->di_busy) == 0);
+	dbi->di_buffer = vaddr;
+	dbi->di_page = page;
+	dbi->di_flags = flags;
+	atomic_inc(&dbi->di_busy);
+}
+
+static inline void pmem_set_dbi_double_buffering(struct data_buffer_info *dbi,
+						 int flags)
+{
+	ASSERT((flags & CACHE_DI_FLAGS_DOUBLE_BUFFERING) != 0);
+	ASSERT(dbi->di_buffer == NULL);
+	ASSERT(dbi->di_page == NULL);
+	ASSERT(dbi->di_flags == 0x0);
+	ASSERT(atomic_read(&dbi->di_busy) == 0);
+	ASSERT(dbi->di_buffer_vmalloc_buffer != NULL);
+	ASSERT(PAGE_ALIGNED(dbi->di_buffer_vmalloc_buffer));
+	ASSERT(dbi->di_buffer_vmalloc_page != NULL);
+	ASSERT(dbi->di_buffer_vmalloc_page ==
+	       virtual_to_page(dbi->di_buffer_vmalloc_buffer));
+	dbi->di_buffer = dbi->di_buffer_vmalloc_buffer;
+	dbi->di_page = dbi->di_buffer_vmalloc_page;
+	dbi->di_flags = flags;
+	atomic_inc(&dbi->di_busy);
+}
+
+static inline void __pmem_clear_dbi(struct data_buffer_info *dbi, int flags)
+{
+	__ASSERT_PMEM_DBI(dbi, flags);
+	dbi->di_buffer = NULL;
+	dbi->di_page = NULL;
+	dbi->di_flags = 0x0;
+	atomic_dec(&dbi->di_busy);
+	ASSERT(atomic_read(&dbi->di_busy) == 0);
+}
+
+/*! use this macro when we know we are using double buffering */
+#define pmem_clear_dbi_double_buffering(__dbi)			\
+		__pmem_clear_dbi(__dbi, CACHE_DI_FLAGS_DOUBLE_BUFFERING)
+#define pmem_clear_dbi(__dbi)					\
+		__pmem_clear_dbi(__dbi, 0)

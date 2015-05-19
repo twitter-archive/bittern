@@ -86,6 +86,101 @@ void pmem_info_deinitialize(struct bittern_cache *bc)
 	printk_info("%p: done\n", bc);
 }
 
+/*! initializes empty pmem context */
+void pmem_context_initialize(struct pmem_context *ctx)
+{
+	memset(ctx, 0, sizeof(struct pmem_context));
+	ctx->magic1 = PMEM_CONTEXT_MAGIC1;
+	ctx->magic2 = PMEM_CONTEXT_MAGIC2;
+	ctx->dbi.di_buffer_vmalloc_buffer = NULL;
+	ctx->dbi.di_buffer_vmalloc_page = NULL;
+	ctx->dbi.di_buffer_slab = NULL;
+	ctx->dbi.di_buffer = NULL;
+	ctx->dbi.di_page = NULL;
+	ctx->dbi.di_flags = 0x0;
+	atomic_set(&ctx->dbi.di_busy, 0);
+}
+
+/*!
+ * Sets up resources for pmem context.
+ * Later this will be split into implementation specific code,
+ * one for pmem_block, one for pmem_mem.
+ * The pmem_block implementation will allocate a double buffer,
+ * the pmem_mem implementation will call DAX to retrieve the virtual
+ * addresses for data and metadata for "cache_block" and "cloned_cache_block".
+ */
+int pmem_context_setup(struct bittern_cache *bc,
+		       struct kmem_cache *kmem_slab,
+		       struct cache_block *cache_block,
+		       struct cache_block *cloned_cache_block,
+		       struct pmem_context *ctx)
+{
+	struct data_buffer_info *dbi;
+
+	ASSERT_BITTERN_CACHE(bc);
+	ASSERT(kmem_slab == bc->bc_kmem_map ||
+	       kmem_slab == bc->bc_kmem_threads);
+	ASSERT(ctx != NULL);
+	M_ASSERT(ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(ctx->magic2 == PMEM_CONTEXT_MAGIC2);
+	dbi = &ctx->dbi;
+	/*
+	 * this code copied from pagebuf_allocate_dbi()
+	 * in bittern_cache_main.h
+	 */
+	ASSERT(dbi->di_buffer_vmalloc_buffer == NULL);
+	ASSERT(dbi->di_buffer_vmalloc_page == NULL);
+	ASSERT(dbi->di_buffer_slab == NULL);
+	ASSERT(dbi->di_buffer == NULL);
+	ASSERT(dbi->di_page == NULL);
+	ASSERT(dbi->di_flags == 0x0);
+	ASSERT(atomic_read(&dbi->di_busy) == 0);
+	dbi->di_buffer_vmalloc_buffer = kmem_cache_alloc(kmem_slab, GFP_NOIO);
+	M_ASSERT_FIXME(dbi->di_buffer_vmalloc_buffer != NULL);
+	ASSERT(PAGE_ALIGNED(dbi->di_buffer_vmalloc_buffer));
+	dbi->di_buffer_vmalloc_page =
+				virtual_to_page(dbi->di_buffer_vmalloc_buffer);
+	ASSERT(dbi->di_buffer_vmalloc_page != NULL);
+	dbi->di_buffer_slab = kmem_slab;
+
+	return 0;
+}
+
+/*! destroys pmem_context resources */
+void pmem_context_destroy(struct bittern_cache *bc,
+			  struct pmem_context *ctx)
+{
+	struct data_buffer_info *dbi;
+
+	ASSERT_BITTERN_CACHE(bc);
+	ASSERT(ctx != NULL);
+	M_ASSERT(ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(ctx->magic2 == PMEM_CONTEXT_MAGIC2);
+	dbi = &ctx->dbi;
+	/*
+	 * this code copied from pagebuf_free_dbi()
+	 * in bittern_cache_main.h.
+	 * we also add conditional free for the cases we didn't allocate
+	 * the buffer yet.
+	 */
+	ASSERT(dbi->di_buffer == NULL);
+	ASSERT(dbi->di_page == NULL);
+	ASSERT(dbi->di_flags == 0x0);
+	ASSERT(atomic_read(&dbi->di_busy) == 0);
+	if (dbi->di_buffer_vmalloc_buffer != NULL) {
+		ASSERT(dbi->di_buffer_vmalloc_page != NULL);
+		ASSERT(dbi->di_buffer_slab != NULL);
+		ASSERT(dbi->di_buffer_slab == bc->bc_kmem_map ||
+		       dbi->di_buffer_slab == bc->bc_kmem_threads);
+		kmem_cache_free(dbi->di_buffer_slab,
+				dbi->di_buffer_vmalloc_buffer);
+		dbi->di_buffer_vmalloc_buffer = NULL;
+		dbi->di_buffer_vmalloc_page = NULL;
+		dbi->di_buffer_slab = NULL;
+	}
+}
+
+
 void pmem_initialize_pmem_header_sizes(struct bittern_cache *bc,
 				       uint64_t device_cache_size_bytes)
 {
@@ -590,7 +685,6 @@ int pmem_header_restore(struct bittern_cache *bc)
  * - 0 for no restore (crash occurred in the middle of a transaction).
  */
 int pmem_block_restore(struct bittern_cache *bc,
-		       unsigned int block_id,
 		       struct cache_block *cache_block)
 {
 	struct pmem_block_metadata *pmbm;
@@ -599,13 +693,14 @@ int pmem_block_restore(struct bittern_cache *bc,
 	void *buffer_vaddr;
 	struct page *buffer_page;
 	struct pmem_api *pa = &bc->bc_papi;
+	int block_id;
 
 	ASSERT(bc != NULL);
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
 	ASSERT(sizeof(struct pmem_header) == PAGE_SIZE);
-	/* enforce this before we remove block_id arg */
-	M_ASSERT(block_id == cache_block->bcb_block_id);
+
+	block_id = cache_block->bcb_block_id;
 
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
 	ASSERT(block_id >= 1 && block_id <= pa->papi_hdr.lm_cache_blocks);
@@ -1048,20 +1143,18 @@ int pmem_write_sync(struct bittern_cache *bc,
 }
 
 int pmem_metadata_sync_read(struct bittern_cache *bc,
-			    unsigned int block_id,
 			    struct cache_block *cache_block,
 			    struct pmem_block_metadata *out_pmbm_mem)
 {
 	int ret;
 	struct pmem_api *pa = &bc->bc_papi;
+	int block_id = cache_block->bcb_block_id;
 
 	ASSERT(out_pmbm_mem != NULL);
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 		     "out_pmbm_mem=%p", out_pmbm_mem);
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
-	/* enforce this before we remove block_id arg */
-	M_ASSERT(block_id == cache_block->bcb_block_id);
 	ret = pmem_read_sync(bc,
 					   __cache_block_id_2_metadata_pmem_offset
 					   (bc, block_id), out_pmbm_mem,
@@ -1072,59 +1165,9 @@ int pmem_metadata_sync_read(struct bittern_cache *bc,
 	return 0;
 }
 
-int pmem_metadata_sync_write(struct bittern_cache *bc,
-			     unsigned int block_id,
-			     struct cache_block *cache_block,
-			     enum cache_state metadata_update_state)
-{
-	int ret;
-	struct pmem_api *pa = &bc->bc_papi;
-	struct pmem_block_metadata *pmbm;
-
-	ASSERT(pa->papi_bdev_size_bytes > 0);
-	ASSERT(pa->papi_bdev != NULL);
-	pmbm = kmem_zalloc(sizeof(struct pmem_block_metadata),
-			   GFP_NOIO);
-	M_ASSERT_FIXME(pmbm != NULL);
-
-	ASSERT(metadata_update_state == CACHE_INVALID ||
-	       metadata_update_state == CACHE_VALID_CLEAN ||
-	       metadata_update_state == CACHE_VALID_DIRTY);
-	ASSERT(block_id == cache_block->bcb_block_id);
-	/* enforce this before we remove block_id arg */
-	M_ASSERT(block_id == cache_block->bcb_block_id);
-	pmbm->pmbm_magic = MCBM_MAGIC;
-	pmbm->pmbm_block_id = block_id;
-	if (metadata_update_state == CACHE_INVALID) {
-		pmbm->pmbm_status = CACHE_INVALID;
-		pmbm->pmbm_device_sector = -1;
-	} else {
-		ASSERT(is_sector_number_valid(cache_block->bcb_sector));
-		pmbm->pmbm_device_sector = cache_block->bcb_sector;
-	}
-	pmbm->pmbm_xid = cache_block->bcb_xid;
-	pmbm->pmbm_hash_data = cache_block->bcb_hash_data;
-	pmbm->pmbm_hash_metadata = murmurhash3_128(pmbm,
-					   PMEM_BLOCK_METADATA_HASHING_SIZE);
-	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
-		     "metadata_update_state=%d(%s)", metadata_update_state,
-		     cache_state_to_str(metadata_update_state));
-	ret = pmem_write_sync(bc,
-			__cache_block_id_2_metadata_pmem_offset(bc, block_id),
-			pmbm,
-			sizeof(struct pmem_block_metadata));
-	M_ASSERT_FIXME(ret == 0);
-
-	kmem_free(pmbm, sizeof(struct pmem_block_metadata));
-
-	return 0;
-}
-
 int pmem_metadata_async_write(struct bittern_cache *bc,
-			      unsigned int block_id,
 			      struct cache_block *cache_block,
-			      struct data_buffer_info *dbi_data,
-			      struct async_context *async_context,
+			      struct pmem_context *pmem_ctx,
 			      void *callback_context,
 			      pmem_callback_t callback_function,
 			      enum cache_state metadata_update_state)
@@ -1135,23 +1178,17 @@ int pmem_metadata_async_write(struct bittern_cache *bc,
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
 
-	/* enforce this before we remove block_id arg */
-	M_ASSERT(block_id == cache_block->bcb_block_id);
 	return (*pp->metadata_async_write)(bc,
-					   block_id,
 					   cache_block,
-					   dbi_data,
-					   async_context,
+					   pmem_ctx,
 					   callback_context,
 					   callback_function,
 					   metadata_update_state);
 }
 
 int pmem_data_get_page_read(struct bittern_cache *bc,
-			    unsigned int block_id,
 			    struct cache_block *cache_block,
-			    struct data_buffer_info *dbi_data,
-			    struct async_context *async_context,
+			    struct pmem_context *pmem_ctx,
 			    void *callback_context,
 			    pmem_callback_t callback_function)
 {
@@ -1161,21 +1198,16 @@ int pmem_data_get_page_read(struct bittern_cache *bc,
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
 
-	/* enforce this before we remove block_id arg */
-	M_ASSERT(block_id == cache_block->bcb_block_id);
 	return (*pp->data_cache_get_page_read)(bc,
-						     block_id,
-						     cache_block,
-						     dbi_data,
-						     async_context,
-						     callback_context,
-						     callback_function);
+					       cache_block,
+					       pmem_ctx,
+					       callback_context,
+					       callback_function);
 }
 
 int pmem_data_put_page_read(struct bittern_cache *bc,
-			    unsigned int block_id,
 			    struct cache_block *cache_block,
-			    struct data_buffer_info *dbi_data)
+			    struct pmem_context *pmem_ctx)
 {
 	struct pmem_api *pa = &bc->bc_papi;
 	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
@@ -1183,18 +1215,14 @@ int pmem_data_put_page_read(struct bittern_cache *bc,
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
 
-	/* enforce this before we remove block_id arg */
-	M_ASSERT(block_id == cache_block->bcb_block_id);
 	return (*pp->data_cache_put_page_read)(bc,
-					       block_id,
 					       cache_block,
-					       dbi_data);
+					       pmem_ctx);
 }
 
 int pmem_data_convert_read_to_write(struct bittern_cache *bc,
-				    unsigned int block_id,
 				    struct cache_block *cache_block,
-				    struct data_buffer_info *dbi_data)
+				    struct pmem_context *pmem_ctx)
 {
 	struct pmem_api *pa = &bc->bc_papi;
 	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
@@ -1202,20 +1230,15 @@ int pmem_data_convert_read_to_write(struct bittern_cache *bc,
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
 
-	/* enforce this before we remove block_id arg */
-	M_ASSERT(block_id == cache_block->bcb_block_id);
 	return (*pp->data_cache_convert_read_to_write)(bc,
-						       block_id,
 						       cache_block,
-						       dbi_data);
+						       pmem_ctx);
 }
 
 int pmem_data_clone_read_to_write(struct bittern_cache *bc,
-				  unsigned int from_block_id,
 				  struct cache_block *from_cache_block,
-				  unsigned int to_block_id,
 				  struct cache_block *to_cache_block,
-				  struct data_buffer_info *dbi_data)
+				  struct pmem_context *pmem_ctx)
 {
 	struct pmem_api *pa = &bc->bc_papi;
 	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
@@ -1223,22 +1246,15 @@ int pmem_data_clone_read_to_write(struct bittern_cache *bc,
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
 
-	/* enforce this before we remove block_id arg */
-	M_ASSERT(from_block_id == from_cache_block->bcb_block_id);
-	/* enforce this before we remove block_id arg */
-	M_ASSERT(to_block_id == to_cache_block->bcb_block_id);
 	return (*pp->data_cache_clone_read_to_write)(bc,
-						     from_block_id,
 						     from_cache_block,
-						     to_block_id,
 						     to_cache_block,
-						     dbi_data);
+						     pmem_ctx);
 }
 
 int pmem_data_get_page_write(struct bittern_cache *bc,
-			     unsigned int block_id,
 			     struct cache_block *cache_block,
-			     struct data_buffer_info *dbi_data)
+			     struct pmem_context *pmem_ctx)
 {
 	struct pmem_api *pa = &bc->bc_papi;
 	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
@@ -1246,19 +1262,14 @@ int pmem_data_get_page_write(struct bittern_cache *bc,
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
 
-	/* enforce this before we remove block_id arg */
-	M_ASSERT(block_id == cache_block->bcb_block_id);
 	return (*pp->data_cache_get_page_write)(bc,
-						block_id,
 						cache_block,
-						dbi_data);
+						pmem_ctx);
 }
 
 int pmem_data_put_page_write(struct bittern_cache *bc,
-			     unsigned int block_id,
 			     struct cache_block *cache_block,
-			     struct data_buffer_info *dbi_data,
-			     struct async_context *async_context,
+			     struct pmem_context *pmem_ctx,
 			     void *callback_context,
 			     pmem_callback_t callback_function,
 			     enum cache_state metadata_update_state)
@@ -1269,13 +1280,9 @@ int pmem_data_put_page_write(struct bittern_cache *bc,
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
 
-	/* enforce this before we remove block_id arg */
-	M_ASSERT(block_id == cache_block->bcb_block_id);
 	return (*pp->data_cache_put_page_write)(bc,
-						block_id,
 						cache_block,
-						dbi_data,
-						async_context,
+						pmem_ctx,
 						callback_context,
 						callback_function,
 						metadata_update_state);

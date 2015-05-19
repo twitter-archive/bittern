@@ -48,7 +48,6 @@ void cache_state_machine_endio(struct bio *cloned_bio, int err)
 	struct work_item *wi;
 	int cloned_bio_dir;
 
-	M_ASSERT_FIXME(err == 0);
 	ASSERT(cloned_bio != NULL);
 	wi = cloned_bio->bi_private;
 
@@ -57,6 +56,18 @@ void cache_state_machine_endio(struct bio *cloned_bio, int err)
 	bc = wi->wi_cache;
 	cache_block = wi->wi_cache_block;
 	original_bio = wi->wi_original_bio;
+
+	if (err != 0) {
+		BT_TRACE(BT_LEVEL_ERROR,
+			 bc, wi, cache_block, original_bio, NULL,
+			 "err=%d, wi=%p, bc=%p, cache_block=%p (bio=original_bio)",
+			 err, wi, bc, cache_block);
+		BT_TRACE(BT_LEVEL_ERROR,
+			 bc, wi, cache_block, cloned_bio, NULL,
+			 "err=%d, wi=%p, bc=%p, cache_block=%p (bio=cloned_bio)",
+			 err, wi, bc, cache_block);
+	}
+	M_ASSERT_FIXME(err == 0);
 
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT_BITTERN_CACHE(bc);
@@ -253,14 +264,14 @@ void __bio_copy_from_cache(struct work_item *wi,
 	struct bio_vec bvec;
 	struct bittern_cache *bc = wi->wi_cache;
 	struct cache_block *cache_block = wi->wi_cache_block;
+	char *cache_vaddr;
 
 	ASSERT(bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(wi->wi_cache_data.di_buffer != NULL);
-	ASSERT(wi->wi_cache_data.di_page != NULL);
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 1);
+
+	cache_vaddr = pmem_context_data_vaddr(&wi->wi_pmem_ctx);
 
 	/*
 	 * for non-page aligned reads, we'll have to add this offset to memcpy.
@@ -299,11 +310,9 @@ void __bio_copy_from_cache(struct work_item *wi,
 			 (cache_block_copy_offset + biovec_offset),
 			 bvec.bv_len);
 
-		ASSERT(wi->wi_cache_data.di_buffer != NULL);
-		ASSERT(wi->wi_cache_data.di_page != NULL);
 		memcpy(bi_kaddr + bvec.bv_offset,
-		       (char *)(wi->wi_cache_data.di_buffer) +
-		       cache_block_copy_offset + biovec_offset, bvec.bv_len);
+		       cache_vaddr + cache_block_copy_offset + biovec_offset,
+		       bvec.bv_len);
 
 		ASSERT(bvec.bv_offset <= PAGE_SIZE);
 		ASSERT(bvec.bv_offset + bvec.bv_len <= PAGE_SIZE);
@@ -339,10 +348,7 @@ void __bio_copy_from_cache(struct work_item *wi,
 	}
 
 	if (hash_data != NULL) {
-		ASSERT(wi->wi_cache_data.di_buffer != NULL);
-		ASSERT(wi->wi_cache_data.di_page != NULL);
-		*hash_data = murmurhash3_128(wi->wi_cache_data.di_buffer,
-					     PAGE_SIZE);
+		*hash_data = murmurhash3_128(cache_vaddr, PAGE_SIZE);
 	}
 }
 
@@ -361,15 +367,15 @@ void bio_copy_to_cache(struct work_item *wi,
 	struct bio_vec bvec;
 	struct bittern_cache *bc = wi->wi_cache;
 	struct cache_block *cache_block = wi->wi_cache_block;
+	char *cache_vaddr;
 
 	ASSERT(bio != NULL);
 	ASSERT(hash_data != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(wi->wi_cache_data.di_buffer != NULL);
-	ASSERT(wi->wi_cache_data.di_page != NULL);
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 1);
+
+	cache_vaddr = pmem_context_data_vaddr(&wi->wi_pmem_ctx);
 
 	/*
 	 * for non-page aligned reads, we'll have to add this offset to memcpy.
@@ -410,11 +416,9 @@ void bio_copy_to_cache(struct work_item *wi,
 		/*
 		 * use non-temporal writes - required for NVDIMM-type hardware.
 		 */
-		ASSERT(wi->wi_cache_data.di_buffer != NULL);
-		ASSERT(wi->wi_cache_data.di_page != NULL);
-		memcpy_nt((char *)(wi->wi_cache_data.di_buffer) +
-			  cache_block_copy_offset + biovec_offset,
-			  bi_kaddr + bvec.bv_offset, bvec.bv_len);
+		memcpy_nt(cache_vaddr + cache_block_copy_offset + biovec_offset,
+			  bi_kaddr + bvec.bv_offset,
+			  bvec.bv_len);
 
 		ASSERT(bvec.bv_offset <= PAGE_SIZE);
 		ASSERT(bvec.bv_offset + bvec.bv_len <= PAGE_SIZE);
@@ -449,24 +453,25 @@ void bio_copy_to_cache(struct work_item *wi,
 		ASSERT(cache_block_copy_offset + biovec_offset <= PAGE_SIZE);
 	}
 
-	ASSERT(wi->wi_cache_data.di_buffer != NULL);
-	ASSERT(wi->wi_cache_data.di_page != NULL);
-	*hash_data = murmurhash3_128(wi->wi_cache_data.di_buffer, PAGE_SIZE);
+	*hash_data = murmurhash3_128(cache_vaddr, PAGE_SIZE);
 }
 
 void cache_get_page_read_callback(struct bittern_cache *bc,
 				  struct cache_block *cache_block,
-				  struct data_buffer_info *dbi_data,
-				  void *callback_context, int err)
+				  struct pmem_context *pmem_ctx,
+				  void *callback_context,
+				  int err)
 {
 	struct work_item *wi;
 	struct bio *bio;
 
 	ASSERT(bc != NULL);
 	ASSERT(cache_block != NULL);
-	ASSERT(dbi_data != NULL);
 	ASSERT(callback_context != NULL);
 	wi = (struct work_item *)callback_context;
+	ASSERT_BITTERN_CACHE(bc);
+	ASSERT_WORK_ITEM(wi, bc);
+	ASSERT(pmem_ctx == &wi->wi_pmem_ctx);
 	bio = wi->wi_original_bio;
 	M_ASSERT_FIXME(err == 0);
 	ASSERT(wi->wi_cache_block != NULL);
@@ -475,10 +480,6 @@ void cache_get_page_read_callback(struct bittern_cache *bc,
 		 "err=%d, wi=%p, bc=%p, cache_block=%p, wi_original_cache_block=%p, wi_cache_block=%p, bio=%p",
 		 err, wi, bc, cache_block, wi->wi_original_cache_block,
 		 wi->wi_cache_block, bio);
-	ASSERT(&wi->wi_cache_data == dbi_data);
-	ASSERT(wi->wi_cache_data.di_buffer != NULL);
-	ASSERT(wi->wi_cache_data.di_page != NULL);
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 1);
 
 	/*
 	 * cache_block arg could be wi_original_cache_block, but we always
@@ -489,18 +490,20 @@ void cache_get_page_read_callback(struct bittern_cache *bc,
 
 void cache_put_page_write_callback(struct bittern_cache *bc,
 				   struct cache_block *cache_block,
-				   struct data_buffer_info *dbi_data,
-				   void *callback_context, int err)
+				   struct pmem_context *pmem_ctx,
+				   void *callback_context,
+				   int err)
 {
 	struct work_item *wi;
 	struct bio *bio;
 
 	ASSERT(bc != NULL);
 	ASSERT(cache_block != NULL);
-	ASSERT(dbi_data != NULL);
 	ASSERT(callback_context != NULL);
 	wi = (struct work_item *)callback_context;
+	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_WORK_ITEM(wi, bc);
+	ASSERT(pmem_ctx == &wi->wi_pmem_ctx);
 	bio = wi->wi_original_bio;
 	M_ASSERT_FIXME(err == 0);
 	ASSERT(wi->wi_cache_block != NULL);
@@ -509,10 +512,6 @@ void cache_put_page_write_callback(struct bittern_cache *bc,
 		 "err=%d, wi=%p, bc=%p, cache_block=%p, wi_original_cache_block=%p, wi_cache_block=%p, bio=%p",
 		 err, wi, bc, cache_block, wi->wi_original_cache_block,
 		 wi->wi_cache_block, bio);
-	ASSERT(&wi->wi_cache_data == dbi_data);
-	ASSERT(wi->wi_cache_data.di_buffer == NULL);
-	ASSERT(wi->wi_cache_data.di_page == NULL);
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 0);
 
 	/*
 	 * cache_block arg could be wi_original_cache_block, but we always
@@ -523,18 +522,20 @@ void cache_put_page_write_callback(struct bittern_cache *bc,
 
 void cache_metadata_write_callback(struct bittern_cache *bc,
 				   struct cache_block *cache_block,
-				   struct data_buffer_info *dbi_data,
-				   void *callback_context, int err)
+				   struct pmem_context *pmem_ctx,
+				   void *callback_context,
+				   int err)
 {
 	struct work_item *wi;
 	struct bio *bio;
 
 	ASSERT(bc != NULL);
 	ASSERT(cache_block != NULL);
-	ASSERT(dbi_data != NULL);
 	ASSERT(callback_context != NULL);
 	wi = (struct work_item *)callback_context;
+	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_WORK_ITEM(wi, bc);
+	ASSERT(pmem_ctx == &wi->wi_pmem_ctx);
 	bio = wi->wi_original_bio;
 	M_ASSERT_FIXME(err == 0);
 	ASSERT(wi->wi_cache_block != NULL);
@@ -543,10 +544,6 @@ void cache_metadata_write_callback(struct bittern_cache *bc,
 		 "err=%d, wi=%p, bc=%p, cache_block=%p, wi_original_cache_block=%p, wi_cache_block=%p, bio=%p",
 		 err, wi, bc, cache_block, wi->wi_original_cache_block,
 		 wi->wi_cache_block, bio);
-	ASSERT(&wi->wi_cache_data == dbi_data);
-	ASSERT(wi->wi_cache_data.di_buffer == NULL);
-	ASSERT(wi->wi_cache_data.di_page == NULL);
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 0);
 
 	/*
 	 * cache_block arg could be wi_original_cache_block, but we always
@@ -575,13 +572,6 @@ void cache_state_machine(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_xid != 0);
 	ASSERT(cache_block->bcb_xid == wi->wi_io_xid);
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
-
-	/* Right now we always need to allocate a page buffer even for DAX */
-	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_buffer != NULL);
-	ASSERT(PAGE_ALIGNED(wi->wi_cache_data.di_buffer_vmalloc_buffer));
-	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_page != NULL);
-	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_page ==
-	       virtual_to_page(wi->wi_cache_data.di_buffer_vmalloc_buffer));
 
 	BT_TRACE(BT_LEVEL_TRACE2,
 		 bc, wi, cache_block, bio, wi->wi_cloned_bio,
@@ -1654,6 +1644,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 	struct work_item *wi;
 	struct cache_block *cloned_cache_block = NULL;
 	uint64_t tstamp = current_kernel_time_nsec();
+	int ret;
 
 	/*
 	 * here we are either in a process or kernel thread context,
@@ -1734,8 +1725,12 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 	wi->wi_ts_started = tstamp;
 	wi->wi_cache_mode_writeback = do_writeback;
 
-	pagebuf_allocate_dbi(bc, bc->bc_kmem_map, &wi->wi_cache_data);
-	M_ASSERT(wi->wi_cache_data.di_buffer_vmalloc_buffer != NULL);
+	ret = pmem_context_setup(bc,
+				 bc->bc_kmem_map,
+				 cache_block,
+				 cloned_cache_block,
+				 &wi->wi_pmem_ctx);
+	M_ASSERT_FIXME(ret == 0);
 
 	if (bio_data_dir(bio) == READ)
 		cache_timer_add(&bc->bc_timer_resource_alloc_reads, tstamp);
@@ -1813,6 +1808,7 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 {
 	struct work_item *wi;
 	uint64_t tstamp = current_kernel_time_nsec();
+	int ret;
 
 	ASSERT(bc != NULL);
 	ASSERT(bio != NULL);
@@ -1846,8 +1842,12 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 	wi->wi_ts_started = tstamp;
 	wi->wi_cache_mode_writeback = do_writeback;
 
-	pagebuf_allocate_dbi(bc, bc->bc_kmem_map, &wi->wi_cache_data);
-	M_ASSERT(wi->wi_cache_data.di_buffer_vmalloc_buffer != NULL);
+	ret = pmem_context_setup(bc,
+				 bc->bc_kmem_map,
+				 cache_block,
+				 NULL,
+				 &wi->wi_pmem_ctx);
+	M_ASSERT_FIXME(ret == 0);
 
 	if (bio_data_dir(bio) == READ)
 		cache_timer_add(&bc->bc_timer_resource_alloc_reads, tstamp);

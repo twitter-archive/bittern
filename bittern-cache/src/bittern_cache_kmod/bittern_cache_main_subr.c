@@ -826,8 +826,8 @@ int __cache_validate_state_transition(struct bittern_cache *bc,
 
 struct work_item *work_item_allocate(struct bittern_cache *bc,
 				     struct cache_block *cache_block,
-						   struct bio *bio,
-						   int wi_flags,
+				     struct bio *bio,
+				     int wi_flags,
 				     wi_io_endio_f wi_io_endio)
 {
 	struct work_item *wi;
@@ -886,15 +886,10 @@ struct work_item *work_item_allocate(struct bittern_cache *bc,
 	}
 	wi->wi_cache = bc;
 	INIT_LIST_HEAD(&wi->wi_pending_io_list);
-	ASSERT_WORK_ITEM(wi, bc);
 
-	wi->wi_cache_data.di_buffer_vmalloc_buffer = NULL;
-	wi->wi_cache_data.di_buffer_vmalloc_page = NULL;
-	wi->wi_cache_data.di_buffer_slab = NULL;
-	wi->wi_cache_data.di_buffer = NULL;
-	wi->wi_cache_data.di_page = NULL;
-	wi->wi_cache_data.di_flags = 0x0;
-	atomic_set(&wi->wi_cache_data.di_busy, 0);
+	pmem_context_initialize(&wi->wi_pmem_ctx);
+
+	ASSERT_WORK_ITEM(wi, bc);
 
 	return wi;
 }
@@ -961,16 +956,6 @@ void work_item_reallocate(struct bittern_cache *bc,
 	wi->wi_cache = bc;
 	ASSERT(list_empty(&wi->wi_pending_io_list));
 	ASSERT_WORK_ITEM(wi, bc);
-
-	/* dbi_data is already set here */
-	/*! \todo should pass dbi_data as param and set it? */
-	/* wi->wi_cache_data.di_buffer_vmalloc_buffer = NULL; */
-	/* wi->wi_cache_data.di_buffer_vmalloc_page = NULL; */
-	/* wi->wi_cache_data.di_buffer_vmalloc_pool = -1; */
-	ASSERT(wi->wi_cache_data.di_buffer == NULL);
-	ASSERT(wi->wi_cache_data.di_page == NULL);
-	ASSERT(wi->wi_cache_data.di_flags == 0x0);
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 0);
 }
 
 void work_item_free(struct bittern_cache *bc, struct work_item *wi)
@@ -980,16 +965,8 @@ void work_item_free(struct bittern_cache *bc, struct work_item *wi)
 
 	work_item_del_pending_io(bc, wi);
 
-	if (wi->wi_cache_data.di_buffer_vmalloc_buffer != NULL)
-		pagebuf_free_dbi(bc, &wi->wi_cache_data);
+	pmem_context_destroy(bc, &wi->wi_pmem_ctx);
 
-	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_buffer == NULL);
-	ASSERT(wi->wi_cache_data.di_buffer_vmalloc_page == NULL);
-	ASSERT(wi->wi_cache_data.di_buffer_slab == NULL);
-	ASSERT(wi->wi_cache_data.di_buffer == NULL);
-	ASSERT(wi->wi_cache_data.di_page == NULL);
-	ASSERT(wi->wi_cache_data.di_flags == 0x0);
-	ASSERT(atomic_read(&wi->wi_cache_data.di_busy) == 0);
 	kmem_free(wi, sizeof(struct work_item));
 }
 

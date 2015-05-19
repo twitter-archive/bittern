@@ -20,11 +20,14 @@
 
 void cache_block_verify_callback(struct bittern_cache *bc,
 				 struct cache_block *cache_block,
-				 struct data_buffer_info *dbi_data,
+				 struct pmem_context *pmem_ctx,
 				 void *callback_context,
 				 int err)
 {
 	struct semaphore *sema = (struct semaphore *)callback_context;
+	ASSERT(pmem_ctx != NULL);
+	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
 
 	M_ASSERT_FIXME(err == 0);
 	up(sema);
@@ -34,12 +37,12 @@ int cache_block_verify(struct bittern_cache *bc, int block_id,
 			       struct cache_block *cache_block,
 			       int do_bt_level_trace)
 {
-	struct data_buffer_info *dbi_data;
 	int errors = 0;
 	int ret;
 	struct semaphore sema;
 	uint64_t t_start, t_end;	/*FIXME need to put timers */
-	struct async_context *async_context;
+	struct pmem_context *pmem_ctx;
+	char *cache_vaddr;
 
 	M_ASSERT(bc != NULL);
 	M_ASSERT(block_id >= 1 &&
@@ -49,41 +52,35 @@ int cache_block_verify(struct bittern_cache *bc, int block_id,
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	M_ASSERT(block_id == cache_block->bcb_block_id);
 
-	async_context = kmem_alloc(sizeof(struct async_context),
-			GFP_NOIO);
-	M_ASSERT_FIXME(async_context != NULL);
+	pmem_ctx = kmem_zalloc(sizeof(struct pmem_context), GFP_NOIO);
+	M_ASSERT_FIXME(pmem_ctx != NULL);
 
-	dbi_data = kmem_alloc(sizeof(struct data_buffer_info),
-			      GFP_NOIO);
-	M_ASSERT_FIXME(dbi_data != NULL);
+	pmem_context_initialize(pmem_ctx);
 
-	dbi_data->di_buffer = NULL;
-	dbi_data->di_page = NULL;
-	dbi_data->di_flags = 0x0;
-	dbi_data->di_buffer_slab = NULL;
-	atomic_set(&dbi_data->di_busy, 0);
-	dbi_data->di_buffer_vmalloc_buffer = NULL;
-	dbi_data->di_buffer_vmalloc_page = NULL;
-
-	pagebuf_allocate_dbi(bc, bc->bc_kmem_threads, dbi_data);
+	ret = pmem_context_setup(bc,
+				 bc->bc_kmem_threads,
+				 cache_block,
+				 NULL,
+				 pmem_ctx);
+	M_ASSERT_FIXME(ret == 0);
 
 	t_start = current_kernel_time_nsec();
 	sema_init(&sema, 0);
 	ret = pmem_data_get_page_read(bc,
-				      cache_block->bcb_block_id,
 				      cache_block,
-				      dbi_data,
-				      async_context,
-				      &sema,	/*callback context */
+				      pmem_ctx,
+				      &sema, /*callback context */
 				      cache_block_verify_callback);
 	M_ASSERT_FIXME(ret == 0);
-	M_ASSERT(dbi_data->di_buffer != NULL);
 	down(&sema);
 	t_end = current_kernel_time_nsec();
 
+	cache_vaddr = pmem_context_data_vaddr(pmem_ctx);
+
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 		 "verifying block id #%d, dbi_data->di_buffer=%p",
-		 cache_block->bcb_block_id, dbi_data->di_buffer);
+		 cache_block->bcb_block_id,
+		 cache_vaddr);
 
 	/*
 	 * check hash
@@ -95,21 +92,18 @@ int cache_block_verify(struct bittern_cache *bc, int block_id,
 	 */
 	errors += cache_verify_hash_data_buffer_ret(bc,
 						    cache_block,
-						    dbi_data->di_buffer);
+						    cache_vaddr);
 
 	/*
 	 * check in memory descriptor against cache memory.
 	 */
 	{
-		struct pmem_block_metadata *pmbm;
+		struct pmem_block_metadata *pmbm = &pmem_ctx->pmbm;
 		uint128_t computed_hash_metadata;
 		int ret;
 
-		pmbm = kmem_alloc(sizeof(struct pmem_block_metadata),
-			       GFP_NOIO);
-		M_ASSERT_FIXME(pmbm != NULL);
-
-		ret = pmem_metadata_sync_read(bc, block_id, cache_block, pmbm);
+		ASSERT(block_id == cache_block->bcb_block_id);
+		ret = pmem_metadata_sync_read(bc, cache_block, pmbm);
 		M_ASSERT_FIXME(ret == 0);
 		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 			 "id #%d: m=0x%x, id=%u, status=%d(%s), xid=%llu, sector=%llu, hash_data=" UINT128_FMT ", hash_metadata=" UINT128_FMT,
@@ -203,9 +197,6 @@ int cache_block_verify(struct bittern_cache *bc, int block_id,
 				 UINT128_ARG(cache_block->bcb_hash_data),
 				 UINT128_ARG(pmbm->pmbm_hash_data));
 		}
-
-		kmem_free(pmbm,
-			  sizeof(struct pmem_block_metadata));
 	}
 
 	/*
@@ -231,7 +222,7 @@ int cache_block_verify(struct bittern_cache *bc, int block_id,
 				cache_bio_request_get_buffer(bc_bio_req));
 
 		if (memcmp(cache_bio_request_get_buffer(bc_bio_req),
-			   dbi_data->di_buffer, PAGE_SIZE) == 0) {
+			   cache_vaddr, PAGE_SIZE) == 0) {
 			BT_TRACE(do_bt_level_trace, bc, NULL, cache_block, NULL,
 				 NULL,
 				 "device block #%d data compare ok, hash_data=" UINT128_FMT,
@@ -321,20 +312,13 @@ int cache_block_verify(struct bittern_cache *bc, int block_id,
 	}
 
 	pmem_data_put_page_read(bc,
-						    cache_block->bcb_block_id,
-						    cache_block, dbi_data);
+				cache_block,
+				pmem_ctx);
 
-	M_ASSERT(atomic_read(&dbi_data->di_busy) == 0);
-	M_ASSERT(dbi_data->di_buffer == NULL);
-	M_ASSERT(dbi_data->di_page == NULL);
-	pagebuf_free_dbi(bc, dbi_data);
+	pmem_context_destroy(bc, pmem_ctx);
 
-	M_ASSERT(async_context != NULL);
-	kmem_free(async_context,
-		  sizeof(struct async_context));
-
-	M_ASSERT(dbi_data != NULL);
-	kmem_free(dbi_data, sizeof(struct data_buffer_info));
+	M_ASSERT(pmem_ctx != NULL);
+	kmem_free(pmem_ctx, sizeof(struct pmem_context));
 
 	return errors;
 }

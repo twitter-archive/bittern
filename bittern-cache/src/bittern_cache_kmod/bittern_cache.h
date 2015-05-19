@@ -66,7 +66,7 @@
  * Release codenames are National Wildlife Refuges wetlands where the Bittern
  * can be found.
  */
-#define BITTERN_CACHE_VERSION "0.26.2"
+#define BITTERN_CACHE_VERSION "0.26.3"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -218,47 +218,6 @@ static inline sector_t sector_to_cache_block_sector(sector_t s)
 		WI_FLAG_HAS_ENDIO)
 /*! @} */
 
-/*! \todo add an initializer for @ref data_buffer_info */
-/*
- * data buffer info holds virtual address and page struct pointer to cache data
- * being transferred.  if the pmem hardware does not support direct dma access
- * and/or direct memory access, then we allocate a page buffer to do double
- * buffering during memory copies.
- */
-struct data_buffer_info {
-	/*! pointer to vmalloc'ed buffer, if needed */
-	void *di_buffer_vmalloc_buffer;
-	/*! pointer to vmalloc'ed buffer page, if needed */
-	struct page *di_buffer_vmalloc_page;
-	/*!
-	 * buffer pool used to allocate the vmalloc buffer
-	 * (valid if vmalloc buffer has been allocated)
-	 */
-	struct kmem_cache *di_buffer_slab;
-	/*! buffer pointer used for PMEM accesses by bittern */
-	void *di_buffer;
-	/*! page pointer used for PMEM accesses by bittern */
-	struct page *di_page;
-	/*! pmem flags */
-	int di_flags;
-	/*! 1 if buffer is in use, 0 otherwise */
-	atomic_t di_busy;
-};
-
-/*! @defgroup di_flags_bitvalues data_buffer_info di_flags bitmask values
- * @{
- */
-/*! doing double buffering (vmalloc buffer is in use) */
-#define CACHE_DI_FLAGS_DOUBLE_BUFFERING 0x1
-/*! we are reading from PMEM into memory */
-#define CACHE_DI_FLAGS_PMEM_READ 0x2
-/*! we are writing from memory to PMEM */
-#define CACHE_DI_FLAGS_PMEM_WRITE 0x4
-/*! we are reading and writing from memory to PMEM and viceversa */
-#define CACHE_DI_FLAGS_PMEM_READWRITE (CACHE_DI_FLAGS_PMEM_READ | \
-		CACHE_DI_FLAGS_PMEM_WRITE)
-/*! @} */
-
 /*forward*/ struct work_item;
 typedef void (*wi_io_endio_f)(struct bittern_cache *,
 			      struct work_item *,
@@ -286,13 +245,19 @@ struct work_item {
 	 * after update is complete, then we can delete the original cache block.
 	 */
 	struct cache_block *wi_original_cache_block;
-	/*
-	 * data buffer info holds virtual address and page struct pointer to
-	 * cache data being transferred.  if the pmem hardware does not support
-	 * direct dma access and/or direct memory access, then we allocate a
-	 * page buffer to do double buffering during memory copies.
+	/*!
+	 * The struct @ref pmem_context contains pmem specific information used
+	 * by pmem.
+	 * In particular data buffer info holds virtual address and page struct
+	 * pointer to cache data being transferred. If the pmem hardware does
+	 * not support direct dma access and/or direct memory access,
+	 * then we allocate a page buffer to do double buffering during memory
+	 * copies.
+	 * All of this is hidden by the pmem layer. The higher level code only
+	 * sees the accessor functions @ref pmem_context_data_vaddr and
+	 * @ref pmem_context_data_page.
 	 */
-	struct data_buffer_info wi_cache_data;
+	struct pmem_context wi_pmem_ctx;
 	/* transaction id */
 	uint64_t wi_io_xid;
 	/*

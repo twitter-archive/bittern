@@ -140,10 +140,8 @@ int pmem_write_sync_mem(struct bittern_cache *bc,
 }
 
 int pmem_metadata_async_write_mem(struct bittern_cache *bc,
-				  unsigned int block_id,
 				  struct cache_block *cache_block,
-				  struct data_buffer_info *dbi_data,
-				  struct async_context *async_context,
+				  struct pmem_context *pmem_ctx,
 				  void *callback_context,
 				  pmem_callback_t callback_function,
 				  enum cache_state metadata_update_state)
@@ -154,16 +152,25 @@ int pmem_metadata_async_write_mem(struct bittern_cache *bc,
 	uint64_t to_offset, end_offset;
 	void *dax_addr;
 	long dax_pfn, dax_ret;
+	struct data_buffer_info *dbi_data;
+	struct async_context *ctx;
+	unsigned int block_id;
+
+	M_ASSERT(pmem_ctx != NULL);
+	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
+	dbi_data = &pmem_ctx->dbi;
+	ctx = &pmem_ctx->async_ctx;
 
 	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
+	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(block_id == cache_block->bcb_block_id);
 	ASSERT(cache_block->bcb_state != CACHE_INVALID);
-	ASSERT(dbi_data != NULL);
-	ASSERT(async_context != NULL);
 	ASSERT(callback_context != NULL);
 	ASSERT(callback_function != NULL);
+
+	block_id = cache_block->bcb_block_id;
 
 	atomic_inc(&pa->papi_stats.metadata_write_async_count);
 
@@ -180,11 +187,7 @@ int pmem_metadata_async_write_mem(struct bittern_cache *bc,
 	ASSERT(pa->papi_hdr.lm_mcb_size_bytes ==
 	       sizeof(struct pmem_block_metadata));
 
-	/*
-	 * FIXME: put this in the work_item struct (or dbi_data) so
-	 * we don't need to pay for mem alloc overhead
-	 */
-	pmbm = kmem_zalloc(sizeof(struct pmem_block_metadata), GFP_ATOMIC);
+	pmbm = &pmem_ctx->pmbm;
 	M_ASSERT(pmbm != NULL);
 
 	pmbm->pmbm_magic = MCBM_MAGIC;
@@ -217,14 +220,16 @@ int pmem_metadata_async_write_mem(struct bittern_cache *bc,
 
 	memcpy_nt(dax_addr + (to_offset % PAGE_SIZE), pmbm, sizeof(*pmbm));
 
-	kmem_free(pmbm, sizeof(struct pmem_block_metadata));
-
 	cache_timer_add(&pa->papi_stats.metadata_write_async_timer, ts_started);
 
 	/*
 	 * just call the higher level callback
 	 */
-	(*callback_function) (bc, cache_block, dbi_data, callback_context, 0);
+	(*callback_function)(bc,
+			     cache_block,
+			     pmem_ctx,
+			     callback_context,
+			     0);
 
 	return 0;
 }
@@ -248,10 +253,8 @@ int pmem_metadata_async_write_mem(struct bittern_cache *bc,
  *
  */
 int pmem_data_get_page_read_mem(struct bittern_cache *bc,
-				unsigned int block_id,
 				struct cache_block *cache_block,
-				struct data_buffer_info *dbi_data,
-				struct async_context *async_context,
+				struct pmem_context *pmem_ctx,
 				void *callback_context,
 				pmem_callback_t callback_function)
 {
@@ -261,16 +264,25 @@ int pmem_data_get_page_read_mem(struct bittern_cache *bc,
 	struct page *cache_page;
 	unsigned long from_offset;
 	long dax_pfn, dax_ret;
+	struct data_buffer_info *dbi_data;
+	struct async_context *ctx;
+	unsigned int block_id;
+
+	M_ASSERT(pmem_ctx != NULL);
+	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
+	dbi_data = &pmem_ctx->dbi;
+	ctx = &pmem_ctx->async_ctx;
 
 	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
+	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(block_id == cache_block->bcb_block_id);
 	ASSERT(cache_block->bcb_state != CACHE_INVALID);
-	ASSERT(dbi_data != NULL);
-	ASSERT(async_context != NULL);
 	ASSERT(callback_context != NULL);
 	ASSERT(callback_function != NULL);
+
+	block_id = cache_block->bcb_block_id;
 
 	atomic_inc(&pa->papi_stats.data_get_page_read_count);
 	atomic_inc(&pa->papi_stats.data_get_put_page_pending_count);
@@ -299,9 +311,10 @@ int pmem_data_get_page_read_mem(struct bittern_cache *bc,
 	cache_page = pfn_to_page(dax_pfn);
 	ASSERT(cache_vaddr != NULL);
 	ASSERT(cache_page != NULL);
-	cache_set_page_dbi(dbi_data,
-			   CACHE_DI_FLAGS_PMEM_READ,
-			   cache_vaddr, cache_page);
+	pmem_set_dbi(dbi_data,
+		     CACHE_DI_FLAGS_PMEM_READ,
+		     cache_vaddr,
+		     cache_page);
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 		     "di_buffer_vmalloc=%p, di_buffer=%p, di_page=%p, di_flags=0x%x, callback_context=%p, callback_function=%p",
 		     dbi_data->di_buffer_vmalloc_buffer,
@@ -312,7 +325,12 @@ int pmem_data_get_page_read_mem(struct bittern_cache *bc,
 	/*
 	 * call callback directly, as there is no async thread to do it.
 	 */
-	(*callback_function) (bc, cache_block, dbi_data, callback_context, 0);
+	(*callback_function)(bc,
+			     cache_block,
+			     pmem_ctx,
+			     callback_context,
+			     0);
+
 	cache_timer_add(&pa->papi_stats.
 				data_get_page_read_async_timer,
 				start_timer);
@@ -341,19 +359,29 @@ int pmem_data_get_page_read_mem(struct bittern_cache *bc,
  * and to release the data context in dbi_data.
  */
 int pmem_data_put_page_read_mem(struct bittern_cache *bc,
-				unsigned int block_id,
 				struct cache_block *cache_block,
-				struct data_buffer_info *dbi_data)
+				struct pmem_context *pmem_ctx)
 {
 	uint64_t start_timer = current_kernel_time_nsec();
 	struct pmem_api *pa = &bc->bc_papi;
+	struct data_buffer_info *dbi_data;
+	struct async_context *ctx;
+	unsigned int block_id;
+
+	M_ASSERT(pmem_ctx != NULL);
+	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
+	dbi_data = &pmem_ctx->dbi;
+	ctx = &pmem_ctx->async_ctx;
 
 	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
+	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(block_id == cache_block->bcb_block_id);
 	ASSERT(cache_block->bcb_state != CACHE_INVALID);
 	ASSERT(dbi_data != NULL);
+
+	block_id = cache_block->bcb_block_id;
 
 	atomic_inc(&pa->papi_stats.data_put_page_read_count);
 	atomic_dec(&pa->papi_stats.data_get_put_page_pending_count);
@@ -372,7 +400,13 @@ int pmem_data_put_page_read_mem(struct bittern_cache *bc,
 	ASSERT(dbi_data->di_page != NULL);
 	ASSERT(dbi_data->di_flags == CACHE_DI_FLAGS_PMEM_READ);
 
-	cache_clear_page_dbi(dbi_data);
+	BT_DEV_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, NULL, NULL,
+		     "before clear page");
+
+	pmem_clear_dbi(dbi_data);
+
+	BT_DEV_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, NULL, NULL,
+		     "after clear page");
 
 	cache_timer_add(&pa->papi_stats.data_put_page_read_timer,
 				start_timer);
@@ -385,18 +419,27 @@ int pmem_data_put_page_read_mem(struct bittern_cache *bc,
  * cycles
  */
 int pmem_data_convert_read_to_write_mem(struct bittern_cache *bc,
-					unsigned int block_id,
 					struct cache_block *cache_block,
-					struct data_buffer_info *dbi_data)
+					struct pmem_context *pmem_ctx)
 {
 	struct pmem_api *pa = &bc->bc_papi;
+	struct data_buffer_info *dbi_data;
+	struct async_context *ctx;
+	unsigned int block_id;
+
+	M_ASSERT(pmem_ctx != NULL);
+	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
+	dbi_data = &pmem_ctx->dbi;
+	ctx = &pmem_ctx->async_ctx;
 
 	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
+	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(block_id == cache_block->bcb_block_id);
 	ASSERT(cache_block->bcb_state != CACHE_INVALID);
-	ASSERT(dbi_data != NULL);
+
+	block_id = cache_block->bcb_block_id;
 
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 		     "di_buffer_vmalloc=%p, di_buffer=%p, di_page=%p, di_flags=0x%x",
@@ -410,7 +453,7 @@ int pmem_data_convert_read_to_write_mem(struct bittern_cache *bc,
 
 	atomic_inc(&pa->papi_stats.data_convert_page_read_to_write_count);
 
-	ASSERT_PAGE_DBI(dbi_data);
+	ASSERT_PMEM_DBI(dbi_data);
 	ASSERT((dbi_data->di_flags & CACHE_DI_FLAGS_PMEM_READ) != 0);
 	ASSERT((dbi_data->di_flags & CACHE_DI_FLAGS_PMEM_WRITE) == 0);
 
@@ -424,27 +467,37 @@ int pmem_data_convert_read_to_write_mem(struct bittern_cache *bc,
  * the data is cloned -- this is used for rmw cycles
  */
 int pmem_data_clone_read_to_write_mem(struct bittern_cache *bc,
-				      unsigned int from_block_id,
 				      struct cache_block *from_cache_block,
-				      unsigned int to_block_id,
 				      struct cache_block *to_cache_block,
-				      struct data_buffer_info *dbi_data)
+				      struct pmem_context *pmem_ctx)
 {
 	void *to_buffer;
 	struct page *to_page;
 	struct pmem_api *pa = &bc->bc_papi;
 	unsigned long to_offset;
 	long dax_pfn, dax_ret;
+	struct data_buffer_info *dbi_data;
+	struct async_context *ctx;
+	unsigned int from_block_id;
+	unsigned int to_block_id;
+
+	M_ASSERT(pmem_ctx != NULL);
+	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
+	dbi_data = &pmem_ctx->dbi;
+	ctx = &pmem_ctx->async_ctx;
 
 	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
+	ASSERT_CACHE_BLOCK(from_cache_block, bc);
+	ASSERT_CACHE_BLOCK(to_cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(from_block_id == from_cache_block->bcb_block_id);
 	ASSERT(from_cache_block->bcb_state != CACHE_INVALID);
-	ASSERT(to_block_id == to_cache_block->bcb_block_id);
 	ASSERT(to_cache_block->bcb_state != CACHE_INVALID);
+
+	from_block_id = from_cache_block->bcb_block_id;
+	to_block_id = to_cache_block->bcb_block_id;
 	ASSERT(to_block_id != from_block_id);
-	ASSERT(dbi_data != NULL);
 
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
 		     "di_buffer_vmalloc=%p, di_buffer=%p, di_page=%p, di_flags=0x%x",
@@ -463,7 +516,7 @@ int pmem_data_clone_read_to_write_mem(struct bittern_cache *bc,
 	atomic_inc(&pa->papi_stats.
 		   data_clone_read_page_to_write_page_count);
 
-	ASSERT_PAGE_DBI(dbi_data);
+	ASSERT_PMEM_DBI(dbi_data);
 	ASSERT((dbi_data->di_flags & CACHE_DI_FLAGS_PMEM_READ) != 0);
 	ASSERT((dbi_data->di_flags & CACHE_DI_FLAGS_PMEM_WRITE) == 0);
 
@@ -520,9 +573,8 @@ int pmem_data_clone_read_to_write_mem(struct bittern_cache *bc,
  * is released.
  */
 int pmem_data_get_page_write_mem(struct bittern_cache *bc,
-				 unsigned int block_id,
 				 struct cache_block *cache_block,
-				 struct data_buffer_info *dbi_data)
+				 struct pmem_context *pmem_ctx)
 {
 	uint64_t start_timer = current_kernel_time_nsec();
 	struct pmem_api *pa = &bc->bc_papi;
@@ -530,13 +582,24 @@ int pmem_data_get_page_write_mem(struct bittern_cache *bc,
 	struct page *cache_page;
 	unsigned long to_offset;
 	long dax_pfn, dax_ret;
+	struct data_buffer_info *dbi_data;
+	struct async_context *ctx;
+	unsigned int block_id;
+
+	M_ASSERT(pmem_ctx != NULL);
+	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
+	dbi_data = &pmem_ctx->dbi;
+	ctx = &pmem_ctx->async_ctx;
 
 	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
+	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(block_id == cache_block->bcb_block_id);
 	ASSERT(cache_block->bcb_state != CACHE_INVALID);
 	ASSERT(dbi_data != NULL);
+
+	block_id = cache_block->bcb_block_id;
 
 	atomic_inc(&pa->papi_stats.data_get_page_write_count);
 	atomic_inc(&pa->papi_stats.data_get_put_page_pending_count);
@@ -561,9 +624,10 @@ int pmem_data_get_page_write_mem(struct bittern_cache *bc,
 	cache_page = pfn_to_page(dax_pfn);
 	ASSERT(cache_vaddr != NULL);
 	ASSERT(cache_page != NULL);
-	cache_set_page_dbi(dbi_data,
-			   CACHE_DI_FLAGS_PMEM_WRITE,
-			   cache_vaddr, cache_page);
+	pmem_set_dbi(dbi_data,
+		     CACHE_DI_FLAGS_PMEM_WRITE,
+		     cache_vaddr,
+		     cache_page);
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 		     "di_buffer_vmalloc=%p, di_buffer=%p, di_page=%p, di_flags=0x%x",
 		     dbi_data->di_buffer_vmalloc_buffer,
@@ -593,28 +657,35 @@ int pmem_data_get_page_write_mem(struct bittern_cache *bc,
  * is released.
  */
 int pmem_data_put_page_write_mem(struct bittern_cache *bc,
-				 unsigned int block_id,
 				 struct cache_block *cache_block,
-				 struct data_buffer_info *dbi_data,
-				 struct async_context *async_context,
+				 struct pmem_context *pmem_ctx,
 				 void *callback_context,
 				 pmem_callback_t callback_function,
 				 enum cache_state metadata_update_state)
 {
 	uint64_t start_timer = current_kernel_time_nsec();
 	struct pmem_api *pa = &bc->bc_papi;
+	struct data_buffer_info *dbi_data;
+	struct async_context *ctx;
+	unsigned int block_id;
+
+	M_ASSERT(pmem_ctx != NULL);
+	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
+	dbi_data = &pmem_ctx->dbi;
+	ctx = &pmem_ctx->async_ctx;
 
 	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
+	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(block_id == cache_block->bcb_block_id);
 	ASSERT(cache_block->bcb_state != CACHE_INVALID);
-	ASSERT(dbi_data != NULL);
-	ASSERT(async_context != NULL);
 	ASSERT(callback_context != NULL);
 	ASSERT(callback_function != NULL);
 
-	ASSERT_PAGE_DBI(dbi_data);
+	ASSERT_PMEM_DBI(dbi_data);
+
+	block_id = cache_block->bcb_block_id;
 
 	ASSERT(metadata_update_state == CACHE_VALID_CLEAN
 	       || metadata_update_state == CACHE_VALID_DIRTY);
@@ -645,6 +716,9 @@ int pmem_data_put_page_write_mem(struct bittern_cache *bc,
 	ASSERT(dbi_data->di_page != NULL);
 	ASSERT((dbi_data->di_flags & CACHE_DI_FLAGS_PMEM_WRITE) != 0);
 
+	BT_DEV_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, NULL, NULL,
+		     "dbi_data=%p", dbi_data);
+
 	/*
 	 * update metadata
 	 */
@@ -652,20 +726,7 @@ int pmem_data_put_page_write_mem(struct bittern_cache *bc,
 		uint64_t to_offset, end_offset;
 		void *to_buffer;
 		long dax_pfn, dax_ret;
-
-		/*
-		 * use vmalloc buffer to avoid excessive stack use
-		 * FIXME: need to include pmbm in work_item struct (or dbi_data)
-		 * so we can avoid this dependency
-		 */
-		struct pmem_block_metadata *pmbm =
-		    (struct pmem_block_metadata *)dbi_data->
-		    di_buffer_vmalloc_buffer;
-		ASSERT(dbi_data->di_buffer_vmalloc_buffer != NULL);
-		ASSERT(PAGE_ALIGNED(dbi_data->di_buffer_vmalloc_buffer));
-		ASSERT(dbi_data->di_buffer_vmalloc_page != NULL);
-		ASSERT(dbi_data->di_buffer_vmalloc_page ==
-		       virtual_to_page(dbi_data->di_buffer_vmalloc_buffer));
+		struct pmem_block_metadata *pmbm = &pmem_ctx->pmbm;
 
 		ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 		memset(pmbm, 0, sizeof(*pmbm));
@@ -694,24 +755,32 @@ int pmem_data_put_page_write_mem(struct bittern_cache *bc,
 			     to_offset, &to_buffer, dax_pfn);
 
 		memcpy_nt(to_buffer + (to_offset % PAGE_SIZE),
-			  dbi_data->di_buffer_vmalloc_buffer,
+			  pmbm,
 			  sizeof(struct pmem_block_metadata));
 
 		cache_timer_add(&pa->papi_stats.
 					metadata_write_async_timer,
 					start_timer);
 		atomic_inc(&pa->papi_stats.metadata_write_async_count);
-
-		/*
-		 * mark async context as free
-		 */
-		cache_clear_page_dbi(dbi_data);
 	}
+
+	BT_DEV_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, NULL, NULL,
+		     "before clear page, dbi_data=%p", dbi_data);
+
+	pmem_clear_dbi(dbi_data);
+
+	BT_DEV_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, NULL, NULL,
+		     "after clear page");
 
 	/*
 	 * call callback directly, as there is no async thread to do it.
 	 */
-	(*callback_function) (bc, cache_block, dbi_data, callback_context, 0);
+	(*callback_function)(bc,
+			     cache_block,
+			     pmem_ctx,
+			     callback_context,
+			     0);
+
 	cache_timer_add(&pa->papi_stats.
 				data_put_page_write_async_timer,
 				start_timer);

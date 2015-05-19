@@ -76,14 +76,9 @@ if the fix is deemed to be very low-risk.
 * *Statistics* Although not essential, it would be nice to be able to
   zero the cumulative statistics. The stats counters also need to become
   64 bits instead of the current 32 for most counters.
-* *Memory Allocation* For historical reasons Bittern has its own version of
-  a slab allocator. This needs to be cleaned up and most likely
-  the best way is to have kmem_cache pools and bioset allocators like most
-  other block device drivers do (SCSI drivers and DM drivers are good
-  examples for this).
 * *Memory Allocation* Right now a double buffer is always allocated for
   every request. In most cases it is actually not needed, and this needs
-  to be optimized.
+  to be optimized. It should not be allocated at all when using DAX.
 * *Coding Style* For yet another set of historical reasons Bittern code has
   a lot of warts which need to be addressed, including coding style and
   excessive reinvention of the wheel.

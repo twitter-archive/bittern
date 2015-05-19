@@ -22,6 +22,7 @@
 /*forward*/ struct bittern_cache;
 /*forward*/ struct cache_block;
 /*forward*/ struct data_buffer_info;
+/*forward*/ struct pmem_context;
 
 #include "bittern_cache_pmem_header.h"
 #include "bittern_cache_states.h"
@@ -62,7 +63,6 @@ extern int pmem_header_restore(struct bittern_cache *bc);
  * pmem_block restore function.
  */
 extern int pmem_block_restore(struct bittern_cache *bc,
-			      unsigned int block_id,
 			      struct cache_block *in_out_cache_block);
 
 /*!
@@ -75,7 +75,7 @@ extern int pmem_header_update(struct bittern_cache *bc, int update_both);
  */
 typedef void (*pmem_callback_t)(struct bittern_cache *bc,
 				struct cache_block *cache_block,
-				struct data_buffer_info *dbi_data,
+				struct pmem_context *pmem_ctx,
 				void *callback_context,
 				int err);
 
@@ -83,36 +83,80 @@ typedef void (*pmem_callback_t)(struct bittern_cache *bc,
 #define PMEM_ASYNC_CONTEXT_MAGIC3	0xf10c7a72
 #define CACHE_PMEM_ASYNC_CONTEXT_MAGIC3	0xf10c7a73
 
-/*! \todo remove this hack when we are completely done removing pmem_provider */
-#define PM_DEV_MEM_ASYNC_CONTEXT_SIZE 160
-/*! \todo remove this hack when we are completely done removing pmem_provider */
-struct pmem_devm_async_context {
-	char pmem_devm_opaque[PM_DEV_MEM_ASYNC_CONTEXT_SIZE];
+/*!
+ * data buffer info holds virtual address and page struct pointer to cache data
+ * being transferred.  if the pmem hardware does not support direct dma access
+ * and/or direct memory access, then we allocate a page buffer to do double
+ * buffering during memory copies.
+ */
+struct data_buffer_info {
+	/*! pointer to kmem buffer, if needed */
+	void *di_buffer_vmalloc_buffer;
+	/*! pointer to kmem buffer page, if needed */
+	struct page *di_buffer_vmalloc_page;
+	/*!
+	 * buffer pool used to allocate the vmalloc buffer
+	 * (valid if vmalloc buffer has been allocated)
+	 */
+	struct kmem_cache *di_buffer_slab;
+	/*! buffer pointer used for PMEM accesses by bittern */
+	void *di_buffer;
+	/*! page pointer used for PMEM accesses by bittern */
+	struct page *di_page;
+	/*! pmem flags */
+	int di_flags;
+	/*! 1 if buffer is in use, 0 otherwise */
+	atomic_t di_busy;
 };
 
+/*! @defgroup di_flags_bitvalues data_buffer_info di_flags bitmask values
+ * @{
+ */
+/*! doing double buffering (vmalloc buffer is in use) */
+#define CACHE_DI_FLAGS_DOUBLE_BUFFERING 0x1
+/*! we are reading from PMEM into memory */
+#define CACHE_DI_FLAGS_PMEM_READ 0x2
+/*! we are writing from memory to PMEM */
+#define CACHE_DI_FLAGS_PMEM_WRITE 0x4
+/*! we are reading and writing from memory to PMEM and viceversa */
+#define CACHE_DI_FLAGS_PMEM_READWRITE (CACHE_DI_FLAGS_PMEM_READ | \
+		CACHE_DI_FLAGS_PMEM_WRITE)
+/*! @} */
+
+#define __ASSERT_PMEM_DBI(__dbi, __flags) ({				\
+	struct data_buffer_info *__db = (__dbi);			\
+	ASSERT(__db->di_buffer_vmalloc_buffer != NULL);			\
+	ASSERT(PAGE_ALIGNED(__db->di_buffer_vmalloc_buffer));		\
+	ASSERT(__db->di_buffer_vmalloc_page != NULL);			\
+	ASSERT(__db->di_buffer_vmalloc_page ==				\
+	       virtual_to_page(__db->di_buffer_vmalloc_buffer));	\
+	ASSERT((__db->di_flags & (__flags)) == (__flags));		\
+	if ((__db->di_flags & CACHE_DI_FLAGS_DOUBLE_BUFFERING) != 0) {	\
+		ASSERT(__db->di_buffer == __db->di_buffer_vmalloc_buffer); \
+		ASSERT(__db->di_page ==	__db->di_buffer_vmalloc_page);	\
+	} else {							\
+		ASSERT(__db->di_buffer != NULL);			\
+		ASSERT(__db->di_page != NULL);				\
+	}								\
+	ASSERT(__db->di_flags != 0x0);					\
+	ASSERT(atomic_read(&__db->di_busy) == 1);			\
+})
+#define ASSERT_PMEM_DBI(__dbi)						\
+		__ASSERT_PMEM_DBI(__dbi, 0x0)
+#define ASSERT_PMEM_DBI_DOUBLE_BUFFERING(__dbi)				\
+		__ASSERT_PMEM_DBI(__dbi, CACHE_DI_FLAGS_DOUBLE_BUFFERING)
+
 /*!
- * the content of this data structure is only used within pmem_api layer.
- * no other functions outside pmem_api layer must know about the contents of
- * this structure.
- * caller of pmem_data_get_page_read() and
- * pmem_data_put_page_write() needs to pass this context
- * without reading from it or writing to it.
- * the context is used by the lower level APIs to keep track of async transfers.
- * caller may deallocate this context in the callback function, not before.
+ * The content of this data structure is only used within pmem_api layer.
+ * The context is used by the pmem APIs to keep track of async calls.
  */
 struct async_context {
 	unsigned int ma_magic1;
-	/*!
-	 * \todo remove this hack when we are completely done removing
-	 * pmem_provider
-	 */
-	struct pmem_devm_async_context ma_devm_context;
 	struct bio *ma_bio;
 	struct work_struct ma_work;
 	unsigned int ma_magic2;
 	struct bittern_cache *ma_bc;
 	struct cache_block *ma_cache_block;
-	struct data_buffer_info *ma_dbi;
 	void *ma_callback_context;
 	pmem_callback_t ma_callback_function;
 	uint64_t ma_start_timer;
@@ -124,37 +168,82 @@ struct async_context {
 	unsigned int ma_magic3;
 };
 
+#define PMEM_CONTEXT_MAGIC1 0xf10c2af1
+#define PMEM_CONTEXT_MAGIC2 0xf10ca21f
+/*!
+ * Per-request pmem related context. Higher level code (the cache layer)
+ * is responsible for providing and storing this context across the
+ * lifecycle for each request. This struct is stored by the caller in
+ * @ref work_item.
+ * All the code outside pmem_api needs to treat this structure as being
+ * completely opaque. The only allowed access outside pmem modules is via
+ * the getter functions @ref pmem_context_data_vaddr and
+ * @ref pmem_context_data_page .
+ */
+struct pmem_context {
+	int magic1;
+	struct async_context async_ctx;
+	struct pmem_block_metadata pmbm;
+	int magic2;
+	struct data_buffer_info dbi;
+};
+
+/*!
+ * Use this function to access the data virtual address in pmem_context.
+ * NOTE: caller must guarantee that buffer has been previously set.
+ */
+static inline void *pmem_context_data_vaddr(struct pmem_context *ctx)
+{
+	M_ASSERT(ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(ctx->magic2 == PMEM_CONTEXT_MAGIC2);
+	ASSERT_PMEM_DBI(&ctx->dbi);
+	ASSERT(ctx->dbi.di_buffer != NULL);
+	ASSERT(ctx->dbi.di_page != NULL);
+	return ctx->dbi.di_buffer;
+}
+
+/*!
+ * Use this function to access the data page pointer in pmem_context.
+ * NOTE: caller must guarantee that buffer has been previously set.
+ */
+static inline void *pmem_context_data_page(struct pmem_context *ctx)
+{
+	M_ASSERT(ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(ctx->magic2 == PMEM_CONTEXT_MAGIC2);
+	ASSERT_PMEM_DBI(&ctx->dbi);
+	ASSERT(ctx->dbi.di_buffer != NULL);
+	ASSERT(ctx->dbi.di_page != NULL);
+	return ctx->dbi.di_page;
+}
+
+/*! initializes empty pmem context */
+extern void pmem_context_initialize(struct pmem_context *ctx);
+
+/*! sets up resources for pmem context */
+extern int pmem_context_setup(struct bittern_cache *bc,
+			      struct kmem_cache *kmem_slab,
+			      struct cache_block *cache_block,
+			      struct cache_block *cloned_cache_block,
+			      struct pmem_context *ctx);
+
+/*! destroy resources setup with @ref pmem_context_setup */
+extern void pmem_context_destroy(struct bittern_cache *bc,
+				 struct pmem_context *ctx);
+
 /*!
  * sync read metadata
  */
 extern int pmem_metadata_sync_read(struct bittern_cache *bc,
-				   unsigned int block_id,
 				   struct cache_block *cache_block,
 				   struct pmem_block_metadata *out_pmbm_mem);
-/*!
- * sync write metadata
- */
-extern int pmem_metadata_sync_write(struct bittern_cache *bc,
-				    unsigned int block_id,
-				    struct cache_block *cache_block,
-				    enum cache_state metadata_update_state);
-
-extern int pmem_data_get_page_read(struct bittern_cache *bc,
-				   unsigned int block_id,
-				   struct cache_block *cache_block,
-				   struct data_buffer_info *dbi_data,
-				   struct async_context *async_context,
-				   void *callback_context,
-				   pmem_callback_t callback_function);
 
 /*!
  * async metadata update API
  */
+/*! \todo make this a void -- handle errors in callback, if any */
 extern int pmem_metadata_async_write(struct bittern_cache *bc,
-				     unsigned int block_id,
 				     struct cache_block *cache_block,
-				     struct data_buffer_info *dbi_data,
-				     struct async_context *async_context,
+				     struct pmem_context *pmem_ctx,
 				     void *callback_context,
 				     pmem_callback_t callback_function,
 				     enum cache_state metadata_update_state);
@@ -176,32 +265,30 @@ extern int pmem_metadata_async_write(struct bittern_cache *bc,
  * caller must not modify the data with the get_page_read()/put_page_read() APIs
  *
  */
+/*! \todo make this a void -- handle errors in callback, if any */
 extern int pmem_data_get_page_read(struct bittern_cache *bc,
-				   unsigned int block_id,
 				   struct cache_block *cache_block,
-				   struct data_buffer_info *dbi_data,
-				   struct async_context *async_context,
+				   struct pmem_context *pmem_ctx,
 				   void *callback_context,
 				   pmem_callback_t callback_function);
+/*! \todo make this a void -- this cannot fail */
 extern int pmem_data_put_page_read(struct bittern_cache *bc,
-				   unsigned int block_id,
 				   struct cache_block *cache_block,
-				   struct data_buffer_info *dbi_data);
+				   struct pmem_context *pmem_ctx);
 
 /*!
  * convert page obtained for read to page for write.
  * this is used for rmw cycles
  */
+/*! \todo make this a void -- this cannot fail */
 extern int pmem_data_convert_read_to_write(struct bittern_cache *bc,
-					   unsigned int block_id,
 					   struct cache_block *cache_block,
-					   struct data_buffer_info *dbi_data);
+					   struct pmem_context *pmem_ctx);
+/*! \todo make this a void -- this cannot fail */
 extern int pmem_data_clone_read_to_write(struct bittern_cache *bc,
-					 unsigned int from_block_id,
 					 struct cache_block *from_cache_block,
-					 unsigned int to_block_id,
 					 struct cache_block *to_cache_block,
-					 struct data_buffer_info *dbi_data);
+					 struct pmem_context *pmem_ctx);
 
 /*!
  * async write accessors (get_page_write()/put_page_write())
@@ -220,15 +307,14 @@ extern int pmem_data_clone_read_to_write(struct bittern_cache *bc,
  *
  * caller can modify the data with these APIs (duh!)
  */
+/*! \todo make this a void -- this cannot fail */
 extern int pmem_data_get_page_write(struct bittern_cache *bc,
-				    unsigned int block_id,
 				    struct cache_block *cache_block,
-				    struct data_buffer_info *dbi_data);
+				    struct pmem_context *pmem_ctx);
+/*! \todo make this a void -- handle errors in callback, if any */
 extern int pmem_data_put_page_write(struct bittern_cache *bc,
-				    unsigned int block_id,
 				    struct cache_block *cache_block,
-				    struct data_buffer_info *dbi_data,
-				    struct async_context *async_context,
+				    struct pmem_context *pmem_ctx,
 				    void *callback_context,
 				    pmem_callback_t callback_function,
 				    enum cache_state metadata_update_state);

@@ -139,12 +139,12 @@ int pmem_write_sync_mem(struct bittern_cache *bc,
 	return 0;
 }
 
-int pmem_metadata_async_write_mem(struct bittern_cache *bc,
-				  struct cache_block *cache_block,
-				  struct pmem_context *pmem_ctx,
-				  void *callback_context,
-				  pmem_callback_t callback_function,
-				  enum cache_state metadata_update_state)
+void pmem_metadata_async_write_mem(struct bittern_cache *bc,
+				   struct cache_block *cache_block,
+				   struct pmem_context *pmem_ctx,
+				   void *callback_context,
+				   pmem_callback_t callback_function,
+				   enum cache_state metadata_update_state)
 {
 	uint64_t ts_started = current_kernel_time_nsec();
 	struct pmem_block_metadata *pmbm;
@@ -230,8 +230,6 @@ int pmem_metadata_async_write_mem(struct bittern_cache *bc,
 			     pmem_ctx,
 			     callback_context,
 			     0);
-
-	return 0;
 }
 
 /*
@@ -252,11 +250,11 @@ int pmem_metadata_async_write_mem(struct bittern_cache *bc,
  * caller must not modify the data with the get_page_read()/put_page_read() APIs
  *
  */
-int pmem_data_get_page_read_mem(struct bittern_cache *bc,
-				struct cache_block *cache_block,
-				struct pmem_context *pmem_ctx,
-				void *callback_context,
-				pmem_callback_t callback_function)
+void pmem_data_get_page_read_mem(struct bittern_cache *bc,
+				 struct cache_block *cache_block,
+				 struct pmem_context *pmem_ctx,
+				 void *callback_context,
+				 pmem_callback_t callback_function)
 {
 	uint64_t start_timer = current_kernel_time_nsec();
 	struct pmem_api *pa = &bc->bc_papi;
@@ -331,14 +329,10 @@ int pmem_data_get_page_read_mem(struct bittern_cache *bc,
 			     callback_context,
 			     0);
 
-	cache_timer_add(&pa->papi_stats.
-				data_get_page_read_async_timer,
+	cache_timer_add(&pa->papi_stats.data_get_page_read_async_timer,
 				start_timer);
 
-	cache_timer_add(&pa->papi_stats.data_get_page_read_timer,
-				start_timer);
-
-	return 0;
+	cache_timer_add(&pa->papi_stats.data_get_page_read_timer, start_timer);
 }
 
 /* put_page_read */
@@ -358,9 +352,9 @@ int pmem_data_get_page_read_mem(struct bittern_cache *bc,
  * caller must call put_page_read() when it's done in accessing the data page
  * and to release the data context in dbi_data.
  */
-int pmem_data_put_page_read_mem(struct bittern_cache *bc,
-				struct cache_block *cache_block,
-				struct pmem_context *pmem_ctx)
+void pmem_data_put_page_read_mem(struct bittern_cache *bc,
+				 struct cache_block *cache_block,
+				 struct pmem_context *pmem_ctx)
 {
 	uint64_t start_timer = current_kernel_time_nsec();
 	struct pmem_api *pa = &bc->bc_papi;
@@ -408,19 +402,16 @@ int pmem_data_put_page_read_mem(struct bittern_cache *bc,
 	BT_DEV_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, NULL, NULL,
 		     "after clear page");
 
-	cache_timer_add(&pa->papi_stats.data_put_page_read_timer,
-				start_timer);
-
-	return 0;
+	cache_timer_add(&pa->papi_stats.data_put_page_read_timer, start_timer);
 }
 
 /*
  * convert page obtained for read to page for write -- this is used for rmw
  * cycles
  */
-int pmem_data_convert_read_to_write_mem(struct bittern_cache *bc,
-					struct cache_block *cache_block,
-					struct pmem_context *pmem_ctx)
+void pmem_data_convert_read_to_write_mem(struct bittern_cache *bc,
+					 struct cache_block *cache_block,
+					 struct pmem_context *pmem_ctx)
 {
 	struct pmem_api *pa = &bc->bc_papi;
 	struct data_buffer_info *dbi_data;
@@ -458,18 +449,16 @@ int pmem_data_convert_read_to_write_mem(struct bittern_cache *bc,
 	ASSERT((dbi_data->di_flags & CACHE_DI_FLAGS_PMEM_WRITE) == 0);
 
 	dbi_data->di_flags |= CACHE_DI_FLAGS_PMEM_WRITE;
-
-	return 0;
 }
 
 /*
  * clone read page into a write page, similar to convert except that
  * the data is cloned -- this is used for rmw cycles
  */
-int pmem_data_clone_read_to_write_mem(struct bittern_cache *bc,
-				      struct cache_block *from_cache_block,
-				      struct cache_block *to_cache_block,
-				      struct pmem_context *pmem_ctx)
+void pmem_data_clone_read_to_write_mem(struct bittern_cache *bc,
+				       struct cache_block *from_cache_block,
+				       struct cache_block *to_cache_block,
+				       struct pmem_context *pmem_ctx)
 {
 	void *to_buffer;
 	struct page *to_page;
@@ -552,8 +541,6 @@ int pmem_data_clone_read_to_write_mem(struct bittern_cache *bc,
 	dbi_data->di_page = to_page;
 
 	dbi_data->di_flags |= CACHE_DI_FLAGS_PMEM_WRITE;
-
-	return 0;
 }
 
 /* get_page_write */
@@ -572,9 +559,9 @@ int pmem_data_clone_read_to_write_mem(struct bittern_cache *bc,
  * before the callback is called, the data context described in dbi_data
  * is released.
  */
-int pmem_data_get_page_write_mem(struct bittern_cache *bc,
-				 struct cache_block *cache_block,
-				 struct pmem_context *pmem_ctx)
+void pmem_data_get_page_write_mem(struct bittern_cache *bc,
+				  struct cache_block *cache_block,
+				  struct pmem_context *pmem_ctx)
 {
 	uint64_t start_timer = current_kernel_time_nsec();
 	struct pmem_api *pa = &bc->bc_papi;
@@ -634,10 +621,7 @@ int pmem_data_get_page_write_mem(struct bittern_cache *bc,
 		     dbi_data->di_buffer,
 		     dbi_data->di_page, dbi_data->di_flags);
 
-	cache_timer_add(&pa->papi_stats.data_get_page_write_timer,
-				start_timer);
-
-	return 0;
+	cache_timer_add(&pa->papi_stats.data_get_page_write_timer, start_timer);
 }
 
 /* put_page_write */
@@ -656,12 +640,12 @@ int pmem_data_get_page_write_mem(struct bittern_cache *bc,
  * before the callback is called, the data context described in dbi_data
  * is released.
  */
-int pmem_data_put_page_write_mem(struct bittern_cache *bc,
-				 struct cache_block *cache_block,
-				 struct pmem_context *pmem_ctx,
-				 void *callback_context,
-				 pmem_callback_t callback_function,
-				 enum cache_state metadata_update_state)
+void pmem_data_put_page_write_mem(struct bittern_cache *bc,
+				  struct cache_block *cache_block,
+				  struct pmem_context *pmem_ctx,
+				  void *callback_context,
+				  pmem_callback_t callback_function,
+				  enum cache_state metadata_update_state)
 {
 	uint64_t start_timer = current_kernel_time_nsec();
 	struct pmem_api *pa = &bc->bc_papi;
@@ -781,14 +765,10 @@ int pmem_data_put_page_write_mem(struct bittern_cache *bc,
 			     callback_context,
 			     0);
 
-	cache_timer_add(&pa->papi_stats.
-				data_put_page_write_async_timer,
+	cache_timer_add(&pa->papi_stats.data_put_page_write_async_timer,
 				start_timer);
 
-	cache_timer_add(&pa->papi_stats.data_put_page_write_timer,
-				start_timer);
-
-	return 0;
+	cache_timer_add(&pa->papi_stats.data_put_page_write_timer, start_timer);
 }
 
 const struct cache_papi_interface cache_papi_mem = {

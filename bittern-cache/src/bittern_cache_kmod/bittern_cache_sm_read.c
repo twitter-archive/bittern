@@ -22,7 +22,6 @@ void sm_read_hit_copy_from_cache_start(struct bittern_cache *bc,
 					     struct work_item *wi,
 					     struct bio *bio)
 {
-	int ret;
 	struct cache_block *cache_block;
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
@@ -63,12 +62,11 @@ void sm_read_hit_copy_from_cache_start(struct bittern_cache *bc,
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 		 "start_async_read (get_page_read): wi=%p, bc=%p, cache_block=%p, bio=%p",
 		 wi, bc, cache_block, bio);
-	ret = pmem_data_get_page_read(bc,
-				      cache_block,
-				      &wi->wi_pmem_ctx,
-				      wi, /*callback context */
-				      cache_get_page_read_callback);
-	M_ASSERT_FIXME(ret == 0);
+	pmem_data_get_page_read(bc,
+				cache_block,
+				&wi->wi_pmem_ctx,
+				wi, /*callback context */
+				cache_get_page_read_callback);
 }
 
 void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
@@ -199,7 +197,6 @@ void sm_read_miss_copy_from_device_startio(struct bittern_cache *bc,
 						 struct work_item *wi,
 						 struct bio *bio)
 {
-	int ret;
 	struct cache_block *cache_block;
 	int val;
 	struct page *cache_page;
@@ -224,10 +221,9 @@ void sm_read_miss_copy_from_device_startio(struct bittern_cache *bc,
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "copy-from-device-0");
 
-	ret = pmem_data_get_page_write(bc,
-				       cache_block,
-				       &wi->wi_pmem_ctx);
-	M_ASSERT_FIXME(ret == 0);
+	pmem_data_get_page_write(bc,
+				 cache_block,
+				 &wi->wi_pmem_ctx);
 
 	cache_page = pmem_context_data_page(&wi->wi_pmem_ctx);
 
@@ -269,7 +265,6 @@ void sm_read_miss_copy_from_device_endio(struct bittern_cache *bc,
 					       struct work_item *wi,
 					       struct bio *bio)
 {
-	int ret;
 	uint128_t hash_data;
 	struct cache_block *cache_block;
 
@@ -330,13 +325,12 @@ void sm_read_miss_copy_from_device_endio(struct bittern_cache *bc,
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 		 "start_async_write (put_page_write): callback_context/wi=%p, bc=%p, cache_block=%p, bio=%p",
 		 wi, bc, cache_block, bio);
-	ret = pmem_data_put_page_write(bc,
-				       cache_block,
-				       &wi->wi_pmem_ctx,
-				       wi, /*callback context */
-				       cache_put_page_write_callback,
-				       CACHE_VALID_CLEAN);
-	M_ASSERT_FIXME(ret == 0);
+	pmem_data_put_page_write(bc,
+				 cache_block,
+				 &wi->wi_pmem_ctx,
+				 wi, /*callback context */
+				 cache_put_page_write_callback,
+				 CACHE_VALID_CLEAN);
 
 	ASSERT_BITTERN_CACHE(bc);
 }

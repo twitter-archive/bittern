@@ -26,7 +26,6 @@ void sm_writeback_copy_from_cache_start(struct bittern_cache *bc,
 	 * there is no bio in this case.
 	 * clone bio, start i/o to write data to device.
 	 */
-	int ret;
 	struct cache_block *cache_block;
 
 	ASSERT(wi->wi_original_bio == NULL);
@@ -58,12 +57,11 @@ void sm_writeback_copy_from_cache_start(struct bittern_cache *bc,
 			CACHE_VALID_DIRTY_WRITEBACK_INV_COPY_FROM_CACHE_START,
 			CACHE_VALID_DIRTY_WRITEBACK_INV_COPY_FROM_CACHE_END);
 
-	ret = pmem_data_get_page_read(bc,
-				      cache_block,
-				      &wi->wi_pmem_ctx,
-				      wi, /*callback context */
-				      cache_get_page_read_callback);
-	M_ASSERT_FIXME(ret == 0);
+	pmem_data_get_page_read(bc,
+				cache_block,
+				&wi->wi_pmem_ctx,
+				wi, /*callback context */
+				cache_get_page_read_callback);
 }
 
 void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
@@ -158,7 +156,6 @@ void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,
 	 * there is no bio in this case.
 	 * clone bio, start i/o to write data to device.
 	 */
-	int ret;
 	enum cache_state metadata_state;
 	struct cache_block *cache_block;
 
@@ -214,13 +211,12 @@ void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,
 	/*
 	 * start updating metadata
 	 */
-	ret = pmem_metadata_async_write(bc,
-					cache_block,
-					&wi->wi_pmem_ctx,
-					wi, /* callback context */
-					cache_metadata_write_callback,
-					metadata_state);
-	M_ASSERT_FIXME(ret == 0);
+	pmem_metadata_async_write(bc,
+				  cache_block,
+				  &wi->wi_pmem_ctx,
+				  wi, /* callback context */
+				  cache_metadata_write_callback,
+				  metadata_state);
 }
 
 void sm_writeback_update_metadata_end(struct bittern_cache *bc,
@@ -257,5 +253,5 @@ void sm_writeback_update_metadata_end(struct bittern_cache *bc,
 	 */
 	ASSERT((wi->wi_flags & WI_FLAG_HAS_ENDIO) != 0);
 	ASSERT(wi->wi_io_endio != NULL);
-	(*wi->wi_io_endio) (bc, wi, cache_block);
+	(*wi->wi_io_endio)(bc, wi, cache_block);
 }

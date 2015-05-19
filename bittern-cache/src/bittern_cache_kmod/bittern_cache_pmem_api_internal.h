@@ -42,37 +42,37 @@ typedef int
 		     uint64_t to_pmem_offset,
 		     void *from_buffer,
 		     size_t size);
-typedef int
+typedef void
 (*pmem_metadata_async_write_f)(struct bittern_cache *bc,
 			       struct cache_block *cache_block,
 			       struct pmem_context *pmem_ctx,
 			       void *callback_context,
 			       pmem_callback_t callback_function,
 			       enum cache_state metadata_update_state);
-typedef int
+typedef void
 (*pmem_data_cache_get_page_read_f)(struct bittern_cache *bc,
 				   struct cache_block *cache_block,
 				   struct pmem_context *pmem_ctx,
 				   void *callback_context,
 				   pmem_callback_t callback_function);
-typedef int
+typedef void
 (*pmem_data_cache_put_page_read_f)(struct bittern_cache *bc,
 				   struct cache_block *cache_block,
 				   struct pmem_context *pmem_ctx);
-typedef int
+typedef void
 (*pmem_data_cache_convert_read_to_write_f)(struct bittern_cache *bc,
 					   struct cache_block *cache_block,
 					   struct pmem_context *pmem_ctx);
-typedef int
+typedef void
 (*pmem_data_cache_clone_read_to_write_f)(struct bittern_cache *bc,
 					 struct cache_block *from_cache_block,
 					 struct cache_block *to_cache_block,
 					 struct pmem_context *pmem_ctx);
-typedef int
+typedef void
 (*pmem_data_cache_get_page_write_f)(struct bittern_cache *bc,
 				    struct cache_block *cache_block,
 				    struct pmem_context *pmem_ctx);
-typedef int
+typedef void
 (*pmem_data_cache_put_page_write_f)(struct bittern_cache *bc,
 				    struct cache_block *cache_block,
 				    struct pmem_context *pmem_ctx,
@@ -128,9 +128,8 @@ struct cache_papi_interface {
  * properties.
  */
 extern const struct cache_papi_interface cache_papi_mem;
-extern int pmem_allocate_papi_mem(
-	struct bittern_cache *bc,
-	struct block_device *blockdev);
+extern int pmem_allocate_papi_mem(struct bittern_cache *bc,
+				  struct block_device *blockdev);
 
 /*!
  * Block PMEM_API.
@@ -139,9 +138,8 @@ extern int pmem_allocate_papi_mem(
  * NVMe-specific optimizations if we ever find said hardware .....ooo000OOO....
  */
 extern const struct cache_papi_interface cache_papi_block;
-extern int pmem_allocate_papi_block(
-		struct bittern_cache *bc,
-		struct block_device *blockdev);
+extern int pmem_allocate_papi_block(struct bittern_cache *bc,
+				    struct block_device *blockdev);
 
 /*!
  * convert block id to metadata byte offset into the cache device

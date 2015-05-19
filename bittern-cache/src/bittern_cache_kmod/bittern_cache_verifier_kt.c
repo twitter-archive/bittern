@@ -66,12 +66,13 @@ int cache_block_verify(struct bittern_cache *bc, int block_id,
 
 	t_start = current_kernel_time_nsec();
 	sema_init(&sema, 0);
-	ret = pmem_data_get_page_read(bc,
-				      cache_block,
-				      pmem_ctx,
-				      &sema, /*callback context */
-				      cache_block_verify_callback);
-	M_ASSERT_FIXME(ret == 0);
+
+	pmem_data_get_page_read(bc,
+				cache_block,
+				pmem_ctx,
+				&sema, /*callback context */
+				cache_block_verify_callback);
+
 	down(&sema);
 	t_end = current_kernel_time_nsec();
 

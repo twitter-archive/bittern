@@ -1167,7 +1167,109 @@ int pmem_metadata_sync_read(struct bittern_cache *bc,
 	return 0;
 }
 
-int pmem_metadata_async_write(struct bittern_cache *bc,
+void pmem_metadata_async_write(struct bittern_cache *bc,
+			       struct cache_block *cache_block,
+			       struct pmem_context *pmem_ctx,
+			       void *callback_context,
+			       pmem_callback_t callback_function,
+			       enum cache_state metadata_update_state)
+{
+	struct pmem_api *pa = &bc->bc_papi;
+	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
+
+	ASSERT(pa->papi_bdev_size_bytes > 0);
+	ASSERT(pa->papi_bdev != NULL);
+
+	(*pp->metadata_async_write)(bc,
+				    cache_block,
+				    pmem_ctx,
+				    callback_context,
+				    callback_function,
+				    metadata_update_state);
+}
+
+void pmem_data_get_page_read(struct bittern_cache *bc,
+			     struct cache_block *cache_block,
+			     struct pmem_context *pmem_ctx,
+			     void *callback_context,
+			     pmem_callback_t callback_function)
+{
+	struct pmem_api *pa = &bc->bc_papi;
+	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
+
+	ASSERT(pa->papi_bdev_size_bytes > 0);
+	ASSERT(pa->papi_bdev != NULL);
+
+	(*pp->data_cache_get_page_read)(bc,
+					cache_block,
+					pmem_ctx,
+					callback_context,
+					callback_function);
+}
+
+void pmem_data_put_page_read(struct bittern_cache *bc,
+			     struct cache_block *cache_block,
+			     struct pmem_context *pmem_ctx)
+{
+	struct pmem_api *pa = &bc->bc_papi;
+	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
+
+	ASSERT(pa->papi_bdev_size_bytes > 0);
+	ASSERT(pa->papi_bdev != NULL);
+
+	(*pp->data_cache_put_page_read)(bc,
+					cache_block,
+					pmem_ctx);
+}
+
+void pmem_data_convert_read_to_write(struct bittern_cache *bc,
+				     struct cache_block *cache_block,
+				     struct pmem_context *pmem_ctx)
+{
+	struct pmem_api *pa = &bc->bc_papi;
+	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
+
+	ASSERT(pa->papi_bdev_size_bytes > 0);
+	ASSERT(pa->papi_bdev != NULL);
+
+	(*pp->data_cache_convert_read_to_write)(bc,
+						cache_block,
+						pmem_ctx);
+}
+
+void pmem_data_clone_read_to_write(struct bittern_cache *bc,
+				   struct cache_block *from_cache_block,
+				   struct cache_block *to_cache_block,
+				   struct pmem_context *pmem_ctx)
+{
+	struct pmem_api *pa = &bc->bc_papi;
+	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
+
+	ASSERT(pa->papi_bdev_size_bytes > 0);
+	ASSERT(pa->papi_bdev != NULL);
+
+	(*pp->data_cache_clone_read_to_write)(bc,
+					      from_cache_block,
+					      to_cache_block,
+					      pmem_ctx);
+}
+
+void pmem_data_get_page_write(struct bittern_cache *bc,
+			      struct cache_block *cache_block,
+			      struct pmem_context *pmem_ctx)
+{
+	struct pmem_api *pa = &bc->bc_papi;
+	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
+
+	ASSERT(pa->papi_bdev_size_bytes > 0);
+	ASSERT(pa->papi_bdev != NULL);
+
+	(*pp->data_cache_get_page_write)(bc,
+					 cache_block,
+					 pmem_ctx);
+}
+
+void pmem_data_put_page_write(struct bittern_cache *bc,
 			      struct cache_block *cache_block,
 			      struct pmem_context *pmem_ctx,
 			      void *callback_context,
@@ -1180,112 +1282,10 @@ int pmem_metadata_async_write(struct bittern_cache *bc,
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
 
-	return (*pp->metadata_async_write)(bc,
-					   cache_block,
-					   pmem_ctx,
-					   callback_context,
-					   callback_function,
-					   metadata_update_state);
-}
-
-int pmem_data_get_page_read(struct bittern_cache *bc,
-			    struct cache_block *cache_block,
-			    struct pmem_context *pmem_ctx,
-			    void *callback_context,
-			    pmem_callback_t callback_function)
-{
-	struct pmem_api *pa = &bc->bc_papi;
-	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
-
-	ASSERT(pa->papi_bdev_size_bytes > 0);
-	ASSERT(pa->papi_bdev != NULL);
-
-	return (*pp->data_cache_get_page_read)(bc,
-					       cache_block,
-					       pmem_ctx,
-					       callback_context,
-					       callback_function);
-}
-
-int pmem_data_put_page_read(struct bittern_cache *bc,
-			    struct cache_block *cache_block,
-			    struct pmem_context *pmem_ctx)
-{
-	struct pmem_api *pa = &bc->bc_papi;
-	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
-
-	ASSERT(pa->papi_bdev_size_bytes > 0);
-	ASSERT(pa->papi_bdev != NULL);
-
-	return (*pp->data_cache_put_page_read)(bc,
-					       cache_block,
-					       pmem_ctx);
-}
-
-int pmem_data_convert_read_to_write(struct bittern_cache *bc,
-				    struct cache_block *cache_block,
-				    struct pmem_context *pmem_ctx)
-{
-	struct pmem_api *pa = &bc->bc_papi;
-	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
-
-	ASSERT(pa->papi_bdev_size_bytes > 0);
-	ASSERT(pa->papi_bdev != NULL);
-
-	return (*pp->data_cache_convert_read_to_write)(bc,
-						       cache_block,
-						       pmem_ctx);
-}
-
-int pmem_data_clone_read_to_write(struct bittern_cache *bc,
-				  struct cache_block *from_cache_block,
-				  struct cache_block *to_cache_block,
-				  struct pmem_context *pmem_ctx)
-{
-	struct pmem_api *pa = &bc->bc_papi;
-	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
-
-	ASSERT(pa->papi_bdev_size_bytes > 0);
-	ASSERT(pa->papi_bdev != NULL);
-
-	return (*pp->data_cache_clone_read_to_write)(bc,
-						     from_cache_block,
-						     to_cache_block,
-						     pmem_ctx);
-}
-
-int pmem_data_get_page_write(struct bittern_cache *bc,
-			     struct cache_block *cache_block,
-			     struct pmem_context *pmem_ctx)
-{
-	struct pmem_api *pa = &bc->bc_papi;
-	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
-
-	ASSERT(pa->papi_bdev_size_bytes > 0);
-	ASSERT(pa->papi_bdev != NULL);
-
-	return (*pp->data_cache_get_page_write)(bc,
-						cache_block,
-						pmem_ctx);
-}
-
-int pmem_data_put_page_write(struct bittern_cache *bc,
-			     struct cache_block *cache_block,
-			     struct pmem_context *pmem_ctx,
-			     void *callback_context,
-			     pmem_callback_t callback_function,
-			     enum cache_state metadata_update_state)
-{
-	struct pmem_api *pa = &bc->bc_papi;
-	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
-
-	ASSERT(pa->papi_bdev_size_bytes > 0);
-	ASSERT(pa->papi_bdev != NULL);
-
-	return (*pp->data_cache_put_page_write)(bc,
-						cache_block,
-						pmem_ctx,
-						callback_context,
-						callback_function,
-						metadata_update_state);
+	(*pp->data_cache_put_page_write)(bc,
+					 cache_block,
+					 pmem_ctx,
+					 callback_context,
+					 callback_function,
+					 metadata_update_state);
 }

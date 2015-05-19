@@ -25,7 +25,6 @@ void sm_invalidate_start(struct bittern_cache *bc,
 	 * there is no bio in this case.
 	 * clone bio, start i/o to write data to device.
 	 */
-	int ret;
 
 	ASSERT(bio == NULL);
 	ASSERT(wi->wi_original_bio == NULL);
@@ -66,13 +65,12 @@ void sm_invalidate_start(struct bittern_cache *bc,
 	/*
 	 * start updating metadata
 	 */
-	ret = pmem_metadata_async_write(bc,
-					cache_block,
-					&wi->wi_pmem_ctx,
-					wi, /* callback context */
-					cache_metadata_write_callback,
-					CACHE_INVALID);
-	M_ASSERT_FIXME(ret == 0);
+	pmem_metadata_async_write(bc,
+				  cache_block,
+				  &wi->wi_pmem_ctx,
+				  wi, /* callback context */
+				  cache_metadata_write_callback,
+				  CACHE_INVALID);
 }
 
 void sm_invalidate_end(struct bittern_cache *bc,
@@ -109,5 +107,5 @@ void sm_invalidate_end(struct bittern_cache *bc,
 	 */
 	ASSERT((wi->wi_flags & WI_FLAG_HAS_ENDIO) != 0);
 	ASSERT(wi->wi_io_endio != NULL);
-	(*wi->wi_io_endio) (bc, wi, cache_block);
+	(*wi->wi_io_endio)(bc, wi, cache_block);
 }

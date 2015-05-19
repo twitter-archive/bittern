@@ -248,13 +248,12 @@ extern int pmem_metadata_sync_read(struct bittern_cache *bc,
 /*!
  * async metadata update API
  */
-/*! \todo make this a void -- handle errors in callback, if any */
-extern int pmem_metadata_async_write(struct bittern_cache *bc,
-				     struct cache_block *cache_block,
-				     struct pmem_context *pmem_ctx,
-				     void *callback_context,
-				     pmem_callback_t callback_function,
-				     enum cache_state metadata_update_state);
+extern void pmem_metadata_async_write(struct bittern_cache *bc,
+				      struct cache_block *cache_block,
+				      struct pmem_context *pmem_ctx,
+				      void *callback_context,
+				      pmem_callback_t callback_function,
+				      enum cache_state metadata_update_state);
 
 /*!
  * async read accessors (get_page_read()/put_page_read())
@@ -273,30 +272,26 @@ extern int pmem_metadata_async_write(struct bittern_cache *bc,
  * caller must not modify the data with the get_page_read()/put_page_read() APIs
  *
  */
-/*! \todo make this a void -- handle errors in callback, if any */
-extern int pmem_data_get_page_read(struct bittern_cache *bc,
-				   struct cache_block *cache_block,
-				   struct pmem_context *pmem_ctx,
-				   void *callback_context,
-				   pmem_callback_t callback_function);
-/*! \todo make this a void -- this cannot fail */
-extern int pmem_data_put_page_read(struct bittern_cache *bc,
-				   struct cache_block *cache_block,
-				   struct pmem_context *pmem_ctx);
+extern void pmem_data_get_page_read(struct bittern_cache *bc,
+				    struct cache_block *cache_block,
+				    struct pmem_context *pmem_ctx,
+				    void *callback_context,
+				    pmem_callback_t callback_function);
+extern void pmem_data_put_page_read(struct bittern_cache *bc,
+				    struct cache_block *cache_block,
+				    struct pmem_context *pmem_ctx);
 
 /*!
  * convert page obtained for read to page for write.
  * this is used for rmw cycles
  */
-/*! \todo make this a void -- this cannot fail */
-extern int pmem_data_convert_read_to_write(struct bittern_cache *bc,
-					   struct cache_block *cache_block,
-					   struct pmem_context *pmem_ctx);
-/*! \todo make this a void -- this cannot fail */
-extern int pmem_data_clone_read_to_write(struct bittern_cache *bc,
-					 struct cache_block *from_cache_block,
-					 struct cache_block *to_cache_block,
-					 struct pmem_context *pmem_ctx);
+extern void pmem_data_convert_read_to_write(struct bittern_cache *bc,
+					    struct cache_block *cache_block,
+					    struct pmem_context *pmem_ctx);
+extern void pmem_data_clone_read_to_write(struct bittern_cache *bc,
+					  struct cache_block *from_cache_block,
+					  struct cache_block *to_cache_block,
+					  struct pmem_context *pmem_ctx);
 
 /*!
  * async write accessors (get_page_write()/put_page_write())
@@ -315,17 +310,15 @@ extern int pmem_data_clone_read_to_write(struct bittern_cache *bc,
  *
  * caller can modify the data with these APIs (duh!)
  */
-/*! \todo make this a void -- this cannot fail */
-extern int pmem_data_get_page_write(struct bittern_cache *bc,
-				    struct cache_block *cache_block,
-				    struct pmem_context *pmem_ctx);
-/*! \todo make this a void -- handle errors in callback, if any */
-extern int pmem_data_put_page_write(struct bittern_cache *bc,
-				    struct cache_block *cache_block,
-				    struct pmem_context *pmem_ctx,
-				    void *callback_context,
-				    pmem_callback_t callback_function,
-				    enum cache_state metadata_update_state);
+extern void pmem_data_get_page_write(struct bittern_cache *bc,
+				     struct cache_block *cache_block,
+				     struct pmem_context *pmem_ctx);
+extern void pmem_data_put_page_write(struct bittern_cache *bc,
+				     struct cache_block *cache_block,
+				     struct pmem_context *pmem_ctx,
+				     void *callback_context,
+				     pmem_callback_t callback_function,
+				     enum cache_state metadata_update_state);
 
 struct pmem_info {
 	uint32_t restore_header_valid;

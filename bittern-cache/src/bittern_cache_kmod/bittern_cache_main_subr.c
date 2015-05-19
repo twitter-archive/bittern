@@ -894,6 +894,9 @@ struct work_item *work_item_allocate(struct bittern_cache *bc,
 	return wi;
 }
 
+/*!
+ * \todo should pass the new string for the pending io list
+ */
 void work_item_reallocate(struct bittern_cache *bc,
 			  struct cache_block *cache_block,
 			  struct work_item *wi,

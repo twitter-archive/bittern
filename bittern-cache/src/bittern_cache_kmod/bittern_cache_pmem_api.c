@@ -70,6 +70,8 @@ void pmem_info_initialize(struct bittern_cache *bc)
 	cache_timer_init(&ps->pmem_write_not4k_timer);
 	cache_timer_init(&ps->pmem_read_4k_timer);
 	cache_timer_init(&ps->pmem_write_4k_timer);
+	atomic_set(&ps->pmem_make_req_wq_count, 0);
+	cache_timer_init(&ps->pmem_make_req_wq_timer);
 	printk_info("%p: done\n", bc);
 }
 

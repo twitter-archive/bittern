@@ -186,6 +186,14 @@ struct pmem_context {
 	struct pmem_block_metadata pmbm;
 	int magic2;
 	struct data_buffer_info dbi;
+	/*! bi_datadir is passed as context for make request */
+	int bi_datadir;
+	/*! bi_sector is passed as context for make request */
+	sector_t bi_sector;
+	/*! bi_endio is passed as context for make request */
+	void (*bi_endio)(struct bio *bio, int err);
+	/*! timer */
+	uint64_t bi_started;
 };
 
 /*!
@@ -368,6 +376,9 @@ struct pmem_info {
 	struct cache_timer pmem_write_not4k_timer;
 	struct cache_timer pmem_read_4k_timer;
 	struct cache_timer pmem_write_4k_timer;
+
+	atomic_t pmem_make_req_wq_count;
+	struct cache_timer pmem_make_req_wq_timer;
 };
 
 /*!

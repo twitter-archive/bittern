@@ -1573,7 +1573,8 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 	 * here we are either in a process or kernel thread context,
 	 * i.e., we can sleep during resource allocation if needed.
 	 */
-	ASSERT(!in_interrupt());
+	ASSERT(!in_softirq());
+	ASSERT(!in_irq());
 
 	wi = work_item_allocate(bc,
 				NULL,
@@ -1650,7 +1651,8 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 	 * here we are either in a process or kernel thread context,
 	 * i.e., we can sleep during resource allocation if needed.
 	 */
-	ASSERT(!in_interrupt());
+	ASSERT(!in_softirq());
+	ASSERT(!in_irq());
 
 	ASSERT(bc != NULL);
 	ASSERT(bio != NULL);
@@ -1787,7 +1789,8 @@ void cache_map_workfunc_resource_busy(struct bittern_cache *bc, struct bio *bio)
 	 * here we are either in a process or kernel thread context,
 	 * i.e., we can sleep during resource allocation if needed.
 	 */
-	ASSERT(!in_interrupt());
+	ASSERT(!in_softirq());
+	ASSERT(!in_irq());
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL, "cache-hit-busy");
 	if (bio_data_dir(bio) == WRITE)
@@ -1819,7 +1822,8 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 	 * here we are either in a process or kernel thread context,
 	 * i.e., we can sleep during resource allocation if needed.
 	 */
-	ASSERT(!in_interrupt());
+	ASSERT(!in_softirq());
+	ASSERT(!in_irq());
 
 	wi = work_item_allocate(bc,
 				cache_block,
@@ -1891,7 +1895,8 @@ void cache_map_workfunc_no_resources(struct bittern_cache *bc, struct bio *bio)
 	 * here we are either in a process or kernel thread context,
 	 * i.e., we can sleep during resource allocation if needed.
 	 */
-	ASSERT(!in_interrupt());
+	ASSERT(!in_softirq());
+	ASSERT(!in_irq());
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
 		 "blocks-busy-defer (bc_invalid_entries=%u)",
@@ -1927,7 +1932,8 @@ int cache_map_workfunc(struct bittern_cache *bc, struct bio *bio)
 	 * here we are either in a process or kernel thread context,
 	 * i.e., we can sleep during resource allocation if needed.
 	 */
-	ASSERT(!in_interrupt());
+	ASSERT(!in_softirq());
+	ASSERT(!in_irq());
 
 	if (bio_is_pureflush_request(bio)) {
 		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
@@ -2191,7 +2197,8 @@ void cache_queue_to_deferred(struct bittern_cache *bc,
 	 * here we are either in a process or kernel thread context,
 	 * i.e., we can sleep during resource allocation if needed.
 	 */
-	ASSERT(!in_interrupt());
+	ASSERT(!in_softirq());
+	ASSERT(!in_irq());
 
 	ASSERT(queue == &bc->bc_deferred_wait_busy ||
 	       queue == &bc->bc_deferred_wait_page);

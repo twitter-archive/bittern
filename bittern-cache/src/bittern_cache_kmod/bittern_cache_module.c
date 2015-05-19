@@ -970,6 +970,9 @@ ssize_t cache_op_show_pmem_stats(struct bittern_cache *bc,
 	       atomic_read(&ps->pmem_read_4k_pending),
 	       atomic_read(&ps->pmem_write_4k_count),
 	       atomic_read(&ps->pmem_write_4k_pending));
+	DMEMIT("%s: pmem_stats: pmem_make_req_wq_count=%u\n",
+	       bc->bc_name,
+	       atomic_read(&ps->pmem_make_req_wq_count));
 
 	return sz;
 }
@@ -1454,6 +1457,9 @@ ssize_t cache_op_show_timers(struct bittern_cache *bc, char *result)
 	       T_FMT_ARGS(ps, pmem_write_not4k_timer),
 	       T_FMT_ARGS(ps, pmem_read_4k_timer),
 	       T_FMT_ARGS(ps, pmem_write_4k_timer));
+	DMEMIT("%s: timers: " T_FMT_STRING("pmem_make_req_wq_timer") "\n",
+	       bc->bc_name,
+	       T_FMT_ARGS(ps, pmem_make_req_wq_timer));
 	return sz;
 }
 

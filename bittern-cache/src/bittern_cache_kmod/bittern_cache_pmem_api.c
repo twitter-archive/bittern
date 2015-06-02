@@ -709,8 +709,7 @@ int pmem_block_restore(struct bittern_cache *bc,
 	ASSERT(cache_block != NULL);
 	ASSERT(cache_block->bcb_block_id == block_id);
 
-	pmbm = kmem_alloc(sizeof(struct pmem_block_metadata),
-			  GFP_NOIO);
+	pmbm = kmem_alloc(sizeof(struct pmem_block_metadata), GFP_NOIO);
 	M_ASSERT_FIXME(pmbm != NULL);
 
 	ret = pmem_read_sync(bc,
@@ -741,8 +740,7 @@ int pmem_block_restore(struct bittern_cache *bc,
 			   UINT128_ARG(pmbm->pmbm_hash_metadata),
 			   UINT128_ARG(computed_hash_metadata));
 		pa->papi_stats.restore_hash_corrupt_metadata_blocks++;
-		kmem_free(pmbm,
-			  sizeof(struct pmem_block_metadata));
+		kmem_free(pmbm, sizeof(struct pmem_block_metadata));
 		return 0;
 	}
 
@@ -760,8 +758,7 @@ int pmem_block_restore(struct bittern_cache *bc,
 		    ("block id #%u: error: metadata cache status invalid %u(%s)\n",
 		     block_id, pmbm->pmbm_status,
 		     cache_state_to_str(pmbm->pmbm_status));
-		kmem_free(pmbm,
-			  sizeof(struct pmem_block_metadata));
+		kmem_free(pmbm, sizeof(struct pmem_block_metadata));
 		return -EHWPOISON;
 	}
 

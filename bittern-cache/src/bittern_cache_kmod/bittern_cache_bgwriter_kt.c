@@ -174,14 +174,14 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 	 */
 	if (cache_invalidator_has_work_schmitt(bc)) {
 		update_state = CACHE_INVALID;
-		printk_info_ratelimited("bgwriter: flushing and invalidating block_id #%u, sector=%lu\n",
-			       cache_block->bcb_block_id,
-			       cache_block->bcb_sector);
+		printk_debug_ratelimited("bgwriter: flushing and invalidating block_id #%u, sector=%lu\n",
+					 cache_block->bcb_block_id,
+					 cache_block->bcb_sector);
 	} else {
 		update_state = CACHE_VALID_CLEAN;
-		printk_info_ratelimited("bgwriter: flushing block_id #%u, sector=%lu\n",
-			    cache_block->bcb_block_id,
-			    cache_block->bcb_sector);
+		printk_debug_ratelimited("bgwriter: flushing block_id #%u, sector=%lu\n",
+					 cache_block->bcb_block_id,
+					 cache_block->bcb_sector);
 	}
 
 	ASSERT(cache_block->bcb_state == CACHE_VALID_DIRTY);

@@ -37,7 +37,9 @@
 # The script performs the following tests:
 # * do a production build
 # * do a debug build
-# * create a cache on block device cache type and perform a few basic tests
+# * create a cache on block device cache type and perform a few basic tests,
+#   including a make filesystem, mount, copy data, umount, remount, verify data
+#   by building it.
 # * create a cache on ram device cache type and perform a few basic tests
 #
 #
@@ -91,9 +93,17 @@ rm_all_mods() {
 	sudo ../scripts/bc_rmmod.sh --rmmod-brd $*
 }
 
+
+echo $0: prep steps
 #
-# unload currently loaded modules, if any
+# try unload currently loaded caches and modules, if any
 #
+if [ -b /dev/mapper/$BITTERN_DEVICE ]
+then
+	echo $0: prep - removing cache
+	sudo ../scripts/bc_remove.sh $BITTERN_DEVICE
+fi
+echo $0: prep - removing modules if loaded
 rm_all_mods --ignore-already-removed
 
 #
@@ -114,25 +124,25 @@ ins_all_mods
 #
 # block
 #
+# wipe out the beginning of the cached data drive, so we have a consistent
+# zeroed-out starting state
+echo $0: wiping out start of cached device
+sudo dd if=/dev/zero of=$MINIMAL_TEST_CACHED_DEVICE bs=1024k count=100
 echo $0: testing block, pass 1
 sudo ../scripts/bc_delete.sh $MINIMAL_TEST_CACHE_DEVICE --force
 sudo ../scripts/bc_setup.sh --cache-operation create --cache-name $BITTERN_DEVICE --cache-device $MINIMAL_TEST_CACHE_DEVICE --device $MINIMAL_TEST_CACHED_DEVICE
 sudo mkfs.ext4 /dev/mapper/$BITTERN_DEVICE
 sudo fsck -f /dev/mapper/$BITTERN_DEVICE
-# we repeat this three times to hit a bunch of dirty write hits
-sudo mkfs.xfs -f /dev/mapper/$BITTERN_DEVICE
-sudo mkfs.xfs -f /dev/mapper/$BITTERN_DEVICE
-sudo mkfs.xfs -f /dev/mapper/$BITTERN_DEVICE
 # not sure why, but there seems to be a need for a bit of a delay here
 sleep 2
 #
 sudo ../scripts/bc_remove.sh $BITTERN_DEVICE
-sudo tools/bc_tool -r -c $MINIMAL_TEST_CACHE_DEVICE -b
+sudo tools/bc_tool -r -c $MINIMAL_TEST_CACHE_DEVICE -b | tail -20
 echo $0: testing block, pass 2
 #
 sudo ../scripts/bc_setup.sh --cache-operation restore --cache-name $BITTERN_DEVICE --cache-device $MINIMAL_TEST_CACHE_DEVICE --device $MINIMAL_TEST_CACHED_DEVICE
 #
-sudo xfs_repair /dev/mapper/$BITTERN_DEVICE
+sudo fsck -f /dev/mapper/$BITTERN_DEVICE
 sudo dd if=/dev/zero of=/dev/mapper/$BITTERN_DEVICE bs=4k count=1 oflag=direct
 sudo dd if=/dev/zero of=/dev/mapper/$BITTERN_DEVICE bs=4k count=1 oflag=direct
 sudo dd if=/dev/zero of=/dev/mapper/$BITTERN_DEVICE seek=1000 bs=1k count=1 oflag=direct
@@ -143,9 +153,44 @@ sudo mkfs.xfs -f /dev/mapper/$BITTERN_DEVICE
 sudo mkfs.xfs -f /dev/mapper/$BITTERN_DEVICE
 # not sure why, but there seems to be a need for a bit of a delay here
 sleep 2
+echo $0: testing block, pass 3
+#
+sudo ../scripts/bc_remove.sh $BITTERN_DEVICE
+sudo ../scripts/bc_setup.sh --cache-operation restore \
+				--cache-name $BITTERN_DEVICE \
+				--cache-device $MINIMAL_TEST_CACHE_DEVICE \
+				--device $MINIMAL_TEST_CACHED_DEVICE
+sudo xfs_repair /dev/mapper/$BITTERN_DEVICE
+sudo rm -rf /tmp/bittern_minimal_test
+sudo mkdir /tmp/bittern_minimal_test
+sudo mount /dev/mapper/$BITTERN_DEVICE /tmp/bittern_minimal_test
+sudo cp -r ../../ /tmp/bittern_minimal_test/bittern.git/
+# note: $USER gets expanded before we sudo
+sudo chown -R $USER /tmp/bittern_minimal_test/bittern.git/
+sudo umount /dev/mapper/$BITTERN_DEVICE
+#
+echo $0: testing block, pass 4
+#
+sudo ../scripts/bc_remove.sh $BITTERN_DEVICE
+sudo ../scripts/bc_setup.sh --cache-operation restore \
+				--cache-name $BITTERN_DEVICE \
+				--cache-device $MINIMAL_TEST_CACHE_DEVICE \
+				--device $MINIMAL_TEST_CACHED_DEVICE
+sudo xfs_repair /dev/mapper/$BITTERN_DEVICE
+sudo mount /dev/mapper/$BITTERN_DEVICE /tmp/bittern_minimal_test
+pushd /tmp/bittern_minimal_test/bittern.git/bittern-cache/src/
+git status
+make devconfig
+make
+popd
+sudo umount /dev/mapper/$BITTERN_DEVICE
+#
 
+#
 sudo ../scripts/bc_remove.sh $BITTERN_DEVICE
 rm_all_mods
+#
+sudo rm -rf /tmp/bittern_minimal_test
 
 linux_ver=$(uname -r | sed -e 's/\..*//')
 if [ $linux_ver -lt 4 ]
@@ -171,7 +216,7 @@ sudo mkfs.xfs -f /dev/mapper/$BITTERN_DEVICE
 sleep 2
 #
 sudo ../scripts/bc_remove.sh $BITTERN_DEVICE
-sudo tools/bc_tool -r -c $MEM_CACHE_DEVICE -b
+sudo tools/bc_tool -r -c $MEM_CACHE_DEVICE -b | tail -20
 echo $0: testing mem, pass 2
 #
 sudo ../scripts/bc_setup.sh --cache-operation restore --cache-name $BITTERN_DEVICE --cache-device $MEM_CACHE_DEVICE --device $MINIMAL_TEST_CACHED_DEVICE

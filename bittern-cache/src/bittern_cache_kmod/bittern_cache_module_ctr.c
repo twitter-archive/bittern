@@ -73,194 +73,15 @@ int cache_calculate_min_invalid(struct bittern_cache *bc, int min_invalid_count)
 	return 0;
 }
 
-int cache_ctr_restore_data_block(struct bittern_cache *bc,
-				 unsigned int block_id,
-				 struct cache_block *bcb)
+static void __cache_block_initialize(struct bittern_cache *bc,
+				     unsigned block_id,
+				     struct cache_block *bcb)
 {
-	struct cache_block *existing_bcb;
-	unsigned int existing_block_id;
-	int ret;
-
-	ASSERT(block_id == bcb->bcb_block_id);
-	ret = pmem_block_restore(bc, bcb);
-
-	if (ret < 0) {
-		/*
-		 * data corruption -- we'll need to fail the whole restore
-		 */
-		printk_err("error: cache entry %d restore failed (corrupt/bad data)\n",
-			   block_id);
-		return ret;
-	}
-
-	if (ret == 0) {
-		int rr;
-
-		printk_warning("cache entry %d restore did not succeed (%d), initializing\n",
-			       block_id, ret);
-		rr = pmem_metadata_initialize(bc, block_id);
-		M_ASSERT(rr == 0);
-		return ret;
-	}
-
-	/*
-	 * We can only restore finalized transactions which have a correct
-	 * checksum. Anything else would be a transaction in progress
-	 */
-
-	M_ASSERT(bcb->bcb_state == CACHE_INVALID ||
-		 bcb->bcb_state == CACHE_VALID_CLEAN ||
-		 bcb->bcb_state == CACHE_VALID_DIRTY);
-
-	if (bcb->bcb_state == CACHE_INVALID) {
-		/*
-		 * Entry is invalid, nothing else to do.
-		 */
-		printk_debug_ratelimited("cache entry #%d is invalid, nothing to restore\n",
-					 block_id);
-		return 0;
-	}
-
-	M_ASSERT(is_sector_number_valid(bcb->bcb_sector));
-
-	/*
-	 * Now check for an existing cache_block. If we find one, it means
-	 * that we have two different copies of the same cache block. The most
-	 * recent copy is indicated by the fact it has the most recent XID,
-	 * i.e., the highest number in a monotonically increasing fashion.
-	 *
-	 * This is a 64 bits quantity. Assuming 10,000,000 IOPS, this number
-	 * will rollover approximately in the year 3315. This bug can very
-	 * simply be fixed by adopting the same scheme that is used for TCP
-	 * sequence numbers and by making sure we'll never have the oldest
-	 * entry with a logically lower XID. This can also be very easily fixed
-	 * by forcing evicting entries every 100 years or so.
-	 * No matter what, it's probably not a priority for the first production
-	 * version.
-	 */
-
-	existing_bcb = cache_rb_lookup(bc, bcb->bcb_sector);
-
-	if (existing_bcb == NULL) {
-		/*
-		 * no existing cache block, it's all good.
-		 */
-		return 0;
-	}
-
-	printk_info("block bcb=%p, id=#%d, xid=#%llu, cache_block=%lu, state=%d(%s): existing bcb found\n",
-		    bcb,
-		    bcb->bcb_block_id,
-		    bcb->bcb_xid,
-		    bcb->bcb_sector,
-		    bcb->bcb_state,
-		    cache_state_to_str(bcb->bcb_state));
-	printk_info("block existing_bcb=%p, existing_id=#%d, existing_xid=#%llu, existing_cache_block=%lu, existing_state=%d(%s): existing bcb found\n",
-		    existing_bcb, existing_bcb->bcb_block_id,
-		    existing_bcb->bcb_xid, existing_bcb->bcb_sector,
-		    existing_bcb->bcb_state,
-		    cache_state_to_str(existing_bcb->bcb_state));
-	M_ASSERT(existing_bcb->bcb_state == CACHE_VALID_CLEAN ||
-		 existing_bcb->bcb_state == CACHE_VALID_DIRTY);
-	/*
-	 * This just cannot happen. Period.
-	 */
-	if (bcb->bcb_xid != existing_bcb->bcb_xid) {
-		M_ASSERT(bcb->bcb_xid != existing_bcb->bcb_xid);
-		printk_err("fatal error: existing_bcb=%p block_id #%llu is the same as bcb=%p\n",
-			   existing_bcb,
-			   existing_bcb->bcb_xid,
-			   existing_bcb);
-		/*
-		 * I think this errno code makes sense. Besides,
-		 * how many times in your life you get to use this one?
-		 */
-		return -EL2NSYNC;
-	}
-	M_ASSERT(is_sector_number_valid(existing_bcb->bcb_sector));
-
-	/*
-	 * If the new cache_block bcb is older than the existing
-	 * cache block, wipe out bcb (it has an oldeer version).
-	 */
-	if (bcb->bcb_xid < existing_bcb->bcb_xid) {
-		printk_info("keeping existing_bcb=%p, existing_xid=#%llu",
-			    existing_bcb, existing_bcb->bcb_xid);
-		ret = pmem_metadata_initialize(bc, block_id);
-		M_ASSERT(ret == 0);
-	}
-
-	M_ASSERT(bcb->bcb_xid > existing_bcb->bcb_xid);
-
-	existing_block_id = existing_bcb->bcb_block_id;
-	printk_info("deleting existing_bcb=%p, existing_id=#%llu",
-		    existing_bcb,
-		    existing_bcb->bcb_xid);
-
-	M_ASSERT(existing_bcb->bcb_sector != -1);
-
-	/*
-	 * remove
-	 */
-	atomic_dec(&bc->bc_total_entries);
-	atomic_dec(&bc->bc_valid_entries);
-	if (existing_bcb->bcb_state == CACHE_VALID_CLEAN) {
-		atomic_dec(&bc->bc_valid_entries_clean);
-	} else {
-		M_ASSERT(existing_bcb->bcb_state == CACHE_VALID_DIRTY);
-		atomic_dec(&bc->bc_valid_entries_dirty);
-	}
-	M_ASSERT(RB_NON_EMPTY_ROOT(&bc->bc_rb_root));
-	M_ASSERT(RB_NON_EMPTY_NODE(&existing_bcb->bcb_rb_node));
-	cache_rb_remove(bc, existing_bcb);
-	M_ASSERT(RB_EMPTY_NODE(&existing_bcb->bcb_rb_node));
-	list_del_init(&existing_bcb->bcb_entry_cleandirty);
-	list_del_init(&existing_bcb->bcb_entry);
-	M_ASSERT(is_sector_number_valid(existing_bcb->bcb_sector));
-	/*
-	 * deinit
-	 */
-	memset(existing_bcb, 0,
-			       sizeof(struct cache_block));
-	existing_bcb->bcb_block_id = existing_block_id;
-	existing_bcb->bcb_magic1 = BCB_MAGIC1;
-	existing_bcb->bcb_magic3 = BCB_MAGIC3;
-	spin_lock_init(&existing_bcb->bcb_spinlock);
-	atomic_set(&bcb->bcb_refcount, 0);
-	existing_bcb->bcb_sector = SECTOR_NUMBER_INVALID;
-	existing_bcb->bcb_state = CACHE_INVALID;
-	existing_bcb->bcb_transition_path = CACHE_TRANSITION_PATH_NONE;
-	/*
-	 * reinsert as invalid
-	 */
-	INIT_LIST_HEAD(&existing_bcb->bcb_entry);
-	INIT_LIST_HEAD(&existing_bcb->bcb_entry_cleandirty);
-	atomic_inc(&bc->bc_total_entries);
-	atomic_inc(&bc->bc_invalid_entries);
-	list_del_init(&existing_bcb->bcb_entry);
-	list_add(&existing_bcb->bcb_entry, &bc->bc_invalid_entries_list);
-	RB_CLEAR_NODE(&existing_bcb->bcb_rb_node);
-	M_ASSERT(RB_EMPTY_NODE(&existing_bcb->bcb_rb_node));
-	ret = pmem_metadata_initialize(bc, existing_block_id);
-	M_ASSERT(ret == 0);
-	return 0;
-}
-
-enum cache_device_op {
-	CACHE_DEVICE_OP_CREATE,
-	CACHE_DEVICE_OP_RESTORE,
-};
-
-int bittern_cache_restore_or_init_block(struct bittern_cache *bc,
-					unsigned int block_id,
-					char *cache_operation_str,
-					enum cache_device_op cache_operation)
-{
-	/* block_id starts from 1, array starts from 0 */
-	struct cache_block *bcb = &bc->bc_cache_blocks[block_id - 1];
-	int ret;
-
+	__ASSERT_BITTERN_CACHE(bc);
 	M_ASSERT(bcb != NULL);
+	M_ASSERT(block_id >= 1);
+	M_ASSERT(block_id <= bc->bc_papi.papi_hdr.lm_cache_blocks);
+	M_ASSERT(bcb == &bc->bc_cache_blocks[block_id - 1]);
 	memset(bcb, 0, sizeof(struct cache_block));
 	bcb->bcb_block_id = block_id;
 	bcb->bcb_magic1 = BCB_MAGIC1;
@@ -270,43 +91,56 @@ int bittern_cache_restore_or_init_block(struct bittern_cache *bc,
 	bcb->bcb_sector = SECTOR_NUMBER_INVALID;
 	bcb->bcb_state = CACHE_INVALID;
 	bcb->bcb_transition_path = CACHE_TRANSITION_PATH_NONE;
+	bcb->bcb_xid = 0ULL;
 	RB_CLEAR_NODE(&bcb->bcb_rb_node);
+	INIT_LIST_HEAD(&bcb->bcb_entry);
+	INIT_LIST_HEAD(&bcb->bcb_entry_cleandirty);
+	bcb->bcb_hash_data = UINT128_ZERO;
+}
 
-	if (cache_operation == CACHE_DEVICE_OP_RESTORE) {
-		/*
-		 * cache restore
-		 */
-		ret = cache_ctr_restore_data_block(bc, block_id, bcb);
-		if (ret < 0) {
-			printk_err("error : cache entry %d restore failed (corrupt/bad data): ret=%d\n",
-				   block_id,
-				   ret);
-			return ret;
-		}
-	} else {
-		/*
-		 * cache create
-		 */
-		ret = pmem_metadata_initialize(bc, block_id);
-		M_ASSERT(ret == 0);
-	}
-
+static void __cache_block_invalidate(struct bittern_cache *bc,
+				     struct cache_block *bcb)
+{
+	M_ASSERT(is_sector_number_valid(bcb->bcb_sector));
 	/*
-	 * printk_info("cache_ctr : cache entry %d:
-	 * bcb_sector=%lu, bcb_state=%d(%s)\n", block_id,
-	 * bcb->bcb_sector, bcb->bcb_state,
-	 * cache_state_to_str(bcb->bcb_state));
+	 * remove cache block
 	 */
+	atomic_dec(&bc->bc_total_entries);
+	atomic_dec(&bc->bc_valid_entries);
+	if (bcb->bcb_state == CACHE_VALID_CLEAN) {
+		atomic_dec(&bc->bc_valid_entries_clean);
+	} else {
+		M_ASSERT(bcb->bcb_state == CACHE_VALID_DIRTY);
+		atomic_dec(&bc->bc_valid_entries_dirty);
+	}
+	M_ASSERT(RB_NON_EMPTY_ROOT(&bc->bc_rb_root));
+	M_ASSERT(RB_NON_EMPTY_NODE(&bcb->bcb_rb_node));
+	cache_rb_remove(bc, bcb);
+	M_ASSERT(RB_EMPTY_NODE(&bcb->bcb_rb_node));
+	list_del_init(&bcb->bcb_entry_cleandirty);
+	list_del_init(&bcb->bcb_entry);
+	/*
+	 * invalidate cache block
+	 */
+	bcb->bcb_sector = SECTOR_NUMBER_INVALID;
+	bcb->bcb_state = CACHE_INVALID;
+	bcb->bcb_hash_data = UINT128_ZERO;
+	bcb->bcb_xid = 0ULL;
+	/*
+	 * reinsert as invalid
+	 */
+	atomic_inc(&bc->bc_total_entries);
+	atomic_inc(&bc->bc_invalid_entries);
+	list_del_init(&bcb->bcb_entry);
+	list_add(&bcb->bcb_entry, &bc->bc_invalid_entries_list);
+	M_ASSERT(RB_EMPTY_NODE(&bcb->bcb_rb_node));
+}
+
+static void __cache_block_add(struct bittern_cache *bc, struct cache_block *bcb)
+{
 	M_ASSERT(bcb->bcb_state == CACHE_INVALID ||
 		 bcb->bcb_state == CACHE_VALID_CLEAN ||
 		 bcb->bcb_state == CACHE_VALID_DIRTY);
-
-	INIT_LIST_HEAD(&bcb->bcb_entry);
-	INIT_LIST_HEAD(&bcb->bcb_entry_cleandirty);
-
-	/*
-	 * this is init code so we don't need to grab spinlocks
-	 */
 	switch (bcb->bcb_state) {
 	case CACHE_INVALID:
 		M_ASSERT(is_sector_number_invalid(bcb->bcb_sector));
@@ -317,6 +151,7 @@ int bittern_cache_restore_or_init_block(struct bittern_cache *bc,
 		atomic_inc(&bc->bc_invalid_entries);
 		list_add_tail(&bcb->bcb_entry, &bc->bc_invalid_entries_list);
 		RB_CLEAR_NODE(&bcb->bcb_rb_node);
+		M_ASSERT(uint128_z(bcb->bcb_hash_data));
 		break;
 	case CACHE_VALID_CLEAN:
 		cache_track_hash_set(bc, bcb, bcb->bcb_hash_data);
@@ -353,56 +188,506 @@ int bittern_cache_restore_or_init_block(struct bittern_cache *bc,
 		break;
 	}
 	atomic_inc(&bc->bc_total_entries);
+}
 
-	if (bcb->bcb_xid > cache_xid_get(bc)) {
-		printk_info("block id #%u: id=%u, status=%u(%s), xid=%llu, sector=%lu: xid=%llu, bc_xid=%llu, updating bc_xid\n",
-			    block_id,
-			    bcb->bcb_block_id,
-			    bcb->bcb_state,
-			    cache_state_to_str(bcb->bcb_state),
-			    bcb->bcb_xid,
-			    bcb->bcb_sector,
-			    bcb->bcb_xid,
-			    cache_xid_get(bc));
-		cache_xid_set(bc, bcb->bcb_xid);
+int cache_ctr_restore_block(struct bittern_cache *bc,
+			    unsigned int block_id,
+			    struct cache_block *bcb)
+{
+	struct cache_block *old_bcb;
+	unsigned int old_block_id;
+	int ret;
+	unsigned long flags;
+
+	__cache_block_initialize(bc, block_id, bcb);
+
+	ASSERT(block_id == bcb->bcb_block_id);
+	ret = pmem_block_restore(bc, bcb);
+	if (ret < 0) {
+		/*
+		 * Data corruption -- we'll need to fail the whole restore.
+		 */
+		printk_err("cache entry id=#%u restore failed, corrupt or bad data\n",
+			   block_id);
+		return ret;
 	}
 
-	printk_info_ratelimited("'%s' bcb=%p, id=#%d, cache_block=%lu, state=%d(%s)\n",
-			    cache_operation_str,
-			    bcb, bcb->bcb_block_id,
-			    bcb->bcb_sector, bcb->bcb_state,
-			    cache_state_to_str(bcb->bcb_state));
-	__ASSERT_CACHE_BLOCK(bcb, bc);
+	spin_lock_irqsave(&bc->bc_entries_lock, flags);
+
+	if (ret == 0) {
+		/*
+		 * Entry not restored.
+		 * This because there was an incomplete transaction.
+		 */
+		printk_warning("cache entry id=#%u transaction rolled back, re-initializing\n",
+			       block_id);
+
+		M_ASSERT(bcb->bcb_state == CACHE_INVALID);
+		M_ASSERT(is_sector_number_invalid(bcb->bcb_sector));
+		__cache_block_add(bc, bcb);
+
+		spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
+
+		ret = pmem_metadata_initialize(bc, block_id);
+		M_ASSERT(ret == 0);
+
+		return 0;
+	}
+
+	/*
+	 * We can only restore finalized transactions which have a correct
+	 * checksum. Anything else would be a transaction in progress
+	 */
+
+	M_ASSERT(bcb->bcb_state == CACHE_INVALID ||
+		 bcb->bcb_state == CACHE_VALID_CLEAN ||
+		 bcb->bcb_state == CACHE_VALID_DIRTY);
+
+	if (bcb->bcb_state == CACHE_INVALID) {
+
+		/*
+		 * Entry is invalid, all done here.
+		 */
+
+		__cache_block_add(bc, bcb);
+		spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
+
+		printk_debug_ratelimited("cache entry #%d is invalid, nothing to restore\n",
+					 block_id);
+		return 0;
+	}
+
+	M_ASSERT(is_sector_number_valid(bcb->bcb_sector));
+
+	/*
+	 * Now check for an old cache_block. If we find one, it means
+	 * that we have two different copies of the same cache block. The most
+	 * recent copy is indicated by the fact it has the most recent XID,
+	 * i.e., the highest number in a monotonically increasing fashion.
+	 *
+	 * This is a 64 bits quantity. Assuming 10,000,000 IOPS, this number
+	 * will rollover approximately in the year 3315. This bug can very
+	 * simply be fixed by adopting the same scheme that is used for TCP
+	 * sequence numbers and by making sure we'll never have the oldest
+	 * entry with a logically lower XID. This can also be very easily fixed
+	 * by forcing evicting entries every 100 years or so.
+	 * No matter what, it's probably not a priority for the first production
+	 * version.
+	 */
+	old_bcb = cache_rb_lookup(bc, bcb->bcb_sector);
+	if (old_bcb == NULL) {
+
+		/*
+		 * No old cache block, it's all good here.
+		 */
+
+		__cache_block_add(bc, bcb);
+		spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
+
+		printk_debug_ratelimited("cache entry id=#%u, sector=%lu, state=%d(%s) restored\n",
+					 block_id,
+					 bcb->bcb_sector,
+					 bcb->bcb_state,
+					 cache_state_to_str(bcb->bcb_state));
+
+		return 0;
+	}
+
+	/*
+	 * Oooops, two cache blocks caching the same data.
+	 * Use XID to find out which version is the most recent
+	 * one, and discard the other one.
+	 */
+
+	old_block_id = old_bcb->bcb_block_id;
+	M_ASSERT(is_sector_number_valid(old_bcb->bcb_sector));
+	M_ASSERT(old_bcb->bcb_sector == bcb->bcb_sector);
+
+	printk_info("cache_block id=#%u, xid=#%llu, sector=%lu, state=%d(%s): old bcb found\n",
+		    bcb->bcb_block_id,
+		    bcb->bcb_xid,
+		    bcb->bcb_sector,
+		    bcb->bcb_state,
+		    cache_state_to_str(bcb->bcb_state));
+	printk_info("old_cache_block old_id=#%d, old_xid=#%llu, old_sector=%lu, old_state=%d(%s): old bcb found\n",
+		    old_bcb->bcb_block_id,
+		    old_bcb->bcb_xid,
+		    old_bcb->bcb_sector,
+		    old_bcb->bcb_state,
+		    cache_state_to_str(old_bcb->bcb_state));
+	M_ASSERT(old_bcb->bcb_state == CACHE_VALID_CLEAN ||
+		 old_bcb->bcb_state == CACHE_VALID_DIRTY);
+
+	/*
+	 * This just cannot happen.
+	 * Period.
+	 */
+	if (bcb->bcb_xid == old_bcb->bcb_xid) {
+
+		__cache_block_add(bc, bcb);
+		__cache_block_invalidate(bc, bcb);
+
+		spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
+
+		/*
+		 * Don't reinitialize, otherwise if we try to restore
+		 * again we won't hit the error and possibly corrupt data
+		 * even more.
+		 */
+
+		printk_err("fatal error: old_bcb=%p block_id #%llu is the same as bcb=%p\n",
+			   old_bcb,
+			   old_bcb->bcb_xid,
+			   old_bcb);
+		/*
+		 * I think this errno code makes sense. Besides,
+		 * how many times in your life you get to use this one?
+		 */
+		return -EL2NSYNC;
+	}
+
+	M_ASSERT(is_sector_number_valid(old_bcb->bcb_sector));
+
+	/*
+	 * If the new cache_block XID is less than the old cache block XID,
+	 * wipe out new cache_block.
+	 */
+	if (bcb->bcb_xid < old_bcb->bcb_xid) {
+
+		__cache_block_add(bc, bcb);
+		__cache_block_invalidate(bc, bcb);
+
+		spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
+
+		printk_info_ratelimited("keeping old_cache_block, old_xid=#%llu",
+					old_bcb->bcb_xid);
+
+		ret = pmem_metadata_initialize(bc, block_id);
+		M_ASSERT(ret == 0);
+
+		return 0;
+	}
+
+	M_ASSERT(bcb->bcb_xid > old_bcb->bcb_xid);
+
+	/*
+	 * New cache_block XID is higher than the old cache block XID,
+	 * wipe out old cache_block.
+	 */
+
+	__cache_block_invalidate(bc, old_bcb);
+	__cache_block_add(bc, bcb);
+
+	spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
+
+	printk_info_ratelimited("cache restore: keeping new cache_block, reinitializing cache entry id=#%u\n",
+				old_block_id);
+
+	ret = pmem_metadata_initialize(bc, old_block_id);
+	M_ASSERT(ret == 0);
 
 	return 0;
 }
 
-int bittern_cache_restore_or_init(struct bittern_cache *bc,
-				  char *cache_operation_str,
-				  enum cache_device_op cache_operation)
+enum cache_device_op {
+	CACHE_DEVICE_OP_CREATE,
+	CACHE_DEVICE_OP_RESTORE,
+};
+
+int cache_ctr_restore_or_init_block(struct bittern_cache *bc,
+				    unsigned int block_id,
+				    enum cache_device_op cache_operation,
+				    const char *cache_operation_str)
 {
-	unsigned int block_id;
+	/* block_id starts from 1, array starts from 0 */
+	struct cache_block *bcb = &bc->bc_cache_blocks[block_id - 1];
+	unsigned long flags;
+	int ret;
 
-	printk_debug("%s: enter\n", cache_operation_str);
-	for (block_id = 1; block_id <= bc->bc_papi.papi_hdr.lm_cache_blocks;
-	     block_id++) {
-		int ret;
-
-		ret = bittern_cache_restore_or_init_block(bc,
-							  block_id,
-							  cache_operation_str,
-							  cache_operation);
-		if (ret < 0) {
-			printk_err("error : cache entry %d '%s' failed: ret=%d (corrupt/bad data)\n",
-				   block_id,
-				   cache_operation_str,
-				   ret);
+	if (cache_operation == CACHE_DEVICE_OP_RESTORE) {
+		/*
+		 * Cache restore
+		 */
+		ret = cache_ctr_restore_block(bc, block_id, bcb);
+		if (ret < 0)
 			return ret;
-		}
+	} else {
+		/*
+		 * Cache create
+		 */
+		printk_debug_ratelimited("cache create: initializing cache entry %u state %s\n",
+					 block_id,
+					 cache_state_to_str(bcb->bcb_state));
+
+		spin_lock_irqsave(&bc->bc_entries_lock, flags);
+
+		__cache_block_initialize(bc, block_id, bcb);
+		__cache_block_add(bc, bcb);
+
+		spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
+
+		ret = pmem_metadata_initialize(bc, block_id);
+		M_ASSERT(ret == 0);
 	}
-	printk_debug("%s: done, ret=0\n", cache_operation_str);
+
+	spin_lock_irqsave(&bc->bc_entries_lock, flags);
+
+	if (bcb->bcb_xid > cache_xid_get(bc)) {
+		printk_info_ratelimited("block id #%u: id=%u, status=%u(%s), xid=%llu, sector=%lu: xid=%llu, bc_xid=%llu, updating bc_xid\n",
+					block_id,
+					bcb->bcb_block_id,
+					bcb->bcb_state,
+					cache_state_to_str(bcb->bcb_state),
+					bcb->bcb_xid,
+					bcb->bcb_sector,
+					bcb->bcb_xid,
+					cache_xid_get(bc));
+		cache_xid_set(bc, bcb->bcb_xid);
+	}
+	__ASSERT_CACHE_BLOCK(bcb, bc);
+
+	spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
+
+	printk_info_ratelimited("'%s' bcb=%p, id=#%d, cache_block=%lu, state=%d(%s)\n",
+				cache_operation_str,
+				bcb,
+				bcb->bcb_block_id,
+				bcb->bcb_sector,
+				bcb->bcb_state,
+				cache_state_to_str(bcb->bcb_state));
 
 	return 0;
+}
+
+/*!
+ * It's most likely not very important the exact amount of restore threads,
+ * all it matters is the ability of keeping a minimum amount of in-flight
+ * requests. Once the throughput of the cache device is saturated, there is no
+ * further reason to increase parallelism.
+ */
+#define RESTORE_WORKQUEUES		32
+#define RESTORE_WORKQUEUES_MODULO	RESTORE_WORKQUEUES
+#define RESTORE_WORKQUEUE_MAGIC	0xf10c7c34
+struct restore_workqueue {
+	unsigned int magic;
+	unsigned int modulo_offset;
+	struct bittern_cache *bc;
+	char *cache_op_str;
+	enum cache_device_op cache_op;
+	struct workqueue_struct *workqueue;
+	struct work_struct work;
+	unsigned int restored;
+	int ret;
+};
+#define RESTORE_WORKQUEUES_SIZE_BYTES	\
+		(sizeof(struct restore_workqueue) * RESTORE_WORKQUEUES)
+
+void cache_ctr_restore_or_init(struct bittern_cache *bc,
+			       struct restore_workqueue *r_wq)
+{
+	unsigned int mod_base;
+	int ret = 0;
+
+	printk_debug("start '%s' modulo_offset %d: ret=%d\n",
+		     r_wq->cache_op_str,
+		     r_wq->modulo_offset,
+		     r_wq->ret);
+
+	ASSERT(r_wq->magic == RESTORE_WORKQUEUE_MAGIC);
+	ASSERT(r_wq->cache_op == CACHE_DEVICE_OP_CREATE ||
+	       r_wq->cache_op == CACHE_DEVICE_OP_RESTORE);
+	__ASSERT_BITTERN_CACHE(bc);
+
+	for (mod_base = 1;
+	     mod_base <= bc->bc_papi.papi_hdr.lm_cache_blocks;
+	     mod_base += RESTORE_WORKQUEUES_MODULO) {
+		unsigned int block_id = mod_base + r_wq->modulo_offset;
+
+		if (block_id > bc->bc_papi.papi_hdr.lm_cache_blocks) {
+			/*
+			 * This happens when the number of cache blocks is
+			 * not an exact multiple of RESTORE_WORKQUEUE_MODULO.
+			 */
+			break;
+		}
+
+		M_ASSERT(block_id >= 1);
+		M_ASSERT(block_id <= bc->bc_papi.papi_hdr.lm_cache_blocks);
+		ret = cache_ctr_restore_or_init_block(bc,
+						      block_id,
+						      r_wq->cache_op,
+						      r_wq->cache_op_str);
+		if (ret != 0) {
+			printk_err("cache entry %u:%u '%s' failed: ret=%d (corrupt/bad data)\n",
+				   block_id,
+				   r_wq->modulo_offset,
+				   r_wq->cache_op_str,
+				   ret);
+			break;
+		}
+		printk_debug_ratelimited("cache entry %u:%u '%s' ok: ret=%d\n",
+					 block_id,
+					 r_wq->modulo_offset,
+					 r_wq->cache_op_str,
+					 ret);
+		r_wq->restored++;
+	}
+
+	r_wq->ret = ret;
+	printk_debug("done '%s' modulo_offset %d: restored=%u, ret=%d\n",
+		     r_wq->cache_op_str,
+		     r_wq->modulo_offset,
+		     r_wq->restored,
+		     r_wq->ret);
+}
+
+void cache_ctr_restore_or_init_wq(struct work_struct *work)
+{
+	struct restore_workqueue *r_wq;
+
+	ASSERT(work != NULL);
+	r_wq = container_of(work, struct restore_workqueue, work);
+	ASSERT(r_wq->magic == RESTORE_WORKQUEUE_MAGIC);
+	ASSERT(r_wq->cache_op == CACHE_DEVICE_OP_CREATE ||
+	       r_wq->cache_op == CACHE_DEVICE_OP_RESTORE);
+	__ASSERT_BITTERN_CACHE(r_wq->bc);
+
+	printk_info("restore_or_init_wq: '%s' block offsets modulo_offset %d\n",
+		    r_wq->cache_op_str,
+		    r_wq->modulo_offset);
+
+	cache_ctr_restore_or_init(r_wq->bc, r_wq);
+
+	ASSERT(r_wq->magic == RESTORE_WORKQUEUE_MAGIC);
+	ASSERT(r_wq->cache_op == CACHE_DEVICE_OP_CREATE ||
+	       r_wq->cache_op == CACHE_DEVICE_OP_RESTORE);
+	__ASSERT_BITTERN_CACHE(r_wq->bc);
+	printk_info("restore_or_init_wq: done '%s' block offsets modulo_offset %d: ret=%d\n",
+		    r_wq->cache_op_str,
+		    r_wq->modulo_offset,
+		    r_wq->ret);
+}
+
+int cache_ctr_restore_or_init_workqueues(struct bittern_cache *bc,
+					 char *cache_operation_str,
+					 enum cache_device_op cache_operation)
+{
+	int i;
+	struct restore_workqueue *workqueues;
+	uint64_t tstamp, tstamp_end;
+	int ret = 0;
+	unsigned int total_restored = 0;
+	unsigned int block_id;
+
+	printk_info("restore_or_init_workqueues: '%s': workqueues=%d\n",
+		    cache_operation_str,
+		    RESTORE_WORKQUEUES);
+
+	/*
+	 * Fill it with garbage so when we can verify all blocks have been
+	 * initialized after parallel restore/init.
+	 */
+	memset(bc->bc_cache_blocks,
+	       0xac,
+	       (sizeof(struct cache_block) *
+		bc->bc_papi.papi_hdr.lm_cache_blocks));
+
+	tstamp = current_kernel_time_nsec();
+
+	workqueues = kmem_zalloc(RESTORE_WORKQUEUES_SIZE_BYTES, GFP_NOIO);
+	M_ASSERT_FIXME(workqueues != NULL);
+
+	/*
+	 * Step #1: start restore on multiple independent workqueues.
+	 */
+
+	for (i = 0; i < RESTORE_WORKQUEUES; i++) {
+		struct restore_workqueue *r_wq = &workqueues[i];
+		int ret;
+
+		r_wq->magic = RESTORE_WORKQUEUE_MAGIC;
+		r_wq->modulo_offset = i;
+		r_wq->bc = bc;
+		r_wq->cache_op_str = cache_operation_str;
+		r_wq->cache_op = cache_operation;
+		r_wq->workqueue = alloc_workqueue("r_wkq:%s",
+					(WQ_UNBOUND | WQ_CPU_INTENSIVE),
+					1,
+					bc->bc_name);
+		M_ASSERT_FIXME(r_wq->workqueue != NULL);
+
+		INIT_WORK(&r_wq->work, cache_ctr_restore_or_init_wq);
+		ret = queue_work(r_wq->workqueue, &r_wq->work);
+		printk_info("started restore_workqueue[%d] = %d: %p\n",
+			    i,
+			    ret,
+			    r_wq->workqueue);
+
+		M_ASSERT(ret == 1);
+	}
+
+	for (i = 0; i < RESTORE_WORKQUEUES; i++) {
+		struct restore_workqueue *r_wq = &workqueues[i];
+
+		M_ASSERT(r_wq->magic == RESTORE_WORKQUEUE_MAGIC);
+		M_ASSERT(r_wq->cache_op == CACHE_DEVICE_OP_CREATE ||
+			 r_wq->cache_op == CACHE_DEVICE_OP_RESTORE);
+		printk_info("flushing restore_workqueue[%d] %p\n",
+			    i,
+			    r_wq->workqueue);
+		flush_workqueue(r_wq->workqueue);
+		printk_info("done flushing restore_workqueue[%d] %p: restored=%u, ret=%d\n",
+			    i,
+			    r_wq->workqueue,
+			    r_wq->restored,
+			    r_wq->ret);
+		destroy_workqueue(r_wq->workqueue);
+		if (r_wq->ret != 0)
+			ret = r_wq->ret;
+		total_restored += r_wq->restored;
+	}
+
+	kmem_free(workqueues, RESTORE_WORKQUEUES_SIZE_BYTES);
+
+	tstamp_end = current_kernel_time_nsec();
+
+	printk_info("restore_or_init_workqueues: '%s': workqueues=%d: %llu milliseconds\n",
+		    cache_operation_str,
+		    RESTORE_WORKQUEUES,
+		    (tstamp_end - tstamp) / 1000000ULL);
+	printk_info("restore_or_init_workqueues: '%s': workqueues=%d: ret=%d\n",
+		    cache_operation_str,
+		    RESTORE_WORKQUEUES,
+		    ret);
+	printk_info("restore_or_init_workqueues: '%s': workqueues=%d: total_restored=%u/%llu\n",
+		    cache_operation_str,
+		    RESTORE_WORKQUEUES,
+		    total_restored,
+		    bc->bc_papi.papi_hdr.lm_cache_blocks);
+
+	if (ret < 0)
+		return ret;
+
+	M_ASSERT(total_restored ==
+		 bc->bc_papi.papi_hdr.lm_cache_blocks);
+	for (block_id = 1;
+	     block_id <= bc->bc_papi.papi_hdr.lm_cache_blocks;
+	     block_id++) {
+		struct cache_block *bcb = &bc->bc_cache_blocks[block_id - 1];
+
+		__ASSERT_CACHE_BLOCK(bcb, bc);
+		M_ASSERT(bcb->bcb_state == CACHE_INVALID ||
+			 bcb->bcb_state == CACHE_VALID_CLEAN ||
+			 bcb->bcb_state == CACHE_VALID_DIRTY);
+	}
+	M_ASSERT(atomic_read(&bc->bc_total_entries) ==
+		 bc->bc_papi.papi_hdr.lm_cache_blocks);
+	M_ASSERT(atomic_read(&bc->bc_total_entries) ==
+		 (atomic_read(&bc->bc_invalid_entries) +
+		  atomic_read(&bc->bc_valid_entries_clean) +
+		  atomic_read(&bc->bc_valid_entries_dirty)));
+
+	return ret;
 }
 
 /*
@@ -891,9 +1176,10 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		    cache_operation_str,
 		    cache_operation,
 		    bc->bc_papi.papi_hdr.lm_cache_blocks);
-	ret = bittern_cache_restore_or_init(bc,
-					    cache_operation_str,
-					    cache_operation);
+
+	ret = cache_ctr_restore_or_init_workqueues(bc,
+						   cache_operation_str,
+						   cache_operation);
 	if (ret < 0) {
 		ti->error = "corrupt cache entry or bad data";
 		printk_err("error: cache entry restore failed (corrupt/bad data)\n");

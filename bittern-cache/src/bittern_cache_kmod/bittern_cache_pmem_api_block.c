@@ -315,9 +315,9 @@ void pmem_do_make_request_block(struct bittern_cache *bc,
 
 	ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
 	ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
-	ASSERT(ctx->ma_magic1 = PMEM_ASYNC_CONTEXT_MAGIC1);
-	ASSERT(ctx->ma_magic2 = PMEM_ASYNC_CONTEXT_MAGIC3);
-	ASSERT(ctx->ma_magic3 = CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
+	ASSERT(ctx->ma_magic1 == PMEM_ASYNC_CONTEXT_MAGIC1);
+	ASSERT(ctx->ma_magic2 == PMEM_ASYNC_CONTEXT_MAGIC3);
+	ASSERT(ctx->ma_magic3 == CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
 
 	ASSERT(bc == ctx->ma_bc);
 	ASSERT_BITTERN_CACHE(bc);
@@ -333,9 +333,9 @@ void pmem_do_make_request_block(struct bittern_cache *bc,
 
 	ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
 	ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
-	ASSERT(ctx->ma_magic1 = PMEM_ASYNC_CONTEXT_MAGIC1);
-	ASSERT(ctx->ma_magic2 = PMEM_ASYNC_CONTEXT_MAGIC3);
-	ASSERT(ctx->ma_magic3 = CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
+	ASSERT(ctx->ma_magic1 == PMEM_ASYNC_CONTEXT_MAGIC1);
+	ASSERT(ctx->ma_magic2 == PMEM_ASYNC_CONTEXT_MAGIC3);
+	ASSERT(ctx->ma_magic3 == CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
 	ASSERT_BITTERN_CACHE(bc);
 	M_ASSERT(!in_irq());
 	M_ASSERT(!in_softirq());
@@ -369,9 +369,9 @@ void pmem_make_request_worker_block(struct work_struct *work)
 	struct pmem_api *pa;
 
 	ctx = container_of(work, struct async_context, ma_work);
-	ASSERT(ctx->ma_magic1 = PMEM_ASYNC_CONTEXT_MAGIC1);
-	ASSERT(ctx->ma_magic2 = PMEM_ASYNC_CONTEXT_MAGIC3);
-	ASSERT(ctx->ma_magic3 = CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
+	ASSERT(ctx->ma_magic1 == PMEM_ASYNC_CONTEXT_MAGIC1);
+	ASSERT(ctx->ma_magic2 == PMEM_ASYNC_CONTEXT_MAGIC3);
+	ASSERT(ctx->ma_magic3 == CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
 	pmem_ctx = container_of(ctx, struct pmem_context, async_ctx);
 	ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
 	ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
@@ -407,9 +407,9 @@ void pmem_make_request_defer_block(struct bittern_cache *bc,
 
 	ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
 	ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
-	ASSERT(ctx->ma_magic1 = PMEM_ASYNC_CONTEXT_MAGIC1);
-	ASSERT(ctx->ma_magic2 = PMEM_ASYNC_CONTEXT_MAGIC3);
-	ASSERT(ctx->ma_magic3 = CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
+	ASSERT(ctx->ma_magic1 == PMEM_ASYNC_CONTEXT_MAGIC1);
+	ASSERT(ctx->ma_magic2 == PMEM_ASYNC_CONTEXT_MAGIC3);
+	ASSERT(ctx->ma_magic3 == CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
 	ASSERT_BITTERN_CACHE(bc);
 
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,

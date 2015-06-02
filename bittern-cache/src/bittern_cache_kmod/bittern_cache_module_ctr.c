@@ -51,11 +51,11 @@ int cache_calculate_max_pending(struct bittern_cache *bc, int max_requests)
 int cache_calculate_min_invalid(struct bittern_cache *bc, int min_invalid_count)
 {
 	if (min_invalid_count == 0)
-		min_invalid_count = CACHE_INVALIDATOR_DEFAULT_INVALID_COUNT;
-	if (min_invalid_count < CACHE_INVALIDATOR_MIN_INVALID_COUNT)
-		min_invalid_count = CACHE_INVALIDATOR_MIN_INVALID_COUNT;
-	if (min_invalid_count > CACHE_INVALIDATOR_MAX_INVALID_COUNT)
-		min_invalid_count = CACHE_INVALIDATOR_MAX_INVALID_COUNT;
+		min_invalid_count = S_INVALIDATOR_DEFAULT_INVALID_COUNT;
+	if (min_invalid_count < S_INVALIDATOR_MIN_INVALID_COUNT)
+		min_invalid_count = S_INVALIDATOR_MIN_INVALID_COUNT;
+	if (min_invalid_count > S_INVALIDATOR_MAX_INVALID_COUNT)
+		min_invalid_count = S_INVALIDATOR_MAX_INVALID_COUNT;
 	bc->bc_invalidator_conf_min_invalid_count = min_invalid_count;
 	/*
 	 * this should not really happen in production, but it's useful for
@@ -68,8 +68,8 @@ int cache_calculate_min_invalid(struct bittern_cache *bc, int min_invalid_count)
 	printk_info("conf_min_invalid_count=%u:%u [%u..%u]\n",
 		    min_invalid_count,
 		    bc->bc_invalidator_conf_min_invalid_count,
-		    CACHE_INVALIDATOR_MIN_INVALID_COUNT,
-		    CACHE_INVALIDATOR_MAX_INVALID_COUNT);
+		    S_INVALIDATOR_MIN_INVALID_COUNT,
+		    S_INVALIDATOR_MAX_INVALID_COUNT);
 	return 0;
 }
 
@@ -89,8 +89,8 @@ static void __cache_block_initialize(struct bittern_cache *bc,
 	spin_lock_init(&bcb->bcb_spinlock);
 	atomic_set(&bcb->bcb_refcount, 0);
 	bcb->bcb_sector = SECTOR_NUMBER_INVALID;
-	bcb->bcb_state = CACHE_INVALID;
-	bcb->bcb_transition_path = CACHE_TRANSITION_PATH_NONE;
+	bcb->bcb_state = S_INVALID;
+	bcb->bcb_cache_transition = TS_NONE;
 	bcb->bcb_xid = 0ULL;
 	RB_CLEAR_NODE(&bcb->bcb_rb_node);
 	INIT_LIST_HEAD(&bcb->bcb_entry);
@@ -107,10 +107,10 @@ static void __cache_block_invalidate(struct bittern_cache *bc,
 	 */
 	atomic_dec(&bc->bc_total_entries);
 	atomic_dec(&bc->bc_valid_entries);
-	if (bcb->bcb_state == CACHE_VALID_CLEAN) {
+	if (bcb->bcb_state == S_CLEAN) {
 		atomic_dec(&bc->bc_valid_entries_clean);
 	} else {
-		M_ASSERT(bcb->bcb_state == CACHE_VALID_DIRTY);
+		M_ASSERT(bcb->bcb_state == S_DIRTY);
 		atomic_dec(&bc->bc_valid_entries_dirty);
 	}
 	M_ASSERT(RB_NON_EMPTY_ROOT(&bc->bc_rb_root));
@@ -123,7 +123,7 @@ static void __cache_block_invalidate(struct bittern_cache *bc,
 	 * invalidate cache block
 	 */
 	bcb->bcb_sector = SECTOR_NUMBER_INVALID;
-	bcb->bcb_state = CACHE_INVALID;
+	bcb->bcb_state = S_INVALID;
 	bcb->bcb_hash_data = UINT128_ZERO;
 	bcb->bcb_xid = 0ULL;
 	/*
@@ -138,11 +138,11 @@ static void __cache_block_invalidate(struct bittern_cache *bc,
 
 static void __cache_block_add(struct bittern_cache *bc, struct cache_block *bcb)
 {
-	M_ASSERT(bcb->bcb_state == CACHE_INVALID ||
-		 bcb->bcb_state == CACHE_VALID_CLEAN ||
-		 bcb->bcb_state == CACHE_VALID_DIRTY);
+	M_ASSERT(bcb->bcb_state == S_INVALID ||
+		 bcb->bcb_state == S_CLEAN ||
+		 bcb->bcb_state == S_DIRTY);
 	switch (bcb->bcb_state) {
-	case CACHE_INVALID:
+	case S_INVALID:
 		M_ASSERT(is_sector_number_invalid(bcb->bcb_sector));
 		M_ASSERT(bcb->bcb_sector == SECTOR_NUMBER_INVALID);
 		/*
@@ -153,7 +153,7 @@ static void __cache_block_add(struct bittern_cache *bc, struct cache_block *bcb)
 		RB_CLEAR_NODE(&bcb->bcb_rb_node);
 		M_ASSERT(uint128_z(bcb->bcb_hash_data));
 		break;
-	case CACHE_VALID_CLEAN:
+	case S_CLEAN:
 		cache_track_hash_set(bc, bcb, bcb->bcb_hash_data);
 		M_ASSERT(is_sector_number_valid(bcb->bcb_sector));
 		M_ASSERT(bcb->bcb_sector >= 0);
@@ -168,7 +168,7 @@ static void __cache_block_add(struct bittern_cache *bc, struct cache_block *bcb)
 		list_add_tail(&bcb->bcb_entry_cleandirty,
 			      &bc->bc_valid_entries_clean_list);
 		break;
-	case CACHE_VALID_DIRTY:
+	case S_DIRTY:
 		cache_track_hash_set(bc, bcb, bcb->bcb_hash_data);
 		M_ASSERT(is_sector_number_valid(bcb->bcb_sector));
 		M_ASSERT(bcb->bcb_sector >= 0);
@@ -222,7 +222,7 @@ int cache_ctr_restore_block(struct bittern_cache *bc,
 		printk_warning("cache entry id=#%u transaction rolled back, re-initializing\n",
 			       block_id);
 
-		M_ASSERT(bcb->bcb_state == CACHE_INVALID);
+		M_ASSERT(bcb->bcb_state == S_INVALID);
 		M_ASSERT(is_sector_number_invalid(bcb->bcb_sector));
 		__cache_block_add(bc, bcb);
 
@@ -239,12 +239,11 @@ int cache_ctr_restore_block(struct bittern_cache *bc,
 	 * checksum. Anything else would be a transaction in progress
 	 */
 
-	M_ASSERT(bcb->bcb_state == CACHE_INVALID ||
-		 bcb->bcb_state == CACHE_VALID_CLEAN ||
-		 bcb->bcb_state == CACHE_VALID_DIRTY);
+	M_ASSERT(bcb->bcb_state == S_INVALID ||
+		 bcb->bcb_state == S_CLEAN ||
+		 bcb->bcb_state == S_DIRTY);
 
-	if (bcb->bcb_state == CACHE_INVALID) {
-
+	if (bcb->bcb_state == S_INVALID) {
 		/*
 		 * Entry is invalid, all done here.
 		 */
@@ -315,8 +314,8 @@ int cache_ctr_restore_block(struct bittern_cache *bc,
 		    old_bcb->bcb_sector,
 		    old_bcb->bcb_state,
 		    cache_state_to_str(old_bcb->bcb_state));
-	M_ASSERT(old_bcb->bcb_state == CACHE_VALID_CLEAN ||
-		 old_bcb->bcb_state == CACHE_VALID_DIRTY);
+	M_ASSERT(old_bcb->bcb_state == S_CLEAN ||
+		 old_bcb->bcb_state == S_DIRTY);
 
 	/*
 	 * This just cannot happen.
@@ -676,9 +675,9 @@ int cache_ctr_restore_or_init_workqueues(struct bittern_cache *bc,
 		struct cache_block *bcb = &bc->bc_cache_blocks[block_id - 1];
 
 		__ASSERT_CACHE_BLOCK(bcb, bc);
-		M_ASSERT(bcb->bcb_state == CACHE_INVALID ||
-			 bcb->bcb_state == CACHE_VALID_CLEAN ||
-			 bcb->bcb_state == CACHE_VALID_DIRTY);
+		M_ASSERT(bcb->bcb_state == S_INVALID ||
+			 bcb->bcb_state == S_CLEAN ||
+			 bcb->bcb_state == S_DIRTY);
 	}
 	M_ASSERT(atomic_read(&bc->bc_total_entries) ==
 		 bc->bc_papi.papi_hdr.lm_cache_blocks);
@@ -877,8 +876,8 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	atomic_set(&bc->bc_dirty_write_clone_alloc_ok, 0);
 	atomic_set(&bc->bc_dirty_write_clone_alloc_fail, 0);
 
-	for (i = 0; i < __CACHE_TRANSITION_PATHS_NUM; i++)
-		atomic_set(&bc->bc_transition_paths_counters[i], 0);
+	for (i = 0; i < __TS_NUM; i++)
+		atomic_set(&bc->bc_cache_transitions_counters[i], 0);
 	for (i = 0; i < __CACHE_STATES_NUM; i++)
 		atomic_set(&bc->bc_cache_states_counters[i], 0);
 
@@ -1146,7 +1145,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	init_waitqueue_head(&bc->bc_invalidator_wait);
 	cache_calculate_min_invalid(bc,
-				    CACHE_INVALIDATOR_DEFAULT_INVALID_COUNT);
+				    S_INVALIDATOR_DEFAULT_INVALID_COUNT);
 
 	printk_info("initializing workqueues\n");
 	/*

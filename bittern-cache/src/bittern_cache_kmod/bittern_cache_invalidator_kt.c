@@ -35,15 +35,15 @@ void cache_invalidate_block_io_end(struct bittern_cache *bc,
 	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, NULL, NULL,
 		 "invalidate done");
 	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_CLEAN_INVALIDATE_END
+	       S_CLEAN_INVALIDATE_END
 	       || cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_INVALIDATE_END);
+	       S_DIRTY_INVALIDATE_END);
 
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT((wi->wi_flags & WI_FLAG_HAS_ENDIO) != 0);
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 
-	if (cache_block->bcb_state == CACHE_VALID_DIRTY_INVALIDATE_END)
+	if (cache_block->bcb_state == S_DIRTY_INVALIDATE_END)
 		cache_move_to_invalid(bc, cache_block, 1);
 	else
 		cache_move_to_invalid(bc, cache_block, 0);
@@ -77,10 +77,10 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 
-	ASSERT(cache_block->bcb_state == CACHE_VALID_CLEAN ||
-	       cache_block->bcb_state == CACHE_VALID_DIRTY);
-	ASSERT(cache_block->bcb_transition_path ==
-	       CACHE_TRANSITION_PATH_NONE);
+	ASSERT(cache_block->bcb_state == S_CLEAN ||
+	       cache_block->bcb_state == S_DIRTY);
+	ASSERT(cache_block->bcb_cache_transition ==
+	       TS_NONE);
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 		 "invalidating clean block id #%d", cache_block->bcb_block_id);
@@ -91,14 +91,14 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 	/*
 	 * VALID_CLEAN -> CLEAN_INVALIDATE_START
 	 */
-	if (cache_block->bcb_state == CACHE_VALID_CLEAN)
+	if (cache_block->bcb_state == S_CLEAN)
 		cache_state_transition_initial(bc, cache_block,
-				CACHE_TRANSITION_PATH_CLEAN_INVALIDATION_WTWB,
-				CACHE_VALID_CLEAN_INVALIDATE_START);
+				TS_CLEAN_INVALIDATION_WTWB,
+				S_CLEAN_INVALIDATE_START);
 	else
 		cache_state_transition_initial(bc, cache_block,
-				CACHE_TRANSITION_PATH_DIRTY_INVALIDATION_WB,
-				CACHE_VALID_DIRTY_INVALIDATE_START);
+				TS_DIRTY_INVALIDATION_WB,
+				S_DIRTY_INVALIDATE_START);
 
 	spin_unlock_irqrestore(&cache_block->bcb_spinlock, cache_flags);
 	spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
@@ -253,10 +253,10 @@ int cache_invalidator_kthread(void *__bc)
 {
 	struct bittern_cache *bc = (struct bittern_cache *)__bc;
 
-	set_user_nice(current, CACHE_INVALIDATOR_THREAD_NICE);
+	set_user_nice(current, S_INVALIDATOR_THREAD_NICE);
 
 	BT_TRACE(BT_LEVEL_TRACE0, bc, NULL, NULL, NULL, NULL,
-		 "enter, nice=%d", CACHE_INVALIDATOR_THREAD_NICE);
+		 "enter, nice=%d", S_INVALIDATOR_THREAD_NICE);
 
 	while (!kthread_should_stop()) {
 		int ret;

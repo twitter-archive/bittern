@@ -166,7 +166,7 @@ void pmem_metadata_async_write_mem(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(cache_block->bcb_state != S_INVALID);
 	ASSERT(callback_context != NULL);
 	ASSERT(callback_function != NULL);
 
@@ -178,9 +178,9 @@ void pmem_metadata_async_write_mem(struct bittern_cache *bc,
 		     "metadata_update_state=%d(%s)",
 		     metadata_update_state,
 		     cache_state_to_str(metadata_update_state));
-	ASSERT(metadata_update_state == CACHE_INVALID ||
-	       metadata_update_state == CACHE_VALID_CLEAN ||
-	       metadata_update_state == CACHE_VALID_DIRTY);
+	ASSERT(metadata_update_state == S_INVALID ||
+	       metadata_update_state == S_CLEAN ||
+	       metadata_update_state == S_DIRTY);
 
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 
@@ -193,7 +193,7 @@ void pmem_metadata_async_write_mem(struct bittern_cache *bc,
 	pmbm->pmbm_magic = MCBM_MAGIC;
 	pmbm->pmbm_block_id = block_id;
 	pmbm->pmbm_status = metadata_update_state;
-	if (metadata_update_state == CACHE_INVALID) {
+	if (metadata_update_state == S_INVALID) {
 		pmbm->pmbm_device_sector = -1;
 	} else {
 		ASSERT(is_sector_number_valid(cache_block->bcb_sector));
@@ -276,7 +276,7 @@ void pmem_data_get_page_read_mem(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(cache_block->bcb_state != S_INVALID);
 	ASSERT(callback_context != NULL);
 	ASSERT(callback_function != NULL);
 
@@ -372,7 +372,7 @@ void pmem_data_put_page_read_mem(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(cache_block->bcb_state != S_INVALID);
 	ASSERT(dbi_data != NULL);
 
 	block_id = cache_block->bcb_block_id;
@@ -428,7 +428,7 @@ void pmem_data_convert_read_to_write_mem(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(cache_block->bcb_state != S_INVALID);
 
 	block_id = cache_block->bcb_block_id;
 
@@ -481,8 +481,8 @@ void pmem_data_clone_read_to_write_mem(struct bittern_cache *bc,
 	ASSERT_CACHE_BLOCK(from_cache_block, bc);
 	ASSERT_CACHE_BLOCK(to_cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(from_cache_block->bcb_state != CACHE_INVALID);
-	ASSERT(to_cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(from_cache_block->bcb_state != S_INVALID);
+	ASSERT(to_cache_block->bcb_state != S_INVALID);
 
 	from_block_id = from_cache_block->bcb_block_id;
 	to_block_id = to_cache_block->bcb_block_id;
@@ -583,7 +583,7 @@ void pmem_data_get_page_write_mem(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(cache_block->bcb_state != S_INVALID);
 	ASSERT(dbi_data != NULL);
 
 	block_id = cache_block->bcb_block_id;
@@ -663,7 +663,7 @@ void pmem_data_put_page_write_mem(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(cache_block->bcb_state != S_INVALID);
 	ASSERT(callback_context != NULL);
 	ASSERT(callback_function != NULL);
 
@@ -671,8 +671,8 @@ void pmem_data_put_page_write_mem(struct bittern_cache *bc,
 
 	block_id = cache_block->bcb_block_id;
 
-	ASSERT(metadata_update_state == CACHE_VALID_CLEAN
-	       || metadata_update_state == CACHE_VALID_DIRTY);
+	ASSERT(metadata_update_state == S_CLEAN
+	       || metadata_update_state == S_DIRTY);
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 		     "metadata_update_state=%d(%s)", metadata_update_state,
 		     cache_state_to_str(metadata_update_state));

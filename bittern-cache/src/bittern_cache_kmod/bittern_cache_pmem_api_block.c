@@ -515,7 +515,7 @@ void pmem_metadata_async_write_block(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(cache_block->bcb_state != S_INVALID);
 	ASSERT(dbi_data != NULL);
 	ASSERT(callback_context != NULL);
 	ASSERT(callback_function != NULL);
@@ -526,9 +526,9 @@ void pmem_metadata_async_write_block(struct bittern_cache *bc,
 
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 		     "metadata_update_state=%d", metadata_update_state);
-	ASSERT(metadata_update_state == CACHE_INVALID ||
-	       metadata_update_state == CACHE_VALID_CLEAN ||
-	       metadata_update_state == CACHE_VALID_DIRTY);
+	ASSERT(metadata_update_state == S_INVALID ||
+	       metadata_update_state == S_CLEAN ||
+	       metadata_update_state == S_DIRTY);
 
 	/* required because we use the page to hold the metadata buffer */
 	ASSERT(dbi_data->di_buffer_vmalloc_buffer != NULL);
@@ -552,7 +552,7 @@ void pmem_metadata_async_write_block(struct bittern_cache *bc,
 	pmbm->pmbm_magic = MCBM_MAGIC;
 	pmbm->pmbm_block_id = block_id;
 	pmbm->pmbm_status = metadata_update_state;
-	if (metadata_update_state == CACHE_INVALID) {
+	if (metadata_update_state == S_INVALID) {
 		pmbm->pmbm_device_sector = -1;
 	} else {
 		ASSERT(is_sector_number_valid(cache_block->bcb_sector));
@@ -690,7 +690,7 @@ void pmem_data_get_page_read_block(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(cache_block->bcb_state != S_INVALID);
 	ASSERT(dbi_data != NULL);
 	ASSERT(ctx != NULL);
 	ASSERT(callback_context != NULL);
@@ -783,7 +783,7 @@ void pmem_data_put_page_read_block(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(cache_block->bcb_state != S_INVALID);
 
 	block_id = cache_block->bcb_block_id;
 
@@ -834,7 +834,7 @@ void pmem_data_convert_read_to_write_block(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(cache_block->bcb_state != S_INVALID);
 
 	block_id = cache_block->bcb_block_id;
 
@@ -881,8 +881,8 @@ void pmem_data_clone_read_to_write_block(struct bittern_cache *bc,
 	ASSERT_CACHE_BLOCK(to_cache_block, bc);
 
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(from_cache_block->bcb_state != CACHE_INVALID);
-	ASSERT(to_cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(from_cache_block->bcb_state != S_INVALID);
+	ASSERT(to_cache_block->bcb_state != S_INVALID);
 	ASSERT(dbi_data != NULL);
 
 	from_block_id = from_cache_block->bcb_block_id;
@@ -946,7 +946,7 @@ void pmem_data_get_page_write_block(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(cache_block->bcb_state != S_INVALID);
 	ASSERT(dbi_data != NULL);
 
 	block_id = cache_block->bcb_block_id;
@@ -1107,8 +1107,8 @@ void pmem_data_put_page_write_endio_block(struct bio *bio, int err)
 	 * when writing data, it only makes sense to update metadata
 	 * to VALID_CLEAN or VALID_DIRTY
 	 */
-	ASSERT(ctx->ma_metadata_state == CACHE_VALID_CLEAN ||
-	       ctx->ma_metadata_state == CACHE_VALID_DIRTY);
+	ASSERT(ctx->ma_metadata_state == S_CLEAN ||
+	       ctx->ma_metadata_state == S_DIRTY);
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 
 	/* zero out the whole buffer to prevent information leak */
@@ -1177,15 +1177,15 @@ void pmem_data_put_page_write_block(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
-	ASSERT(cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(cache_block->bcb_state != S_INVALID);
 	ASSERT(dbi_data != NULL);
 	ASSERT(ctx != NULL);
 	ASSERT(callback_context != NULL);
 	ASSERT(callback_function != NULL);
 	ASSERT_PMEM_DBI(dbi_data);
 
-	ASSERT(metadata_update_state == CACHE_VALID_CLEAN ||
-	       metadata_update_state == CACHE_VALID_DIRTY);
+	ASSERT(metadata_update_state == S_CLEAN ||
+	       metadata_update_state == S_DIRTY);
 
 	block_id = cache_block->bcb_block_id;
 

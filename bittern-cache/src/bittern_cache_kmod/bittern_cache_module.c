@@ -444,8 +444,8 @@ struct cache_conf_param_entry cache_conf_param_list[] = {
 	{
 		.cache_conf_name = "invalidator_conf_min_invalid_count",
 		.cache_conf_type = CONF_TYPE_INT,
-		.cache_conf_min = CACHE_INVALIDATOR_MIN_INVALID_COUNT,
-		.cache_conf_max = CACHE_INVALIDATOR_MAX_INVALID_COUNT,
+		.cache_conf_min = S_INVALIDATOR_MIN_INVALID_COUNT,
+		.cache_conf_max = S_INVALIDATOR_MAX_INVALID_COUNT,
 		.cache_conf_setup_function = cache_calculate_min_invalid,
 		.cache_conf_show_function = show_cache_min_invalid,
 	},
@@ -1496,9 +1496,9 @@ ssize_t cache_op_show_cache_states(struct bittern_cache *bc,
 	int i;
 
 	DMEMIT("%s: cache_states: ", bc->bc_name);
-	for (i = 0; i < __CACHE_TRANSITION_PATHS_NUM; i++) {
+	for (i = 0; i < __TS_NUM; i++) {
 		DMEMIT("p%d=%u ", i,
-		       atomic_read(&bc->bc_transition_paths_counters[i]));
+		       atomic_read(&bc->bc_cache_transitions_counters[i]));
 	}
 	DMEMIT("\n");
 

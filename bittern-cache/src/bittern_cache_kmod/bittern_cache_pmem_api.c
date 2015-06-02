@@ -762,7 +762,7 @@ int pmem_block_restore(struct bittern_cache *bc,
 		return -EHWPOISON;
 	}
 
-	if (pmbm->pmbm_status == CACHE_INVALID) {
+	if (pmbm->pmbm_status == S_INVALID) {
 		printk_info_ratelimited("block id #%u: warning: metadata cache status is %u(%s), nothing to restore\n",
 					block_id,
 					pmbm->pmbm_status,
@@ -776,8 +776,8 @@ int pmem_block_restore(struct bittern_cache *bc,
 		return 1;
 	}
 
-	if (pmbm->pmbm_status != CACHE_VALID_CLEAN
-	    && pmbm->pmbm_status != CACHE_VALID_DIRTY) {
+	if (pmbm->pmbm_status != S_CLEAN
+	    && pmbm->pmbm_status != S_DIRTY) {
 		printk_info_ratelimited("block id #%u: warning: metadata cache status is %u(%s) (transaction in progress), nothing to restore\n",
 					block_id,
 					pmbm->pmbm_status,
@@ -790,10 +790,10 @@ int pmem_block_restore(struct bittern_cache *bc,
 		return 0;
 	}
 
-	if (pmbm->pmbm_status == CACHE_VALID_CLEAN) {
+	if (pmbm->pmbm_status == S_CLEAN) {
 		pa->papi_stats.restore_valid_clean_metadata_blocks++;
 	} else {
-		ASSERT(pmbm->pmbm_status == CACHE_VALID_DIRTY);
+		ASSERT(pmbm->pmbm_status == S_DIRTY);
 		pa->papi_stats.restore_valid_dirty_metadata_blocks++;
 	}
 
@@ -832,10 +832,10 @@ int pmem_block_restore(struct bittern_cache *bc,
 		return -EHWPOISON;
 	}
 
-	if (pmbm->pmbm_status == CACHE_VALID_CLEAN) {
+	if (pmbm->pmbm_status == S_CLEAN) {
 		pa->papi_stats.restore_valid_clean_data_blocks++;
 	} else {
-		ASSERT(pmbm->pmbm_status == CACHE_VALID_DIRTY);
+		ASSERT(pmbm->pmbm_status == S_DIRTY);
 		pa->papi_stats.restore_valid_dirty_data_blocks++;
 	}
 
@@ -846,8 +846,8 @@ int pmem_block_restore(struct bittern_cache *bc,
 	cache_block->bcb_state = pmbm->pmbm_status;
 	cache_block->bcb_xid = pmbm->pmbm_xid;
 	cache_block->bcb_hash_data = pmbm->pmbm_hash_data;
-	ASSERT(cache_block->bcb_state == CACHE_VALID_CLEAN ||
-	       cache_block->bcb_state == CACHE_VALID_DIRTY);
+	ASSERT(cache_block->bcb_state == S_CLEAN ||
+	       cache_block->bcb_state == S_DIRTY);
 	ASSERT(cache_block->bcb_sector != -1);
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 	ASSERT(cache_block->bcb_sector >= 0);
@@ -968,7 +968,7 @@ int pmem_metadata_initialize(struct bittern_cache *bc, unsigned int block_id)
 
 	pmbm->pmbm_magic = MCBM_MAGIC;
 	pmbm->pmbm_block_id = block_id;
-	pmbm->pmbm_status = CACHE_INVALID;
+	pmbm->pmbm_status = S_INVALID;
 	pmbm->pmbm_device_sector = -1;
 	pmbm->pmbm_xid = 0;
 	pmbm->pmbm_hash_data = UINT128_ZERO;

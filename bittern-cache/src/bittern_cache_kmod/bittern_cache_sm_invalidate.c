@@ -35,9 +35,9 @@ void sm_invalidate_start(struct bittern_cache *bc,
 	cache_block = wi->wi_cache_block;
 
 	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_CLEAN_INVALIDATE_START
+	       S_CLEAN_INVALIDATE_START
 	       || cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_INVALIDATE_START);
+	       S_DIRTY_INVALIDATE_START);
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "invalidate-startio");
 
@@ -46,21 +46,18 @@ void sm_invalidate_start(struct bittern_cache *bc,
 	ASSERT_WORK_ITEM(wi, bc);
 
 	/* we don't do dirty invalidation yet */
-	if (cache_block->bcb_state ==
-	    CACHE_VALID_CLEAN_INVALIDATE_START)
-		cache_state_transition3(
-			bc,
-			cache_block,
-			CACHE_TRANSITION_PATH_CLEAN_INVALIDATION_WTWB,
-			CACHE_VALID_CLEAN_INVALIDATE_START,
-			CACHE_VALID_CLEAN_INVALIDATE_END);
+	if (cache_block->bcb_state == S_CLEAN_INVALIDATE_START)
+		cache_state_transition3(bc,
+					cache_block,
+					TS_CLEAN_INVALIDATION_WTWB,
+					S_CLEAN_INVALIDATE_START,
+					S_CLEAN_INVALIDATE_END);
 	else
-		cache_state_transition3(
-			bc,
-			cache_block,
-			CACHE_TRANSITION_PATH_DIRTY_INVALIDATION_WB,
-			CACHE_VALID_DIRTY_INVALIDATE_START,
-			CACHE_VALID_DIRTY_INVALIDATE_END);
+		cache_state_transition3(bc,
+					cache_block,
+					TS_DIRTY_INVALIDATION_WB,
+					S_DIRTY_INVALIDATE_START,
+					S_DIRTY_INVALIDATE_END);
 
 	/*
 	 * start updating metadata
@@ -70,7 +67,7 @@ void sm_invalidate_start(struct bittern_cache *bc,
 				  &wi->wi_pmem_ctx,
 				  wi, /* callback context */
 				  cache_metadata_write_callback,
-				  CACHE_INVALID);
+				  S_INVALID);
 }
 
 void sm_invalidate_end(struct bittern_cache *bc,
@@ -90,10 +87,8 @@ void sm_invalidate_end(struct bittern_cache *bc,
 	ASSERT(wi->wi_original_cache_block == NULL);
 	cache_block = wi->wi_cache_block;
 
-	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_CLEAN_INVALIDATE_END
-	       || cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_INVALIDATE_END);
+	ASSERT(cache_block->bcb_state == S_CLEAN_INVALIDATE_END ||
+	       cache_block->bcb_state == S_DIRTY_INVALIDATE_END);
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "invalidate-end: %p", wi->wi_io_endio);
 

@@ -304,9 +304,9 @@ struct pmem_block_metadata {
  * Every other state is considered transient and rolled back on recovery.
  */
 enum pmem_cache_state {
-	P_CACHE_INVALID = 0,
-	P_CACHE_VALID_CLEAN = 1,
-	P_CACHE_VALID_DIRTY = 2,
+	P_S_INVALID = 0,
+	P_S_CLEAN = 1,
+	P_S_DIRTY = 2,
 };
 
 #endif /* BITTERN_CACHE_PMEM_HEADER_H */

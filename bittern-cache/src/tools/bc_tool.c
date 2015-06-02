@@ -394,25 +394,25 @@ int bc_read_cache_block(int fd, unsigned int block_id,
 		      UINT128_ARG(mcbm.pmbm_hash_metadata));
 
 	switch (mcbm.pmbm_status) {
-	case P_CACHE_INVALID:
+	case P_S_INVALID:
 		bc_print_verbose("bc_read_cache_block(%u,%llu), ",
 				 block_id, ULL_CAST(mcbm.pmbm_device_sector));
 		bc_print_verbose("data_m_offset=%lu: state=invalid\n",
 				 data_m_offset);
 		bc_stat_cb_invalid++;
 		return 0;
-	case P_CACHE_VALID_CLEAN:
+	case P_S_CLEAN:
 		bc_print_verbose("bc_read_cache_block(%u,%llu), ",
 				 block_id, ULL_CAST(mcbm.pmbm_device_sector));
-		bc_print_verbose("data_m_offset=%lu: state=valid_clean\n",
+		bc_print_verbose("data_m_offset=%lu: state=clean\n",
 				 data_m_offset);
 		bc_stat_cb_valid_clean++;
 		/* need to check data checksum */
 		break;
-	case P_CACHE_VALID_DIRTY:
+	case P_S_DIRTY:
 		bc_print_verbose("bc_read_cache_block(%u,%llu), ",
 				 block_id, ULL_CAST(mcbm.pmbm_device_sector));
-		bc_print_verbose("data_m_offset=%lu: state=valid_dirty\n",
+		bc_print_verbose("data_m_offset=%lu: state=dirty\n",
 				 data_m_offset);
 		bc_stat_cb_valid_dirty++;
 		/* need to check data checksum */

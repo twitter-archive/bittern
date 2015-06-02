@@ -193,7 +193,7 @@ void cache_dtr(struct dm_target *ti)
 			    list_first_entry(&bc->bc_invalid_entries_list,
 					     struct cache_block,
 					     bcb_entry);
-			M_ASSERT(bcb->bcb_state == CACHE_INVALID);
+			M_ASSERT(bcb->bcb_state == S_INVALID);
 			M_ASSERT(is_sector_number_invalid(bcb->bcb_sector));
 		}
 		if (bcb == NULL && list_non_empty(&bc->bc_valid_entries_list)) {
@@ -201,15 +201,15 @@ void cache_dtr(struct dm_target *ti)
 			    list_first_entry(&bc->bc_valid_entries_list,
 					     struct cache_block,
 					     bcb_entry);
-			M_ASSERT(bcb->bcb_state != CACHE_INVALID);
+			M_ASSERT(bcb->bcb_state != S_INVALID);
 			M_ASSERT(is_sector_number_valid(bcb->bcb_sector));
 		}
 		M_ASSERT(bcb != NULL);
-		M_ASSERT(bcb->bcb_state == CACHE_INVALID ||
-			 bcb->bcb_state == CACHE_VALID_CLEAN ||
-			 bcb->bcb_state == CACHE_VALID_DIRTY);
-		M_ASSERT(bcb->bcb_transition_path ==
-			 CACHE_TRANSITION_PATH_NONE);
+		M_ASSERT(bcb->bcb_state == S_INVALID ||
+			 bcb->bcb_state == S_CLEAN ||
+			 bcb->bcb_state == S_DIRTY);
+		M_ASSERT(bcb->bcb_cache_transition ==
+			 TS_NONE);
 		M_ASSERT(bcb->bcb_block_id >= 1);
 		M_ASSERT(bcb->bcb_block_id <=
 			 bc->bc_papi.papi_hdr.lm_cache_blocks);
@@ -227,12 +227,12 @@ void cache_dtr(struct dm_target *ti)
 		entries_state_map[bcb->bcb_block_id] = bcb->bcb_state;
 
 		switch (bcb->bcb_state) {
-		case CACHE_INVALID:
+		case S_INVALID:
 			atomic_dec(&bc->bc_invalid_entries);
 			entries_invalid++;
 			M_ASSERT(RB_EMPTY_NODE(&bcb->bcb_rb_node));
 			break;
-		case CACHE_VALID_CLEAN:
+		case S_CLEAN:
 			cache_track_hash_check(bc, bcb, bcb->bcb_hash_data);
 			atomic_dec(&bc->bc_valid_entries);
 			atomic_dec(&bc->bc_valid_entries_clean);
@@ -243,7 +243,7 @@ void cache_dtr(struct dm_target *ti)
 			cache_rb_remove(bc, bcb);
 			M_ASSERT(RB_EMPTY_NODE(&bcb->bcb_rb_node));
 			break;
-		case CACHE_VALID_DIRTY:
+		case S_DIRTY:
 			cache_track_hash_check(bc, bcb, bcb->bcb_hash_data);
 			atomic_dec(&bc->bc_valid_entries);
 			atomic_dec(&bc->bc_valid_entries_dirty);
@@ -310,9 +310,9 @@ void cache_dtr(struct dm_target *ti)
 	orphan_count = 0;
 	for (i = 1; i <= bc->bc_papi.papi_hdr.lm_cache_blocks; i++) {
 		M_ASSERT(entries_state_map[i] == 0xff ||
-			 entries_state_map[i] == CACHE_INVALID ||
-			 entries_state_map[i] == CACHE_VALID_CLEAN ||
-			 entries_state_map[i] == CACHE_VALID_DIRTY);
+			 entries_state_map[i] == S_INVALID ||
+			 entries_state_map[i] == S_CLEAN ||
+			 entries_state_map[i] == S_DIRTY);
 		if (entries_state_map[i] == 0xff) {
 			/* block_id starts from 1, array starts from 0 */
 			struct cache_block *bcb = &bc->bc_cache_blocks[i - 1];

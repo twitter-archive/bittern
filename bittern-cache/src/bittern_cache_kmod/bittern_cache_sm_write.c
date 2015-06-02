@@ -38,26 +38,25 @@ sm_clean_pwrite_hit_copy_from_cache_start(struct bittern_cache *bc,
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(wi->wi_cache == bc);
-	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_FROM_CACHE_START
-	       || cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_COPY_FROM_CACHE_START);
+	ASSERT(cache_block->bcb_state == S_CLEAN_P_WRITE_HIT_CPF_CACHE_START ||
+	       cache_block->bcb_state == S_DIRTY_P_WRITE_HIT_CPF_CACHE_START);
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
-	if (cache_block->bcb_state ==
-	    CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_FROM_CACHE_START) {
-		cache_state_transition3(bc, cache_block,
-						CACHE_TRANSITION_PATH_PARTIAL_WRITE_HIT_WT,
-						CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_FROM_CACHE_START,
-						CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_DEVICE_STARTIO);
+	if (cache_block->bcb_state == S_CLEAN_P_WRITE_HIT_CPF_CACHE_START) {
+		cache_state_transition3(bc,
+					cache_block,
+					TS_P_WRITE_HIT_WT,
+					S_CLEAN_P_WRITE_HIT_CPF_CACHE_START,
+					S_CLEAN_P_WRITE_HIT_CPT_DEVICE_STARTIO);
 	} else {
 		ASSERT(cache_block->bcb_state ==
-		       CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_COPY_FROM_CACHE_START);
-		cache_state_transition3(bc, cache_block,
-						CACHE_TRANSITION_PATH_PARTIAL_WRITE_HIT_WB_CLEAN,
-						CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_COPY_FROM_CACHE_START,
-						CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_COPY_TO_CACHE_START);
+		       S_DIRTY_P_WRITE_HIT_CPF_CACHE_START);
+		cache_state_transition3(bc,
+					cache_block,
+					TS_P_WRITE_HIT_WB_CLEAN,
+					S_DIRTY_P_WRITE_HIT_CPF_CACHE_START,
+					S_DIRTY_P_WRITE_HIT_CPT_CACHE_START);
 	}
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
@@ -90,12 +89,9 @@ void sm_dirty_write_miss_copy_to_cache_start(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
-	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITE_MISS_COPY_TO_CACHE_START ||
-	       cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITE_HIT_COPY_TO_CACHE_START ||
-	       cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_COPY_TO_CACHE_START);
+	ASSERT(cache_block->bcb_state == S_DIRTY_WRITE_MISS_CPT_CACHE_START ||
+	       cache_block->bcb_state == S_DIRTY_WRITE_HIT_CPT_CACHE_START ||
+	       cache_block->bcb_state == S_DIRTY_P_WRITE_HIT_CPT_CACHE_START);
 
 	ASSERT(bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
@@ -106,13 +102,12 @@ void sm_dirty_write_miss_copy_to_cache_start(struct bittern_cache *bc,
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
-	if (cache_block->bcb_state ==
-	    CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_COPY_TO_CACHE_START) {
+	if (cache_block->bcb_state == S_DIRTY_P_WRITE_HIT_CPT_CACHE_START) {
 		char *cache_vaddr;
 
 		cache_vaddr = pmem_context_data_vaddr(&wi->wi_pmem_ctx);
-		ASSERT(bc->bc_enable_extra_checksum_check == 0
-		       || bc->bc_enable_extra_checksum_check == 1);
+		ASSERT(bc->bc_enable_extra_checksum_check == 0 ||
+		       bc->bc_enable_extra_checksum_check == 1);
 		if (bc->bc_enable_extra_checksum_check != 0) {
 			/* verify that hash is correct */
 			cache_verify_hash_data_buffer(bc,
@@ -134,9 +129,9 @@ void sm_dirty_write_miss_copy_to_cache_start(struct bittern_cache *bc,
 
 	} else {
 		ASSERT(cache_block->bcb_state ==
-		       CACHE_VALID_DIRTY_WRITE_MISS_COPY_TO_CACHE_START ||
+		       S_DIRTY_WRITE_MISS_CPT_CACHE_START ||
 		       cache_block->bcb_state ==
-		       CACHE_VALID_DIRTY_WRITE_HIT_COPY_TO_CACHE_START);
+		       S_DIRTY_WRITE_HIT_CPT_CACHE_START);
 		/*
 		 * get page for write
 		 */
@@ -159,25 +154,27 @@ void sm_dirty_write_miss_copy_to_cache_start(struct bittern_cache *bc,
 	 */
 	cache_track_hash_set(bc, cache_block, cache_block->bcb_hash_data);
 
-	if (cache_block->bcb_state ==
-	    CACHE_VALID_DIRTY_WRITE_MISS_COPY_TO_CACHE_START) {
-		cache_state_transition3(bc, cache_block,
-						CACHE_TRANSITION_PATH_WRITE_MISS_WB,
-						CACHE_VALID_DIRTY_WRITE_MISS_COPY_TO_CACHE_START,
-						CACHE_VALID_DIRTY_WRITE_MISS_COPY_TO_CACHE_END);
+	if (cache_block->bcb_state == S_DIRTY_WRITE_MISS_CPT_CACHE_START) {
+		cache_state_transition3(bc,
+					cache_block,
+					TS_WRITE_MISS_WB,
+					S_DIRTY_WRITE_MISS_CPT_CACHE_START,
+					S_DIRTY_WRITE_MISS_CPT_CACHE_END);
 	} else if (cache_block->bcb_state ==
-		   CACHE_VALID_DIRTY_WRITE_HIT_COPY_TO_CACHE_START) {
-		cache_state_transition3(bc, cache_block,
-						CACHE_TRANSITION_PATH_WRITE_HIT_WB_CLEAN,
-						CACHE_VALID_DIRTY_WRITE_HIT_COPY_TO_CACHE_START,
-						CACHE_VALID_DIRTY_WRITE_HIT_COPY_TO_CACHE_END);
+		   S_DIRTY_WRITE_HIT_CPT_CACHE_START) {
+		cache_state_transition3(bc,
+					cache_block,
+					TS_WRITE_HIT_WB_CLEAN,
+					S_DIRTY_WRITE_HIT_CPT_CACHE_START,
+					S_DIRTY_WRITE_HIT_CPT_CACHE_END);
 	} else {
 		ASSERT(cache_block->bcb_state ==
-		       CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_COPY_TO_CACHE_START);
-		cache_state_transition3(bc, cache_block,
-						CACHE_TRANSITION_PATH_PARTIAL_WRITE_HIT_WB_CLEAN,
-						CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_COPY_TO_CACHE_START,
-						CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_COPY_TO_CACHE_END);
+		       S_DIRTY_P_WRITE_HIT_CPT_CACHE_START);
+		cache_state_transition3(bc,
+					cache_block,
+					TS_P_WRITE_HIT_WB_CLEAN,
+					S_DIRTY_P_WRITE_HIT_CPT_CACHE_START,
+					S_DIRTY_P_WRITE_HIT_CPT_CACHE_END);
 	}
 
 	/*
@@ -192,7 +189,7 @@ void sm_dirty_write_miss_copy_to_cache_start(struct bittern_cache *bc,
 				 &wi->wi_pmem_ctx,
 				 wi, /*callback context */
 				 cache_put_page_write_callback,
-				 CACHE_VALID_DIRTY);
+				 S_DIRTY);
 
 	ASSERT_BITTERN_CACHE(bc);
 }
@@ -222,12 +219,9 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
 
-	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITE_MISS_COPY_TO_CACHE_END ||
-	       cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITE_HIT_COPY_TO_CACHE_END ||
-	       cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_COPY_TO_CACHE_END);
+	ASSERT(cache_block->bcb_state == S_DIRTY_WRITE_MISS_CPT_CACHE_END ||
+	       cache_block->bcb_state == S_DIRTY_WRITE_HIT_CPT_CACHE_END ||
+	       cache_block->bcb_state == S_DIRTY_P_WRITE_HIT_CPT_CACHE_END);
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
@@ -239,33 +233,28 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 
-	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITE_MISS_COPY_TO_CACHE_END ||
-	       cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITE_HIT_COPY_TO_CACHE_END ||
-	       cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_COPY_TO_CACHE_END);
+	ASSERT(cache_block->bcb_state == S_DIRTY_WRITE_MISS_CPT_CACHE_END ||
+	       cache_block->bcb_state == S_DIRTY_WRITE_HIT_CPT_CACHE_END ||
+	       cache_block->bcb_state == S_DIRTY_P_WRITE_HIT_CPT_CACHE_END);
 	spin_lock_irqsave(&cache_block->bcb_spinlock, cache_flags);
 	cache_state_transition_final(bc,
-					     cache_block,
-					     CACHE_TRANSITION_PATH_NONE,
-					     CACHE_VALID_DIRTY);
+				     cache_block,
+				     TS_NONE,
+				     S_DIRTY);
 	spin_unlock_irqrestore(&cache_block->bcb_spinlock, cache_flags);
 	cache_put_update_age(bc, cache_block, 1);
 
 	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 
-	if (original_state ==
-	    CACHE_VALID_DIRTY_WRITE_MISS_COPY_TO_CACHE_END) {
+	if (original_state == S_DIRTY_WRITE_MISS_CPT_CACHE_END) {
 		cache_timer_add(&bc->bc_timer_writes,
 					wi->wi_ts_started);
 		cache_timer_add(&bc->bc_timer_write_misses,
 					wi->wi_ts_started);
 		cache_timer_add(&bc->bc_timer_write_dirty_misses,
 					wi->wi_ts_started);
-	} else if (original_state ==
-		   CACHE_VALID_DIRTY_WRITE_HIT_COPY_TO_CACHE_END) {
+	} else if (original_state == S_DIRTY_WRITE_HIT_CPT_CACHE_END) {
 		cache_timer_add(&bc->bc_timer_writes,
 					wi->wi_ts_started);
 		cache_timer_add(&bc->bc_timer_write_hits,
@@ -273,8 +262,7 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 		cache_timer_add(&bc->bc_timer_write_dirty_hits,
 					wi->wi_ts_started);
 	} else {
-		ASSERT(original_state ==
-		       CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_COPY_TO_CACHE_END);
+		ASSERT(original_state == S_DIRTY_P_WRITE_HIT_CPT_CACHE_END);
 		cache_timer_add(&bc->bc_timer_writes,
 					wi->wi_ts_started);
 		cache_timer_add(&bc->bc_timer_write_hits,
@@ -321,17 +309,15 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_CLEAN_WRITE_MISS_COPY_TO_DEVICE_STARTIO
-	       || cache_block->bcb_state ==
-	       CACHE_VALID_CLEAN_WRITE_HIT_COPY_TO_DEVICE_STARTIO
-	       || cache_block->bcb_state ==
-	       CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_DEVICE_STARTIO);
+	       S_CLEAN_WRITE_MISS_CPT_DEVICE_STARTIO ||
+	       cache_block->bcb_state ==
+	       S_CLEAN_WRITE_HIT_CPT_DEVICE_STARTIO ||
+	       cache_block->bcb_state ==
+	       S_CLEAN_P_WRITE_HIT_CPT_DEVICE_STARTIO);
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
-	if (cache_block->bcb_state ==
-	    CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_DEVICE_STARTIO)
-	{
+	if (cache_block->bcb_state == S_CLEAN_P_WRITE_HIT_CPT_DEVICE_STARTIO) {
 		/*
 		 * convert to write
 		 */
@@ -341,9 +327,9 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 
 	} else {
 		ASSERT(cache_block->bcb_state ==
-		       CACHE_VALID_CLEAN_WRITE_MISS_COPY_TO_DEVICE_STARTIO
-		       || cache_block->bcb_state ==
-		       CACHE_VALID_CLEAN_WRITE_HIT_COPY_TO_DEVICE_STARTIO);
+		       S_CLEAN_WRITE_MISS_CPT_DEVICE_STARTIO ||
+		       cache_block->bcb_state ==
+		       S_CLEAN_WRITE_HIT_CPT_DEVICE_STARTIO);
 		/*
 		 * get page for write
 		 */
@@ -397,12 +383,12 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT_WORK_ITEM(wi, bc);
 
-	if (cache_block->bcb_state ==
-	    CACHE_VALID_CLEAN_WRITE_MISS_COPY_TO_DEVICE_STARTIO) {
-		cache_state_transition3(bc, cache_block,
-						CACHE_TRANSITION_PATH_WRITE_MISS_WT,
-						CACHE_VALID_CLEAN_WRITE_MISS_COPY_TO_DEVICE_STARTIO,
-						CACHE_VALID_CLEAN_WRITE_MISS_COPY_TO_DEVICE_ENDIO);
+	if (cache_block->bcb_state == S_CLEAN_WRITE_MISS_CPT_DEVICE_STARTIO) {
+		cache_state_transition3(bc,
+					cache_block,
+					TS_WRITE_MISS_WT,
+					S_CLEAN_WRITE_MISS_CPT_DEVICE_STARTIO,
+					S_CLEAN_WRITE_MISS_CPT_DEVICE_ENDIO);
 		/*
 		 * first step in state machine -- in a process context
 		 */
@@ -410,11 +396,12 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 		wi->wi_ts_workqueue = current_kernel_time_nsec();
 		cache_do_make_request(bc, wi);
 	} else if (cache_block->bcb_state ==
-		   CACHE_VALID_CLEAN_WRITE_HIT_COPY_TO_DEVICE_STARTIO) {
-		cache_state_transition3(bc, cache_block,
-						CACHE_TRANSITION_PATH_WRITE_HIT_WT,
-						CACHE_VALID_CLEAN_WRITE_HIT_COPY_TO_DEVICE_STARTIO,
-						CACHE_VALID_CLEAN_WRITE_HIT_COPY_TO_DEVICE_ENDIO);
+		   S_CLEAN_WRITE_HIT_CPT_DEVICE_STARTIO) {
+		cache_state_transition3(bc,
+					cache_block,
+					TS_WRITE_HIT_WT,
+					S_CLEAN_WRITE_HIT_CPT_DEVICE_STARTIO,
+					S_CLEAN_WRITE_HIT_CPT_DEVICE_ENDIO);
 		/*
 		 * first step in state machine -- in a process context
 		 */
@@ -423,11 +410,12 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 		cache_do_make_request(bc, wi);
 	} else {
 		ASSERT(cache_block->bcb_state ==
-		       CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_DEVICE_STARTIO);
-		cache_state_transition3(bc, cache_block,
-						CACHE_TRANSITION_PATH_PARTIAL_WRITE_HIT_WT,
-						CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_DEVICE_STARTIO,
-						CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_DEVICE_ENDIO);
+		       S_CLEAN_P_WRITE_HIT_CPT_DEVICE_STARTIO);
+		cache_state_transition3(bc,
+					cache_block,
+					TS_P_WRITE_HIT_WT,
+					S_CLEAN_P_WRITE_HIT_CPT_DEVICE_STARTIO,
+					S_CLEAN_P_WRITE_HIT_CPT_DEVICE_ENDIO);
 		/*
 		 * can be in softirq
 		 */
@@ -455,12 +443,9 @@ void sm_clean_write_miss_copy_to_device_endio(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
-	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_CLEAN_WRITE_MISS_COPY_TO_DEVICE_ENDIO
-	       || cache_block->bcb_state ==
-	       CACHE_VALID_CLEAN_WRITE_HIT_COPY_TO_DEVICE_ENDIO
-	       || cache_block->bcb_state ==
-	       CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_DEVICE_ENDIO);
+	ASSERT(cache_block->bcb_state == S_CLEAN_WRITE_MISS_CPT_DEVICE_ENDIO ||
+	       cache_block->bcb_state == S_CLEAN_WRITE_HIT_CPT_DEVICE_ENDIO ||
+	       cache_block->bcb_state == S_CLEAN_P_WRITE_HIT_CPT_DEVICE_ENDIO);
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
@@ -475,25 +460,27 @@ void sm_clean_write_miss_copy_to_device_endio(struct bittern_cache *bc,
 	atomic_dec(&bc->bc_pending_cached_device_requests);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 
-	if (cache_block->bcb_state ==
-	    CACHE_VALID_CLEAN_WRITE_MISS_COPY_TO_DEVICE_ENDIO) {
-		cache_state_transition3(bc, cache_block,
-						CACHE_TRANSITION_PATH_WRITE_MISS_WT,
-						CACHE_VALID_CLEAN_WRITE_MISS_COPY_TO_DEVICE_ENDIO,
-						CACHE_VALID_CLEAN_WRITE_MISS_COPY_TO_CACHE_END);
+	if (cache_block->bcb_state == S_CLEAN_WRITE_MISS_CPT_DEVICE_ENDIO) {
+		cache_state_transition3(bc,
+					cache_block,
+					TS_WRITE_MISS_WT,
+					S_CLEAN_WRITE_MISS_CPT_DEVICE_ENDIO,
+					S_CLEAN_WRITE_MISS_CPT_CACHE_END);
 	} else if (cache_block->bcb_state ==
-		   CACHE_VALID_CLEAN_WRITE_HIT_COPY_TO_DEVICE_ENDIO) {
-		cache_state_transition3(bc, cache_block,
-						CACHE_TRANSITION_PATH_WRITE_HIT_WT,
-						CACHE_VALID_CLEAN_WRITE_HIT_COPY_TO_DEVICE_ENDIO,
-						CACHE_VALID_CLEAN_WRITE_HIT_COPY_TO_CACHE_END);
+		   S_CLEAN_WRITE_HIT_CPT_DEVICE_ENDIO) {
+		cache_state_transition3(bc,
+					cache_block,
+					TS_WRITE_HIT_WT,
+					S_CLEAN_WRITE_HIT_CPT_DEVICE_ENDIO,
+					S_CLEAN_WRITE_HIT_CPT_CACHE_END);
 	} else {
 		ASSERT(cache_block->bcb_state ==
-		       CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_DEVICE_ENDIO);
-		cache_state_transition3(bc, cache_block,
-						CACHE_TRANSITION_PATH_PARTIAL_WRITE_HIT_WT,
-						CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_DEVICE_ENDIO,
-						CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_CACHE_END);
+		       S_CLEAN_P_WRITE_HIT_CPT_DEVICE_ENDIO);
+		cache_state_transition3(bc,
+					cache_block,
+					TS_P_WRITE_HIT_WT,
+					S_CLEAN_P_WRITE_HIT_CPT_DEVICE_ENDIO,
+					S_CLEAN_P_WRITE_HIT_CPT_CACHE_END);
 	}
 
 	/*
@@ -508,7 +495,7 @@ void sm_clean_write_miss_copy_to_device_endio(struct bittern_cache *bc,
 				 &wi->wi_pmem_ctx,
 				 wi, /*callback context */
 				 cache_put_page_write_callback,
-				 CACHE_VALID_CLEAN);
+				 S_CLEAN);
 
 	ASSERT_BITTERN_CACHE(bc);
 }
@@ -535,11 +522,11 @@ void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_CLEAN_WRITE_MISS_COPY_TO_CACHE_END
+	       S_CLEAN_WRITE_MISS_CPT_CACHE_END
 	       || cache_block->bcb_state ==
-	       CACHE_VALID_CLEAN_WRITE_HIT_COPY_TO_CACHE_END
+	       S_CLEAN_WRITE_HIT_CPT_CACHE_END
 	       || cache_block->bcb_state ==
-	       CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_CACHE_END);
+	       S_CLEAN_P_WRITE_HIT_CPT_CACHE_END);
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
@@ -548,24 +535,21 @@ void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 
 	spin_lock_irqsave(&cache_block->bcb_spinlock, cache_flags);
 	cache_state_transition_final(bc,
-					     cache_block,
-					     CACHE_TRANSITION_PATH_NONE,
-					     CACHE_VALID_CLEAN);
+				     cache_block,
+				     TS_NONE,
+				     S_CLEAN);
 	spin_unlock_irqrestore(&cache_block->bcb_spinlock, cache_flags);
 	cache_put_update_age(bc, cache_block, 1);
 
 	cache_timer_add(&bc->bc_timer_writes, wi->wi_ts_started);
-	if (original_state ==
-	    CACHE_VALID_CLEAN_WRITE_MISS_COPY_TO_CACHE_END) {
+	if (original_state == S_CLEAN_WRITE_MISS_CPT_CACHE_END) {
 		cache_timer_add(&bc->bc_timer_write_misses,
 					wi->wi_ts_started);
 		cache_timer_add(&bc->bc_timer_write_clean_misses,
 					wi->wi_ts_started);
 	} else {
-		ASSERT(original_state ==
-		       CACHE_VALID_CLEAN_WRITE_HIT_COPY_TO_CACHE_END
-		       || original_state ==
-		       CACHE_VALID_CLEAN_PARTIAL_WRITE_HIT_COPY_TO_CACHE_END);
+		ASSERT(original_state == S_CLEAN_WRITE_HIT_CPT_CACHE_END ||
+		       original_state == S_CLEAN_P_WRITE_HIT_CPT_CACHE_END);
 		cache_timer_add(&bc->bc_timer_write_hits,
 					wi->wi_ts_started);
 		cache_timer_add(&bc->bc_timer_write_clean_hits,
@@ -614,7 +598,7 @@ sm_dirty_pwrite_hit_clone_copy_from_cache_start(struct bittern_cache *bc,
 	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(wi->wi_cache == bc);
 	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_DWC_COPY_FROM_ORIGINAL_CACHE_START);
+	       S_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START);
 
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) != 0);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
@@ -622,14 +606,14 @@ sm_dirty_pwrite_hit_clone_copy_from_cache_start(struct bittern_cache *bc,
 	ASSERT(original_cache_block == wi->wi_original_cache_block);
 	ASSERT_CACHE_BLOCK(original_cache_block, bc);
 	ASSERT(original_cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_INVALIDATE_START);
+	       S_DIRTY_INVALIDATE_START);
 	ASSERT(original_cache_block->bcb_sector == cache_block->bcb_sector);
 
 	cache_state_transition3(bc,
-					cache_block,
-					CACHE_TRANSITION_PATH_PARTIAL_WRITE_HIT_WB_DIRTY_DWC_CLONE,
-					CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_DWC_COPY_FROM_ORIGINAL_CACHE_START,
-					CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_DWC_COPY_TO_CLONED_CACHE_START);
+			cache_block,
+			TS_P_WRITE_HIT_WB_DIRTY_DWC_CLONE,
+			S_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START,
+			S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 		 "wi=%p, bc=%p, cache_block=%p, bio=%p", wi, bc, cache_block,
@@ -673,9 +657,9 @@ sm_dirty_write_hit_clone_copy_to_cache_start(struct bittern_cache *bc,
 	ASSERT(wi->wi_original_cache_block != NULL);
 
 	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITE_HIT_DWC_COPY_TO_CACHE_START ||
+	       S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START ||
 	       cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_DWC_COPY_TO_CLONED_CACHE_START);
+	       S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START);
 
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) != 0);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
@@ -683,17 +667,16 @@ sm_dirty_write_hit_clone_copy_to_cache_start(struct bittern_cache *bc,
 	ASSERT(original_cache_block == wi->wi_original_cache_block);
 	ASSERT_CACHE_BLOCK(original_cache_block, bc);
 	ASSERT(original_cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_INVALIDATE_START);
+	       S_DIRTY_INVALIDATE_START);
 	ASSERT(original_cache_block->bcb_sector == cache_block->bcb_sector);
 
 	if (cache_block->bcb_state ==
-	    CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_DWC_COPY_TO_CLONED_CACHE_START)
-	{
+	    S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START) {
 		char *cache_vaddr;
 
 		cache_vaddr = pmem_context_data_vaddr(&wi->wi_pmem_ctx);
-		ASSERT(bc->bc_enable_extra_checksum_check == 0
-		       || bc->bc_enable_extra_checksum_check == 1);
+		ASSERT(bc->bc_enable_extra_checksum_check == 0 ||
+		       bc->bc_enable_extra_checksum_check == 1);
 		if (bc->bc_enable_extra_checksum_check != 0) {
 			/* verify that hash is correct */
 			cache_verify_hash_data_buffer(bc,
@@ -716,7 +699,7 @@ sm_dirty_write_hit_clone_copy_to_cache_start(struct bittern_cache *bc,
 
 	} else {
 		ASSERT(cache_block->bcb_state ==
-		       CACHE_VALID_DIRTY_WRITE_HIT_DWC_COPY_TO_CACHE_START);
+		       S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START);
 		/*
 		 * get page for write
 		 */
@@ -741,19 +724,20 @@ sm_dirty_write_hit_clone_copy_to_cache_start(struct bittern_cache *bc,
 				       cache_block->bcb_hash_data);
 
 	if (cache_block->bcb_state ==
-	    CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_DWC_COPY_TO_CLONED_CACHE_START)
-	{
-		cache_state_transition3(bc, cache_block,
-						CACHE_TRANSITION_PATH_PARTIAL_WRITE_HIT_WB_DIRTY_DWC_CLONE,
-						CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_DWC_COPY_TO_CLONED_CACHE_START,
-						CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_DWC_COPY_TO_CLONED_CACHE_END);
+	    S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START) {
+		cache_state_transition3(bc,
+				cache_block,
+				TS_P_WRITE_HIT_WB_DIRTY_DWC_CLONE,
+				S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START,
+				S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END);
 	} else {
 		ASSERT(cache_block->bcb_state ==
-		       CACHE_VALID_DIRTY_WRITE_HIT_DWC_COPY_TO_CACHE_START);
-		cache_state_transition3(bc, cache_block,
-						CACHE_TRANSITION_PATH_WRITE_HIT_WB_DIRTY_DWC_CLONE,
-						CACHE_VALID_DIRTY_WRITE_HIT_DWC_COPY_TO_CACHE_START,
-						CACHE_VALID_DIRTY_WRITE_HIT_DWC_COPY_TO_CACHE_END);
+		       S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START);
+		cache_state_transition3(bc,
+				cache_block,
+				TS_WRITE_HIT_WB_DIRTY_DWC_CLONE,
+				S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START,
+				S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END);
 	}
 
 	/*
@@ -767,7 +751,7 @@ sm_dirty_write_hit_clone_copy_to_cache_start(struct bittern_cache *bc,
 				 &wi->wi_pmem_ctx,
 				 wi, /*callback context */
 				 cache_put_page_write_callback,
-				 CACHE_VALID_DIRTY);
+				 S_DIRTY);
 
 	ASSERT_BITTERN_CACHE(bc);
 }
@@ -802,9 +786,9 @@ void sm_dirty_write_hit_clone_copy_to_cache_end(struct bittern_cache *bc,
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITE_HIT_DWC_COPY_TO_CACHE_END
-	       || cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_PARTIAL_WRITE_HIT_DWC_COPY_TO_CLONED_CACHE_END);
+	       S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END ||
+	       cache_block->bcb_state ==
+	       S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END);
 
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) != 0);
 	ASSERT(wi->wi_original_cache_block != NULL);
@@ -813,7 +797,7 @@ void sm_dirty_write_hit_clone_copy_to_cache_end(struct bittern_cache *bc,
 	ASSERT(original_cache_block == wi->wi_original_cache_block);
 	ASSERT_CACHE_BLOCK(original_cache_block, bc);
 	ASSERT(original_cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_INVALIDATE_START);
+	       S_DIRTY_INVALIDATE_START);
 	ASSERT(original_cache_block->bcb_sector == cache_block->bcb_sector);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
@@ -823,9 +807,9 @@ void sm_dirty_write_hit_clone_copy_to_cache_end(struct bittern_cache *bc,
 	 */
 	spin_lock_irqsave(&cache_block->bcb_spinlock, cache_flags);
 	cache_state_transition_final(bc,
-					     cache_block,
-					     CACHE_TRANSITION_PATH_NONE,
-					     CACHE_VALID_DIRTY);
+				     cache_block,
+				     TS_NONE,
+				     S_DIRTY);
 	spin_unlock_irqrestore(&cache_block->bcb_spinlock, cache_flags);
 	cache_put_update_age(bc, cache_block, 1);
 
@@ -860,10 +844,9 @@ void sm_dirty_write_hit_clone_copy_to_cache_end(struct bittern_cache *bc,
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, original_cache_block, NULL, NULL,
 		 "copy_to_cache_end-2");
 
-	ASSERT(original_cache_block->bcb_transition_path ==
-	       CACHE_TRANSITION_PATH_DIRTY_INVALIDATION_WB);
-	ASSERT(original_cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_INVALIDATE_START);
+	ASSERT(original_cache_block->bcb_cache_transition ==
+	       TS_DIRTY_INVALIDATION_WB);
+	ASSERT(original_cache_block->bcb_state == S_DIRTY_INVALIDATE_START);
 
 	work_item_reallocate(bc,
 			     original_cache_block,

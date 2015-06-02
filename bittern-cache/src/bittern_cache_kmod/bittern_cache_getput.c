@@ -114,7 +114,7 @@ int cache_get_clean(struct bittern_cache *bc,
 				 cache_block->bcb_block_id);
 			block_hold_ret = cache_block_hold(bc, cache_block);
 			if (block_hold_ret == 1
-			    && cache_block->bcb_state == CACHE_VALID_CLEAN) {
+			    && cache_block->bcb_state == S_CLEAN) {
 				/*
 				 * found suitable cache block.
 				 * note we need to keep the cache_block spinlock
@@ -179,7 +179,7 @@ int cache_get_clean(struct bittern_cache *bc,
 		ASSERT_CACHE_BLOCK(cache_block, bc);
 		block_hold_ret = cache_block_hold(bc, cache_block);
 		if (block_hold_ret == 1
-		    && cache_block->bcb_state == CACHE_VALID_CLEAN) {
+		    && cache_block->bcb_state == S_CLEAN) {
 			/*
 			 * found suitable cache block.
 			 * note we need to keep the cache_block spinlock held
@@ -231,7 +231,7 @@ int cache_get_clean(struct bittern_cache *bc,
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	block_hold_ret = cache_block_hold(bc, cache_block);
 	if (block_hold_ret == 1
-	    && cache_block->bcb_state == CACHE_VALID_CLEAN) {
+	    && cache_block->bcb_state == S_CLEAN) {
 		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 			 "found-cache-block-clean-list (%s)",
 			 cache_replacement_mode_to_str(replacement_mode));
@@ -270,7 +270,7 @@ int cache_get_clean(struct bittern_cache *bc,
 		 "found-cache-block (%s)",
 		 cache_replacement_mode_to_str(replacement_mode));
 
-	ASSERT(cache_block->bcb_state == CACHE_VALID_CLEAN);
+	ASSERT(cache_block->bcb_state == S_CLEAN);
 	ASSERT(atomic_read(&cache_block->bcb_refcount) > 0);
 
 	/*
@@ -327,9 +327,9 @@ int cache_get_invalid_block_locked(struct bittern_cache *bc,
 
 		block_hold_ret = cache_block_hold(bc, cache_block);
 		if (block_hold_ret == 1) {
-			ASSERT(cache_block->bcb_transition_path ==
-			       CACHE_TRANSITION_PATH_NONE);
-			ASSERT(cache_block->bcb_state == CACHE_INVALID);
+			ASSERT(cache_block->bcb_cache_transition ==
+			       TS_NONE);
+			ASSERT(cache_block->bcb_state == S_INVALID);
 			ASSERT(is_sector_number_invalid
 			       (cache_block->bcb_sector));
 		} else {
@@ -346,9 +346,9 @@ int cache_get_invalid_block_locked(struct bittern_cache *bc,
 		/*
 		 * found suitable cache block.
 		 */
-		ASSERT(cache_block->bcb_transition_path ==
-		       CACHE_TRANSITION_PATH_NONE);
-		ASSERT(cache_block->bcb_state == CACHE_INVALID);
+		ASSERT(cache_block->bcb_cache_transition ==
+		       TS_NONE);
+		ASSERT(cache_block->bcb_state == S_INVALID);
 		ASSERT(atomic_read(&cache_block->bcb_refcount) > 0);
 		ASSERT(is_sector_number_invalid(cache_block->bcb_sector));
 
@@ -360,10 +360,10 @@ int cache_get_invalid_block_locked(struct bittern_cache *bc,
 		 */
 		cache_block->bcb_sector = cache_block_sector;
 		if (cleandirty_iflag == CACHE_FL_CLEAN)
-			cache_block->bcb_state = CACHE_VALID_CLEAN_NO_DATA;
+			cache_block->bcb_state = S_CLEAN_NO_DATA;
 		else {
 			ASSERT(cleandirty_iflag == CACHE_FL_DIRTY);
-			cache_block->bcb_state = CACHE_VALID_DIRTY_NO_DATA;
+			cache_block->bcb_state = S_DIRTY_NO_DATA;
 		}
 		ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 
@@ -399,12 +399,12 @@ int cache_get_invalid_block_locked(struct bittern_cache *bc,
 			      &bc->bc_valid_entries_list);
 		/* all replacement modes */
 		list_del_init(&cache_block->bcb_entry_cleandirty);
-		if (cache_block->bcb_state == CACHE_VALID_CLEAN_NO_DATA) {
+		if (cache_block->bcb_state == S_CLEAN_NO_DATA) {
 			list_add_tail(&cache_block->bcb_entry_cleandirty,
 				      &bc->bc_valid_entries_clean_list);
 		} else {
 			ASSERT(cache_block->bcb_state ==
-			       CACHE_VALID_DIRTY_NO_DATA);
+			       S_DIRTY_NO_DATA);
 			list_add_tail(&cache_block->bcb_entry_cleandirty,
 				      &bc->bc_valid_entries_dirty_list);
 		}
@@ -531,7 +531,7 @@ enum cache_get_ret cache_get(struct bittern_cache *bc,
 		 */
 		ASSERT_CACHE_BLOCK(cache_block, bc);
 		ASSERT_BITTERN_CACHE(bc);
-		ASSERT(cache_block->bcb_state != CACHE_INVALID);
+		ASSERT(cache_block->bcb_state != S_INVALID);
 		ASSERT(cache_block_sector == cache_block->bcb_sector);
 
 		block_hold_ret = cache_block_hold(bc, cache_block);
@@ -540,14 +540,14 @@ enum cache_get_ret cache_get(struct bittern_cache *bc,
 			 * The following two asserts holds true if we own
 			 * the block, the opposite does not hold true though.
 			 */
-			ASSERT(cache_block->bcb_transition_path ==
-			       CACHE_TRANSITION_PATH_NONE);
+			ASSERT(cache_block->bcb_cache_transition ==
+			       TS_NONE);
 			/*
 			 * this holds true if we own the block --
 			 * the opposite does not hold true
 			 */
-			ASSERT(cache_block->bcb_state == CACHE_VALID_CLEAN ||
-			       cache_block->bcb_state == CACHE_VALID_DIRTY);
+			ASSERT(cache_block->bcb_state == S_CLEAN ||
+			       cache_block->bcb_state == S_DIRTY);
 			/*
 			 * check hash
 			 */
@@ -591,11 +591,11 @@ enum cache_get_ret cache_get(struct bittern_cache *bc,
 		 * replacements modes
 		 */
 		list_del_init(&cache_block->bcb_entry_cleandirty);
-		if (cache_block->bcb_state == CACHE_VALID_CLEAN) {
+		if (cache_block->bcb_state == S_CLEAN) {
 			list_add_tail(&cache_block->bcb_entry_cleandirty,
 				      &bc->bc_valid_entries_clean_list);
 		} else {
-			ASSERT(cache_block->bcb_state == CACHE_VALID_DIRTY);
+			ASSERT(cache_block->bcb_state == S_DIRTY);
 			list_add_tail(&cache_block->bcb_entry_cleandirty,
 				      &bc->bc_valid_entries_dirty_list);
 		}
@@ -725,7 +725,7 @@ int cache_get_dirty_from_head(struct bittern_cache *bc,
 	spin_lock_irqsave(&cache_block->bcb_spinlock, cache_flags);
 	block_hold_ret = cache_block_hold(bc, cache_block);
 	if (block_hold_ret == 1 &&
-	    cache_block->bcb_state == CACHE_VALID_DIRTY) {
+	    cache_block->bcb_state == S_DIRTY) {
 		/*
 		 * we now own the block
 		 */
@@ -756,7 +756,7 @@ int cache_get_dirty_from_head(struct bittern_cache *bc,
 		return -ETIME;
 	}
 
-	ASSERT(cache_block->bcb_state == CACHE_VALID_DIRTY);
+	ASSERT(cache_block->bcb_state == S_DIRTY);
 	ASSERT(atomic_read(&cache_block->bcb_refcount) > 0);
 
 	spin_unlock_irqrestore(&cache_block->bcb_spinlock, cache_flags);
@@ -836,7 +836,7 @@ enum cache_get_ret cache_get_by_id(struct bittern_cache *bc,
 		/*
 		 * block is free
 		 */
-		if (cache_block->bcb_state == CACHE_INVALID) {
+		if (cache_block->bcb_state == S_INVALID) {
 			/*
 			 * block is invalid
 			 */
@@ -849,10 +849,10 @@ enum cache_get_ret cache_get_by_id(struct bittern_cache *bc,
 		/*
 		 * block is valid and free
 		 */
-		ASSERT(cache_block->bcb_transition_path ==
-		       CACHE_TRANSITION_PATH_NONE);
-		ASSERT(cache_block->bcb_state == CACHE_VALID_CLEAN
-		       || cache_block->bcb_state == CACHE_VALID_DIRTY);
+		ASSERT(cache_block->bcb_cache_transition ==
+		       TS_NONE);
+		ASSERT(cache_block->bcb_state == S_CLEAN
+		       || cache_block->bcb_state == S_DIRTY);
 		ASSERT(atomic_read(&cache_block->bcb_refcount) > 0);
 		/*
 		 * check hash
@@ -891,13 +891,13 @@ void __cache_put(struct bittern_cache *bc, struct cache_block *cache_block,
 	BT_TRACE(BT_LEVEL_TRACE4, bc, NULL, cache_block, NULL, NULL,
 		 "put-block");
 	if (is_owner) {
-		ASSERT(cache_block->bcb_transition_path ==
-		       CACHE_TRANSITION_PATH_NONE);
-		ASSERT(cache_block->bcb_state == CACHE_INVALID ||
-		       cache_block->bcb_state == CACHE_VALID_CLEAN ||
-		       cache_block->bcb_state == CACHE_VALID_DIRTY);
-		if (cache_block->bcb_state == CACHE_VALID_CLEAN ||
-		    cache_block->bcb_state == CACHE_VALID_DIRTY) {
+		ASSERT(cache_block->bcb_cache_transition ==
+		       TS_NONE);
+		ASSERT(cache_block->bcb_state == S_INVALID ||
+		       cache_block->bcb_state == S_CLEAN ||
+		       cache_block->bcb_state == S_DIRTY);
+		if (cache_block->bcb_state == S_CLEAN ||
+		    cache_block->bcb_state == S_DIRTY) {
 			/*
 			 * check hash
 			 */
@@ -928,9 +928,9 @@ void cache_move_to_invalid(struct bittern_cache *bc,
 	/*
 	 * cache_block needs to be in a transitional state
 	 */
-	ASSERT(cache_block->bcb_state != CACHE_VALID_DIRTY &&
-	       cache_block->bcb_state != CACHE_VALID_CLEAN &&
-	       cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(cache_block->bcb_state != S_DIRTY &&
+	       cache_block->bcb_state != S_CLEAN &&
+	       cache_block->bcb_state != S_INVALID);
 
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 
@@ -950,8 +950,8 @@ void cache_move_to_invalid(struct bittern_cache *bc,
 
 	cache_state_transition_final(bc,
 				     cache_block,
-				     CACHE_TRANSITION_PATH_NONE,
-				     CACHE_INVALID);
+				     TS_NONE,
+				     S_INVALID);
 	if (is_dirty)
 		atomic_dec(&bc->bc_valid_entries_dirty);
 	else
@@ -1003,9 +1003,9 @@ void cache_move_to_clean(struct bittern_cache *bc,
 	/*
 	 * cache_block needs to be in a transitional state
 	 */
-	ASSERT(cache_block->bcb_state != CACHE_VALID_DIRTY &&
-	       cache_block->bcb_state != CACHE_VALID_CLEAN &&
-	       cache_block->bcb_state != CACHE_INVALID);
+	ASSERT(cache_block->bcb_state != S_DIRTY &&
+	       cache_block->bcb_state != S_CLEAN &&
+	       cache_block->bcb_state != S_INVALID);
 	/*
 	 * DIRTY STATE --> VALID_CLEAN
 	 */
@@ -1017,8 +1017,8 @@ void cache_move_to_clean(struct bittern_cache *bc,
 	 */
 	cache_state_transition_final(bc,
 				     cache_block,
-				     CACHE_TRANSITION_PATH_NONE,
-				     CACHE_VALID_CLEAN);
+				     TS_NONE,
+				     S_CLEAN);
 	/* move to clean list */
 	list_del_init(&cache_block->bcb_entry_cleandirty);
 	list_add_tail(&cache_block->bcb_entry_cleandirty,

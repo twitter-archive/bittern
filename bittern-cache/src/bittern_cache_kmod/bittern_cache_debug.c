@@ -70,9 +70,9 @@ void cache_dump_blocks_cache_state(struct bittern_cache *bc,
 		 * -1 means we want to dump busy blocks
 		 */
 		if (cache_state == -1 &&
-		    cache_block->bcb_state != CACHE_INVALID &&
-		    cache_block->bcb_state != CACHE_VALID_CLEAN &&
-		    cache_block->bcb_state != CACHE_VALID_DIRTY)
+		    cache_block->bcb_state != S_INVALID &&
+		    cache_block->bcb_state != S_CLEAN &&
+		    cache_block->bcb_state != S_DIRTY)
 			do_print = 1;
 		else if (cache_state == cache_block->bcb_state)
 			do_print = 1;
@@ -206,12 +206,12 @@ int cache_dump_blocks(struct bittern_cache *bc,
 	 */
 	if (strcmp(dump_op, "clean") == 0)
 		cache_dump_blocks_cache_state(bc,
-					      CACHE_VALID_CLEAN,
+					      S_CLEAN,
 					      "clean",
 					      dump_offset);
 	else if (strcmp(dump_op, "dirty") == 0)
 		cache_dump_blocks_cache_state(bc,
-					      CACHE_VALID_DIRTY,
+					      S_DIRTY,
 					      "dirty",
 					      dump_offset);
 	else if (strcmp(dump_op, "busy") == 0)
@@ -266,9 +266,9 @@ void cache_walk_redblack(struct bittern_cache *bc)
 		ASSERT_CACHE_BLOCK(cache_block, bc);
 		BT_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, NULL, NULL,
 			 "cache_block walk");
-		if (cache_block->bcb_state == CACHE_VALID_CLEAN)
+		if (cache_block->bcb_state == S_CLEAN)
 			valid_clean_count++;
-		else if (cache_block->bcb_state == CACHE_VALID_DIRTY)
+		else if (cache_block->bcb_state == S_DIRTY)
 			valid_dirty_count++;
 		else
 			valid_busy_count++;
@@ -379,7 +379,7 @@ void cache_invalidate_blocks(struct bittern_cache *bc)
 			invalidated_count++;
 			ASSERT(cache_block != NULL);
 			ASSERT_CACHE_BLOCK(cache_block, bc);
-			if (cache_block->bcb_state == CACHE_VALID_CLEAN) {
+			if (cache_block->bcb_state == S_CLEAN) {
 				BT_TRACE(BT_LEVEL_TRACE1, bc, NULL,
 					 cache_block, NULL, NULL,
 					 "invalidating clean block id #%d",
@@ -392,7 +392,7 @@ void cache_invalidate_blocks(struct bittern_cache *bc)
 					 "block id #%d is dirty -- skipping",
 					 cache_block->bcb_block_id);
 				ASSERT(cache_block->bcb_state ==
-				       CACHE_VALID_DIRTY);
+				       S_DIRTY);
 				cache_put(bc, cache_block, 1);
 			}
 			schedule();

@@ -34,16 +34,16 @@ void cache_bgwriter_io_endio(struct bittern_cache *bc,
 	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, NULL, NULL,
 		 "writeback-done");
 	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITEBACK_UPDATE_METADATA_END
+	       S_DIRTY_WRITEBACK_UPDATE_METADATA_END
 	       || cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITEBACK_INV_UPDATE_METADATA_END);
+	       S_DIRTY_WRITEBACK_INV_UPDATE_METADATA_END);
 
 	ASSERT((wi->wi_flags & WI_FLAG_WRITEBACK_IO) != 0);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
 	ASSERT(cache_block_is_held(bc, cache_block));
 
 	if (cache_block->bcb_state ==
-	    CACHE_VALID_DIRTY_WRITEBACK_INV_UPDATE_METADATA_END) {
+	    S_DIRTY_WRITEBACK_INV_UPDATE_METADATA_END) {
 		/*
 		 * move to invalid list
 		 */
@@ -139,7 +139,7 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 		case CACHE_GET_RET_HIT_IDLE:
 			ASSERT(cache_block != NULL);
 			ASSERT_CACHE_BLOCK(cache_block, bc);
-			if (cache_block->bcb_state == CACHE_VALID_CLEAN) {
+			if (cache_block->bcb_state == S_CLEAN) {
 				/*
 				 * block is not dirty, release
 				 */
@@ -173,18 +173,18 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 	 * flush and invalidate from here.
 	 */
 	if (cache_invalidator_has_work_schmitt(bc)) {
-		update_state = CACHE_INVALID;
-		printk_debug_ratelimited("bgwriter: flushing and invalidating block_id #%u, sector=%lu\n",
-					 cache_block->bcb_block_id,
-					 cache_block->bcb_sector);
+		update_state = S_INVALID;
+		printk_info_ratelimited("bgwriter: flushing and invalidating block_id #%u, sector=%lu\n",
+			       cache_block->bcb_block_id,
+			       cache_block->bcb_sector);
 	} else {
-		update_state = CACHE_VALID_CLEAN;
-		printk_debug_ratelimited("bgwriter: flushing block_id #%u, sector=%lu\n",
-					 cache_block->bcb_block_id,
-					 cache_block->bcb_sector);
+		update_state = S_CLEAN;
+		printk_info_ratelimited("bgwriter: flushing block_id #%u, sector=%lu\n",
+			    cache_block->bcb_block_id,
+			    cache_block->bcb_sector);
 	}
 
-	ASSERT(cache_block->bcb_state == CACHE_VALID_DIRTY);
+	ASSERT(cache_block->bcb_state == S_DIRTY);
 	ASSERT(atomic_read(&cache_block->bcb_refcount) > 0);
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 
@@ -196,24 +196,24 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 	 * during the next scan (which means in the end_io we do nothing)
 	 */
 	list_del_init(&cache_block->bcb_entry_cleandirty);
-	if (update_state == CACHE_INVALID) {
+	if (update_state == S_INVALID) {
 		/* also remove from valid list */
 		list_del_init(&cache_block->bcb_entry);
 		/*
-		 * VALID_DIRTY --> VALID_DIRTY_WRITEBACK_INV_COPY_TO_DEVICE
+		 * VALID_DIRTY --> VALID_DIRTY_WRITEBACK_INV_CPT_DEVICE
 		 */
 		cache_state_transition_initial(bc,
-					       cache_block,
-					       CACHE_TRANSITION_PATH_WRITEBACK_INV_WB,
-					       CACHE_VALID_DIRTY_WRITEBACK_INV_COPY_FROM_CACHE_START);
+					cache_block,
+					TS_WRITEBACK_INV_WB,
+					S_DIRTY_WRITEBACK_INV_CPF_CACHE_START);
 	} else {
 		/*
-		 * VALID_DIRTY --> VALID_DIRTY_WRITEBACK_COPY_TO_DEVICE
+		 * VALID_DIRTY --> VALID_DIRTY_WRITEBACK_CPT_DEVICE
 		 */
 		cache_state_transition_initial(bc,
-					       cache_block,
-					       CACHE_TRANSITION_PATH_WRITEBACK_WB,
-					       CACHE_VALID_DIRTY_WRITEBACK_COPY_FROM_CACHE_START);
+					cache_block,
+					TS_WRITEBACK_WB,
+					S_DIRTY_WRITEBACK_CPF_CACHE_START);
 	}
 	spin_unlock_irqrestore(&cache_block->bcb_spinlock, cache_flags);
 	spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
@@ -256,7 +256,7 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 	atomic_inc(&bc->bc_writebacks);
 	atomic_inc(&bc->bc_pending_writeback_requests);
 	atomic_inc(&bc->bc_pending_requests);
-	if (update_state == CACHE_INVALID) {
+	if (update_state == S_INVALID) {
 		int val;
 		atomic_inc(&bc->bc_writebacks_invalid);
 		atomic_inc(&bc->bc_invalidations);
@@ -280,7 +280,7 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 	 * kick off state machine to write this out.
 	 * cache_bgwriter_io_endio() will be called on completion.
 	 */
-	if (update_state == CACHE_INVALID)
+	if (update_state == S_INVALID)
 		work_item_add_pending_io(bc,
 					 wi,
 					 'W',

@@ -37,25 +37,20 @@ void sm_writeback_copy_from_cache_start(struct bittern_cache *bc,
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "writeback-copy-from-cache-start");
 
-	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITEBACK_COPY_FROM_CACHE_START
-	       || cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITEBACK_INV_COPY_FROM_CACHE_START);
-	if (cache_block->bcb_state ==
-	    CACHE_VALID_DIRTY_WRITEBACK_COPY_FROM_CACHE_START)
-		cache_state_transition3(
-			bc,
-			cache_block,
-			CACHE_TRANSITION_PATH_WRITEBACK_WB,
-			CACHE_VALID_DIRTY_WRITEBACK_COPY_FROM_CACHE_START,
-			CACHE_VALID_DIRTY_WRITEBACK_COPY_FROM_CACHE_END);
+	ASSERT(cache_block->bcb_state == S_DIRTY_WRITEBACK_CPF_CACHE_START ||
+	       cache_block->bcb_state == S_DIRTY_WRITEBACK_INV_CPF_CACHE_START);
+	if (cache_block->bcb_state == S_DIRTY_WRITEBACK_CPF_CACHE_START)
+		cache_state_transition3(bc,
+					cache_block,
+					TS_WRITEBACK_WB,
+					S_DIRTY_WRITEBACK_CPF_CACHE_START,
+					S_DIRTY_WRITEBACK_CPF_CACHE_END);
 	else
-		cache_state_transition3(
-			bc,
-			cache_block,
-			CACHE_TRANSITION_PATH_WRITEBACK_INV_WB,
-			CACHE_VALID_DIRTY_WRITEBACK_INV_COPY_FROM_CACHE_START,
-			CACHE_VALID_DIRTY_WRITEBACK_INV_COPY_FROM_CACHE_END);
+		cache_state_transition3(bc,
+					cache_block,
+					TS_WRITEBACK_INV_WB,
+					S_DIRTY_WRITEBACK_INV_CPF_CACHE_START,
+					S_DIRTY_WRITEBACK_INV_CPF_CACHE_END);
 
 	pmem_data_get_page_read(bc,
 				cache_block,
@@ -83,12 +78,10 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 	ASSERT(wi->wi_original_cache_block == NULL);
 	cache_block = wi->wi_cache_block;
 
-	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITEBACK_COPY_FROM_CACHE_END
-	       || cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITEBACK_INV_COPY_FROM_CACHE_END);
-	ASSERT(bc->bc_enable_extra_checksum_check == 0
-	       || bc->bc_enable_extra_checksum_check == 1);
+	ASSERT(cache_block->bcb_state == S_DIRTY_WRITEBACK_CPF_CACHE_END ||
+	       cache_block->bcb_state == S_DIRTY_WRITEBACK_INV_CPF_CACHE_END);
+	ASSERT(bc->bc_enable_extra_checksum_check == 0 ||
+	       bc->bc_enable_extra_checksum_check == 1);
 
 	cache_page = pmem_context_data_page(&wi->wi_pmem_ctx);
 
@@ -121,21 +114,18 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT_WORK_ITEM(wi, bc);
 
-	if (cache_block->bcb_state ==
-	    CACHE_VALID_DIRTY_WRITEBACK_COPY_FROM_CACHE_END)
-		cache_state_transition3(
-			bc,
-			cache_block,
-			CACHE_TRANSITION_PATH_WRITEBACK_WB,
-			CACHE_VALID_DIRTY_WRITEBACK_COPY_FROM_CACHE_END,
-			CACHE_VALID_DIRTY_WRITEBACK_COPY_TO_DEVICE_ENDIO);
+	if (cache_block->bcb_state == S_DIRTY_WRITEBACK_CPF_CACHE_END)
+		cache_state_transition3(bc,
+					cache_block,
+					TS_WRITEBACK_WB,
+					S_DIRTY_WRITEBACK_CPF_CACHE_END,
+					S_DIRTY_WRITEBACK_CPT_DEVICE_ENDIO);
 	else
-		cache_state_transition3(
-			bc,
-			cache_block,
-			CACHE_TRANSITION_PATH_WRITEBACK_INV_WB,
-			CACHE_VALID_DIRTY_WRITEBACK_INV_COPY_FROM_CACHE_END,
-			CACHE_VALID_DIRTY_WRITEBACK_INV_COPY_TO_DEVICE_ENDIO);
+		cache_state_transition3(bc,
+					cache_block,
+					TS_WRITEBACK_INV_WB,
+					S_DIRTY_WRITEBACK_INV_CPF_CACHE_END,
+					S_DIRTY_WRITEBACK_INV_CPT_DEVICE_ENDIO);
 
 	atomic_inc(&bc->bc_write_cached_device_requests);
 	val = atomic_inc_return(&bc->bc_pending_cached_device_requests);
@@ -168,10 +158,9 @@ void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,
 
 	atomic_dec(&bc->bc_pending_cached_device_requests);
 
-	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITEBACK_COPY_TO_DEVICE_ENDIO
-	       || cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITEBACK_INV_COPY_TO_DEVICE_ENDIO);
+	ASSERT(cache_block->bcb_state == S_DIRTY_WRITEBACK_CPT_DEVICE_ENDIO ||
+	       cache_block->bcb_state ==
+	       S_DIRTY_WRITEBACK_INV_CPT_DEVICE_ENDIO);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "writeback-copy-to-device-endio");
@@ -187,26 +176,23 @@ void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT_WORK_ITEM(wi, bc);
 
-	if (cache_block->bcb_state ==
-	    CACHE_VALID_DIRTY_WRITEBACK_COPY_TO_DEVICE_ENDIO)
-		metadata_state = CACHE_VALID_CLEAN;
+	if (cache_block->bcb_state == S_DIRTY_WRITEBACK_CPT_DEVICE_ENDIO)
+		metadata_state = S_CLEAN;
 	else
-		metadata_state = CACHE_INVALID;
+		metadata_state = S_INVALID;
 
-	if (cache_block->bcb_state ==
-	    CACHE_VALID_DIRTY_WRITEBACK_COPY_TO_DEVICE_ENDIO)
-		cache_state_transition3(
-			bc, cache_block,
-			CACHE_TRANSITION_PATH_WRITEBACK_WB,
-			CACHE_VALID_DIRTY_WRITEBACK_COPY_TO_DEVICE_ENDIO,
-			CACHE_VALID_DIRTY_WRITEBACK_UPDATE_METADATA_END);
+	if (cache_block->bcb_state == S_DIRTY_WRITEBACK_CPT_DEVICE_ENDIO)
+		cache_state_transition3(bc,
+				cache_block,
+				TS_WRITEBACK_WB,
+				S_DIRTY_WRITEBACK_CPT_DEVICE_ENDIO,
+				S_DIRTY_WRITEBACK_UPDATE_METADATA_END);
 	else
-		cache_state_transition3(
-			bc,
-			cache_block,
-			CACHE_TRANSITION_PATH_WRITEBACK_INV_WB,
-			CACHE_VALID_DIRTY_WRITEBACK_INV_COPY_TO_DEVICE_ENDIO,
-			CACHE_VALID_DIRTY_WRITEBACK_INV_UPDATE_METADATA_END);
+		cache_state_transition3(bc,
+				cache_block,
+				TS_WRITEBACK_INV_WB,
+				S_DIRTY_WRITEBACK_INV_CPT_DEVICE_ENDIO,
+				S_DIRTY_WRITEBACK_INV_UPDATE_METADATA_END);
 
 	/*
 	 * start updating metadata
@@ -236,9 +222,9 @@ void sm_writeback_update_metadata_end(struct bittern_cache *bc,
 	cache_block = wi->wi_cache_block;
 
 	ASSERT(cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITEBACK_UPDATE_METADATA_END
-	       || cache_block->bcb_state ==
-	       CACHE_VALID_DIRTY_WRITEBACK_INV_UPDATE_METADATA_END);
+	       S_DIRTY_WRITEBACK_UPDATE_METADATA_END ||
+	       cache_block->bcb_state ==
+	       S_DIRTY_WRITEBACK_INV_UPDATE_METADATA_END);
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "writeback-update-metadata-end, wi_io_endio=%p",
 		 wi->wi_io_endio);

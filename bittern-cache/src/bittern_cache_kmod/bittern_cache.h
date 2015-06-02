@@ -325,8 +325,8 @@ struct work_item {
 })
 #define is_work_item_mode_writeback(__wi) ((__wi)->wi_cache_mode_writeback)
 
-extern const char *transition_path_to_str(enum
-							transition_path
+extern const char *cache_transition_to_str(enum
+							cache_transition
 							path);
 extern const char *cache_state_to_str(enum cache_state state);
 
@@ -368,7 +368,7 @@ struct cache_block {
 	/*! red-black tree node */
 	struct rb_node bcb_rb_node;
 	enum cache_state bcb_state:8;
-	enum transition_path bcb_transition_path:8;
+	enum cache_transition bcb_cache_transition:8;
 	uint32_t bcb_magic3;
 };
 
@@ -785,7 +785,7 @@ struct bittern_cache {
 	atomic_t bc_tracked_hashes_bad;
 #endif /*ENABLE_TRACK_CRC32C */
 
-	atomic_t bc_transition_paths_counters[__CACHE_TRANSITION_PATHS_NUM];
+	atomic_t bc_cache_transitions_counters[__TS_NUM];
 	atomic_t bc_cache_states_counters[__CACHE_STATES_NUM];
 
 	/*! deferred queue, cases 1 and 2. see @ref (doxy_deferredqueues.md) */
@@ -975,27 +975,28 @@ static inline const char *cache_mode_to_str(struct bittern_cache *bc)
 	ASSERT(CACHE_STATE_VALID((__bcb)->bcb_state));                                \
 })
 
-#define ASSERT_TRANSITION_PATH_VALID(__bcb) ({                                  \
-	/* make sure it's an l-value. compiler will optimize this away */                     \
-	__bcb = (__bcb);								      \
-	ASSERT((__bcb) != NULL);                                                              \
-	ASSERT(CACHE_TRANSITION_PATH_VALID((__bcb)->bcb_transition_path));            \
+#define ASSERT_CACHE_TRANSITION_VALID(__bcb) ({				\
+	/* make sure it's l-value. compiler will optimize this away */	\
+	__bcb = (__bcb);						\
+	ASSERT((__bcb) != NULL);					\
+	ASSERT(CACHE_TRANSITION_VALID((__bcb)->bcb_cache_transition));	\
 })
 
-#define __ASSERT_CACHE_BLOCK(__bcb, __bc) ({                                          \
-	/* this makes sure __bcb is an l-value -- compiler will optimize this out */          \
-	__bcb = (__bcb);								      \
-	/* this makes sure __bc is an l-value -- compiler will optimize this out */           \
-	__bc = (__bc);                                                                        \
-	ASSERT((__bc) != NULL);                                                               \
-	ASSERT((__bcb) != NULL);                                                              \
-	ASSERT((__bcb)->bcb_magic1 == BCB_MAGIC1);                                            \
-	ASSERT((__bcb)->bcb_magic3 == BCB_MAGIC3);                                            \
-	ASSERT(atomic_read(&(__bcb)->bcb_refcount) >= 0);                                     \
-	ASSERT_CACHE_STATE(__bcb);                                                    \
-	ASSERT_TRANSITION_PATH_VALID(__bcb);                                    \
-	/* block_id starts from 1, array starts from 0 */                                     \
-	ASSERT(&(__bc)->bc_cache_blocks[(__bcb)->bcb_block_id - 1] == (__bcb));               \
+#define __ASSERT_CACHE_BLOCK(__bcb, __bc) ({				\
+	/* make sure it's l-value. compiler will optimize this away */	\
+	__bcb = (__bcb);						\
+	/* make sure it's l-value. compiler will optimize this away */	\
+	__bc = (__bc);                                                  \
+	ASSERT((__bc) != NULL);                                         \
+	ASSERT((__bcb) != NULL);                                        \
+	ASSERT((__bcb)->bcb_magic1 == BCB_MAGIC1);                      \
+	ASSERT((__bcb)->bcb_magic3 == BCB_MAGIC3);                      \
+	ASSERT(atomic_read(&(__bcb)->bcb_refcount) >= 0);               \
+	ASSERT_CACHE_STATE(__bcb);                                      \
+	ASSERT_CACHE_TRANSITION_VALID(__bcb);                           \
+	/* block_id starts from 1, array starts from 0 */               \
+	ASSERT(&(__bc)->bc_cache_blocks[(__bcb)->bcb_block_id - 1] ==	\
+	       (__bcb));						\
 })
 
 #define ASSERT_CACHE_BLOCK(__bcb, __bc) ({                                            \

@@ -175,72 +175,109 @@ extern int __cache_validate_state_transition(struct bittern_cache *bc,
 					     struct cache_block *cache_block,
 					     const char *___function,
 					     int ___line,
-					     enum transition_path p_from,
+					     enum cache_transition p_from,
 					     enum cache_state s_from,
-					     enum transition_path p_to,
+					     enum cache_transition p_to,
 					     enum cache_state  s_to);
 #else /*ENABLE_ASSERT */
 #define __cache_validate_state_transition(__bc, __cb, __func, __line, __p_from, __s_from, __p_to, __s_to) (0)
 #endif /*ENABLE_ASSERT */
 
-#define __cache_state_transition(__bc, __bcb, __p_from, __s_from, __p_to, __s_to) ({                            \
-	int __ret;                                                                                                      \
-	__bcb = (__bcb); /* this makes sure __bcb is an l-value -- compiler will optimize this out */                   \
-	__bc = (__bc); /* this makes sure __bc is an l-value -- compiler will optimize this out */                      \
-	ASSERT_BITTERN_CACHE(__bc);                                                                                     \
-	ASSERT_CACHE_BLOCK(__bcb, __bc);                                                                        \
-	ASSERT(CACHE_TRANSITION_PATH_VALID(__p_from));                                                          \
-	ASSERT(CACHE_TRANSITION_PATH_VALID(__p_to));                                                            \
-	ASSERT(CACHE_STATE_VALID(__s_from));                                                                    \
-	ASSERT(CACHE_STATE_VALID(__s_to));                                                                      \
-	__ret = __cache_validate_state_transition((__bc), (__bcb),                                              \
-						__func__, __LINE__,                                                     \
-						(__p_from), (__s_from),                                                 \
-						(__p_to), (__s_to));                                                    \
-	ASSERT(__p_from == (__bcb)->bcb_transition_path);                                                               \
-	ASSERT(__s_from == (__bcb)->bcb_state);                                                                         \
-	(__bcb)->bcb_transition_path = (__p_to);                                                                        \
-	(__bcb)->bcb_state = (__s_to);                                                                                  \
-	ASSERT(__ret == 0);                                                                                             \
-	atomic_inc(&(__bc)->bc_transition_paths_counters[__p_to]);                                                \
-	atomic_inc(&(__bc)->bc_cache_states_counters[__s_to]);                                                          \
+#define __cache_state_transition(__bc, __bcb,				\
+				 __p_from, __s_from, __p_to, __s_to) ({	\
+	int __ret;							\
+	/* make sure it's l-value -- compiler will optimize it out */	\
+	__bcb = (__bcb);						\
+	/* make sure it's l-value -- compiler will optimize it out */	\
+	__bc = (__bc);							\
+	ASSERT_BITTERN_CACHE(__bc);					\
+	ASSERT_CACHE_BLOCK(__bcb, __bc);				\
+	ASSERT(CACHE_TRANSITION_VALID(__p_from));			\
+	ASSERT(CACHE_TRANSITION_VALID(__p_to));				\
+	ASSERT(CACHE_STATE_VALID(__s_from));				\
+	ASSERT(CACHE_STATE_VALID(__s_to));				\
+	__ret = __cache_validate_state_transition((__bc), (__bcb),	\
+						  __func__, __LINE__,	\
+						  (__p_from),		\
+						  (__s_from),		\
+						  (__p_to),		\
+						  (__s_to));		\
+	ASSERT(__p_from == (__bcb)->bcb_cache_transition);		\
+	ASSERT(__s_from == (__bcb)->bcb_state);				\
+	(__bcb)->bcb_cache_transition = (__p_to);			\
+	(__bcb)->bcb_state = (__s_to);					\
+	ASSERT(__ret == 0);						\
+	atomic_inc(&(__bc)->bc_cache_transitions_counters[__p_to]);	\
+	atomic_inc(&(__bc)->bc_cache_states_counters[__s_to]);		\
 })
-#define cache_state_transition_initial(__bc, __bcb, __p_to, __s_to) ({                                          \
-	__bcb = (__bcb); /* this makes sure __bcb is an l-value -- compiler will optimize this out */                   \
-	__bc = (__bc); /* this makes sure __bc is an l-value -- compiler will optimize this out */                      \
-	ASSERT(__bcb->bcb_state == CACHE_VALID_CLEAN_NO_DATA ||                                                 \
-		__bcb->bcb_state == CACHE_VALID_DIRTY_NO_DATA ||                                                \
-		__bcb->bcb_state == CACHE_VALID_CLEAN ||                                                        \
-		__bcb->bcb_state == CACHE_VALID_DIRTY);                                                         \
-	__cache_state_transition(__bc, __bcb, __bcb->bcb_transition_path, __bcb->bcb_state, __p_to, __s_to);    \
+#define cache_state_transition_initial(__bc, __bcb, __p_to, __s_to) ({	\
+	/* make sure it's l-value -- compiler will optimize it out */	\
+	__bcb = (__bcb);						\
+	/* make sure it's l-value -- compiler will optimize it out */	\
+	__bc = (__bc);							\
+	ASSERT(__bcb->bcb_state == S_CLEAN_NO_DATA ||			\
+		__bcb->bcb_state == S_DIRTY_NO_DATA ||			\
+		__bcb->bcb_state == S_CLEAN ||				\
+		__bcb->bcb_state == S_DIRTY);				\
+	__cache_state_transition(__bc,					\
+				 __bcb,					\
+				 __bcb->bcb_cache_transition,		\
+				 __bcb->bcb_state,			\
+				 __p_to,				\
+				 __s_to);				\
 })
-#define cache_state_transition3(__bc, __bcb, __p_path, __s_from, __s_to) ({                                     \
-	__bcb = (__bcb); /* this makes sure __bcb is an l-value -- compiler will optimize this out */                   \
-	__bc = (__bc); /* this makes sure __bc is an l-value -- compiler will optimize this out */                      \
-	__cache_state_transition(__bc, __bcb, __p_path, __s_from, __p_path, __s_to);                            \
+#define cache_state_transition3(__bc, __bcb, __p_path, __s_from, __s_to)\
+({									\
+	/* make sure it's l-value -- compiler will optimize it out */	\
+	__bcb = (__bcb);						\
+	/* make sure it's l-value -- compiler will optimize it out */	\
+	__bc = (__bc);							\
+	__cache_state_transition(__bc,					\
+				 __bcb,					\
+				 __p_path,				\
+				 __s_from,				\
+				 __p_path,				\
+				 __s_to);				\
 })
-#define cache_state_transition2(__bc, __bcb, __s_from, __s_to) ({                                               \
-	__bcb = (__bcb); /* this makes sure __bcb is an l-value -- compiler will optimize this out */                   \
-	__bc = (__bc); /* this makes sure __bc is an l-value -- compiler will optimize this out */                      \
-	__cache_state_transition(__bc, __bcb,                                                                   \
-					__bcb->bcb_transition_path, __s_from,                                           \
-					__bcb->bcb_transition_path, __s_to);                                            \
+#define cache_state_transition2(__bc, __bcb, __s_from, __s_to) ({	\
+	/* make sure it's l-value -- compiler will optimize it out */	\
+	__bcb = (__bcb);						\
+	/* make sure it's l-value -- compiler will optimize it out */	\
+	__bc = (__bc);							\
+	__cache_state_transition(__bc,					\
+				 __bcb,					\
+				 __bcb->bcb_cache_transition,		\
+				 __s_from,				\
+				 __bcb->bcb_cache_transition,		\
+				 __s_to);				\
 })
-#define cache_state_transition(__bc, __bcb, __s_to) ({                                                          \
-	__bcb = (__bcb); /* this makes sure __bcb is an l-value -- compiler will optimize this out */                   \
-	__bc = (__bc); /* this makes sure __bc is an l-value -- compiler will optimize this out */                      \
-	__cache_state_transition(__bc, __bcb,                                                                   \
-					__bcb->bcb_transition_path, __bcb->bcb_state,                                   \
-					__bcb->bcb_transition_path, __s_to);                                            \
+#define cache_state_transition(__bc, __bcb, __s_to) ({			\
+	/* make sure it's l-value -- compiler will optimize it out */	\
+	__bcb = (__bcb);						\
+	/* make sure it's l-value -- compiler will optimize it out */	\
+	__bc = (__bc);							\
+	__cache_state_transition(__bc,					\
+				 __bcb,					\
+				 __bcb->bcb_cache_transition,		\
+				 __bcb->bcb_state,			\
+				 __bcb->bcb_cache_transition,		\
+				 __s_to);				\
 })
-#define cache_state_transition_final(__bc, __bcb, __p_to, __s_to) ({                                            \
-	__bcb = (__bcb); /* this makes sure __bcb is an l-value -- compiler will optimize this out */                   \
-	__bc = (__bc); /* this makes sure __bc is an l-value -- compiler will optimize this out */                      \
-	ASSERT(__p_to == CACHE_TRANSITION_PATH_NONE);                                                           \
-	ASSERT(__s_to == CACHE_INVALID ||                                                                       \
-		__s_to == CACHE_VALID_CLEAN ||                                                                  \
-		__s_to == CACHE_VALID_DIRTY);                                                                   \
-	__cache_state_transition(__bc, __bcb, __bcb->bcb_transition_path, __bcb->bcb_state, __p_to, __s_to);    \
+#define cache_state_transition_final(__bc, __bcb, __p_to, __s_to) ({	\
+	/* make sure it's l-value -- compiler will optimize it out */	\
+	__bcb = (__bcb);						\
+	/* make sure it's l-value -- compiler will optimize it out */	\
+	__bc = (__bc);							\
+	ASSERT(__p_to == TS_NONE);					\
+	ASSERT(__s_to == S_INVALID ||					\
+		__s_to == S_CLEAN ||					\
+		__s_to == S_DIRTY);					\
+	__cache_state_transition(__bc,					\
+				__bcb,					\
+				__bcb->bcb_cache_transition,		\
+				__bcb->bcb_state,			\
+				__p_to,					\
+				__s_to);				\
 })
 
 /*! \todo

@@ -118,7 +118,7 @@ int cache_block_verify(struct bittern_cache *bc, int block_id,
 			 UINT128_ARG(pmbm->pmbm_hash_metadata),
 			 UINT128_ARG(pmbm->pmbm_hash_data));
 		if (pmbm->pmbm_block_id != cache_block->bcb_block_id ||
-		    pmbm->pmbm_status != CACHE_VALID_CLEAN ||
+		    pmbm->pmbm_status != S_CLEAN ||
 		    pmbm->pmbm_device_sector != cache_block->bcb_sector) {
 			BT_TRACE(BT_LEVEL_TRACE0, bc, NULL, cache_block, NULL,
 				 NULL,
@@ -366,19 +366,19 @@ void cache_block_verifier(struct bittern_cache *bc)
 			 */
 			M_ASSERT(cache_block != NULL);
 			ASSERT_CACHE_BLOCK(cache_block, bc);
-			if (cache_block->bcb_state == CACHE_VALID_CLEAN) {
+			if (cache_block->bcb_state == S_CLEAN) {
 				unsigned long cache_flags;
 
-				M_ASSERT(cache_block->bcb_transition_path ==
-					 CACHE_TRANSITION_PATH_NONE);
+				M_ASSERT(cache_block->bcb_cache_transition ==
+					 TS_NONE);
 
 				spin_lock_irqsave(&cache_block->bcb_spinlock,
 						  cache_flags);
 				cache_state_transition_initial(
 					bc,
 					cache_block,
-					CACHE_TRANSITION_PATH_VERIFY_CLEAN_WTWB,
-					CACHE_VALID_CLEAN_VERIFY);
+					TS_VERIFY_CLEAN_WTWB,
+					S_CLEAN_VERIFY);
 				spin_unlock_irqrestore(&cache_block->
 						       bcb_spinlock,
 						       cache_flags);
@@ -425,8 +425,8 @@ void cache_block_verifier(struct bittern_cache *bc)
 				cache_state_transition_final(
 					bc,
 					cache_block,
-					CACHE_TRANSITION_PATH_NONE,
-					CACHE_VALID_CLEAN);
+					TS_NONE,
+					S_CLEAN);
 				spin_unlock_irqrestore(&cache_block->
 						       bcb_spinlock,
 						       cache_flags);

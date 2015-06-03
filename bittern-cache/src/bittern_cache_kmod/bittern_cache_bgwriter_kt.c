@@ -172,17 +172,10 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 	 * so if we are very close to kick the invalidator, we'd rather
 	 * flush and invalidate from here.
 	 */
-	if (cache_invalidator_has_work_schmitt(bc)) {
+	if (cache_invalidator_has_work_schmitt(bc))
 		update_state = S_INVALID;
-		printk_info_ratelimited("bgwriter: flushing and invalidating block_id #%u, sector=%lu\n",
-			       cache_block->bcb_block_id,
-			       cache_block->bcb_sector);
-	} else {
+	else
 		update_state = S_CLEAN;
-		printk_info_ratelimited("bgwriter: flushing block_id #%u, sector=%lu\n",
-			    cache_block->bcb_block_id,
-			    cache_block->bcb_sector);
-	}
 
 	ASSERT(cache_block->bcb_state == S_DIRTY);
 	ASSERT(atomic_read(&cache_block->bcb_refcount) > 0);

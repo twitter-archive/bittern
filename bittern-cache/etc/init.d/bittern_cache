@@ -133,7 +133,7 @@ start_cache() {
         #
         # setup cache
         #
-        SETUP_ARGUMENTS="-d $BITTERN_CACHED_DEVICE -n $BITTERN_CACHE_NAME -t $BITTERN_CACHE_TYPE --ignore-already-setup"
+        SETUP_ARGUMENTS="-d $BITTERN_CACHED_DEVICE -n $BITTERN_CACHE_NAME --ignore-already-setup"
         if [ ! -z "$BITTERN_CACHE_DEVICE" ]
         then
                 SETUP_ARGUMENTS="$SETUP_ARGUMENTS -c $BITTERN_CACHE_DEVICE"

@@ -38,26 +38,15 @@ sm_clean_pwrite_hit_copy_from_cache_start(struct bittern_cache *bc,
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(wi->wi_cache == bc);
-	ASSERT(cache_block->bcb_state == S_CLEAN_P_WRITE_HIT_CPF_CACHE_START ||
-	       cache_block->bcb_state == S_DIRTY_P_WRITE_HIT_CPF_CACHE_START);
+	ASSERT(cache_block->bcb_state == S_CLEAN_P_WRITE_HIT_CPF_CACHE_START);
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
-	if (cache_block->bcb_state == S_CLEAN_P_WRITE_HIT_CPF_CACHE_START) {
-		cache_state_transition3(bc,
-					cache_block,
-					TS_P_WRITE_HIT_WT,
-					S_CLEAN_P_WRITE_HIT_CPF_CACHE_START,
-					S_CLEAN_P_WRITE_HIT_CPT_DEVICE_STARTIO);
-	} else {
-		ASSERT(cache_block->bcb_state ==
-		       S_DIRTY_P_WRITE_HIT_CPF_CACHE_START);
-		cache_state_transition3(bc,
-					cache_block,
-					TS_P_WRITE_HIT_WB_CLEAN,
-					S_DIRTY_P_WRITE_HIT_CPF_CACHE_START,
-					S_DIRTY_P_WRITE_HIT_CPT_CACHE_START);
-	}
+	cache_state_transition3(bc,
+				cache_block,
+				TS_P_WRITE_HIT_WT,
+				S_CLEAN_P_WRITE_HIT_CPF_CACHE_START,
+				S_CLEAN_P_WRITE_HIT_CPT_DEVICE_STARTIO);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 		 "start_async_read (get_page_read): wi=%p, bc=%p, cache_block=%p, bio=%p",
@@ -89,8 +78,7 @@ void sm_dirty_write_miss_copy_to_cache_start(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
-	ASSERT(cache_block->bcb_state == S_DIRTY_WRITE_MISS_CPT_CACHE_START ||
-	       cache_block->bcb_state == S_DIRTY_P_WRITE_HIT_CPT_CACHE_START);
+	ASSERT(cache_block->bcb_state == S_DIRTY_WRITE_MISS_CPT_CACHE_START);
 
 	ASSERT(bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
@@ -101,42 +89,12 @@ void sm_dirty_write_miss_copy_to_cache_start(struct bittern_cache *bc,
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
-	if (cache_block->bcb_state == S_DIRTY_P_WRITE_HIT_CPT_CACHE_START) {
-		char *cache_vaddr;
-
-		cache_vaddr = pmem_context_data_vaddr(&wi->wi_pmem_ctx);
-		ASSERT(bc->bc_enable_extra_checksum_check == 0 ||
-		       bc->bc_enable_extra_checksum_check == 1);
-		if (bc->bc_enable_extra_checksum_check != 0) {
-			/* verify that hash is correct */
-			cache_verify_hash_data_buffer(bc,
-						      cache_block,
-						      cache_vaddr);
-		}
-
-		/* check hash */
-		cache_track_hash_check(bc,
-				       cache_block,
-				       cache_block->bcb_hash_data);
-
-		/*
-		 * convert to write
-		 */
-		pmem_data_convert_read_to_write(bc,
-						cache_block,
-						&wi->wi_pmem_ctx);
-
-	} else {
-		ASSERT(cache_block->bcb_state ==
-		       S_DIRTY_WRITE_MISS_CPT_CACHE_START);
-		/*
-		 * get page for write
-		 */
-		pmem_data_get_page_write(bc,
-					 cache_block,
-					 &wi->wi_pmem_ctx);
-
-	}
+	/*
+	 * get page for write
+	 */
+	pmem_data_get_page_write(bc,
+				 cache_block,
+				 &wi->wi_pmem_ctx);
 
 	/*
 	 * copy to cache from bio, aka userland writes
@@ -151,21 +109,11 @@ void sm_dirty_write_miss_copy_to_cache_start(struct bittern_cache *bc,
 	 */
 	cache_track_hash_set(bc, cache_block, cache_block->bcb_hash_data);
 
-	if (cache_block->bcb_state == S_DIRTY_WRITE_MISS_CPT_CACHE_START) {
-		cache_state_transition3(bc,
-					cache_block,
-					TS_WRITE_MISS_WB,
-					S_DIRTY_WRITE_MISS_CPT_CACHE_START,
-					S_DIRTY_WRITE_MISS_CPT_CACHE_END);
-	} else {
-		ASSERT(cache_block->bcb_state ==
-		       S_DIRTY_P_WRITE_HIT_CPT_CACHE_START);
-		cache_state_transition3(bc,
-					cache_block,
-					TS_P_WRITE_HIT_WB_CLEAN,
-					S_DIRTY_P_WRITE_HIT_CPT_CACHE_START,
-					S_DIRTY_P_WRITE_HIT_CPT_CACHE_END);
-	}
+	cache_state_transition3(bc,
+				cache_block,
+				TS_WRITE_MISS_WB,
+				S_DIRTY_WRITE_MISS_CPT_CACHE_START,
+				S_DIRTY_WRITE_MISS_CPT_CACHE_END);
 
 	/*
 	 * release cache page
@@ -209,8 +157,7 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
 
-	ASSERT(cache_block->bcb_state == S_DIRTY_WRITE_MISS_CPT_CACHE_END ||
-	       cache_block->bcb_state == S_DIRTY_P_WRITE_HIT_CPT_CACHE_END);
+	ASSERT(cache_block->bcb_state == S_DIRTY_WRITE_MISS_CPT_CACHE_END);
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
@@ -222,8 +169,6 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 
-	ASSERT(cache_block->bcb_state == S_DIRTY_WRITE_MISS_CPT_CACHE_END ||
-	       cache_block->bcb_state == S_DIRTY_P_WRITE_HIT_CPT_CACHE_END);
 	spin_lock_irqsave(&cache_block->bcb_spinlock, cache_flags);
 	cache_state_transition_final(bc,
 				     cache_block,
@@ -235,20 +180,9 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 
-	if (original_state == S_DIRTY_WRITE_MISS_CPT_CACHE_END) {
-		cache_timer_add(&bc->bc_timer_writes,
-					wi->wi_ts_started);
-		cache_timer_add(&bc->bc_timer_write_misses,
-					wi->wi_ts_started);
-		cache_timer_add(&bc->bc_timer_write_dirty_misses,
-					wi->wi_ts_started);
-	} else {
-		ASSERT(original_state == S_DIRTY_P_WRITE_HIT_CPT_CACHE_END);
-		cache_timer_add(&bc->bc_timer_writes,
-					wi->wi_ts_started);
-		cache_timer_add(&bc->bc_timer_write_hits,
-					wi->wi_ts_started);
-	}
+	cache_timer_add(&bc->bc_timer_writes, wi->wi_ts_started);
+	cache_timer_add(&bc->bc_timer_write_misses, wi->wi_ts_started);
+	cache_timer_add(&bc->bc_timer_write_dirty_misses, wi->wi_ts_started);
 
 	work_item_free(bc, wi);
 
@@ -593,7 +527,7 @@ sm_dirty_pwrite_hit_clone_copy_from_cache_start(struct bittern_cache *bc,
 	ASSERT(original_cache_block->bcb_sector == cache_block->bcb_sector);
 
 	/* FIXME: indentation will be fixed when cache states are cleaned up
-	 * and shortened after full implementaiton of write cloning */
+	 * and shortened after full implementation of write cloning */
 	if (cache_block->bcb_state ==
 	    S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START)
 		cache_state_transition3(bc,

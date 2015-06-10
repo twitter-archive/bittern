@@ -753,34 +753,6 @@ void cache_state_machine(struct bittern_cache *bc,
 		break;
 
 		/*
-		 * [ partial write hit (wb-clean) ] uses the same states as
-		 * [ write miss (wb) ] plus the initial copy-from-cache phase.
-		 *
-		 * write hit (wb-clean):
-		 *
-		 * VALID_CLEAN -->
-		 * VALID_DIRTY_P_WRITE_HIT_CPF_CACHE_START -->
-		 * VALID_DIRTY_P_WRITE_HIT_CPT_CACHE_START -->
-		 * VALID_DIRTY_P_WRITE_HIT_CPT_CACHE_END -->
-		 * VALID_DIRTY
-		 *
-		 * the initial step will make the cache page available for
-		 * read/write, all the next steps are the same as in
-		 * [ write miss (wb) ].
-		 */
-	case S_DIRTY_P_WRITE_HIT_CPF_CACHE_START:
-		sm_clean_pwrite_hit_copy_from_cache_start(bc, wi, bio);
-		break;
-
-	case S_DIRTY_P_WRITE_HIT_CPT_CACHE_START:
-		sm_dirty_write_miss_copy_to_cache_start(bc, wi, bio);
-		break;
-
-	case S_DIRTY_P_WRITE_HIT_CPT_CACHE_END:
-		sm_dirty_write_miss_copy_to_cache_end(bc, wi, bio);
-		break;
-
-		/*
 		 * dirty to dirty write hit:
 		 *
 		 * S_DIRTY_NO_DATA -->
@@ -807,21 +779,27 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * S_DIRTY
 		 */
 		/*
-		 * handling of dirty partial write hit is the same as above,
-		 * except for the initial data cloning step.
-		 */
-		/*
-		 * partial dirty write hit (dirty write cloning - clone):
+		 * dirty to dirty partial write hit:
 		 *
-		 * VALID_DIRTY_NO_DATA -->
-		 * VALID_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START -->
+		 * S_DIRTY_NO_DATA -->
+		 * S_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START -->
 		 *      get_page_read.
 		 *      start async read from cached device.
 		 *      sm_dirty_pwrite_hit_clone_copy_from_cache_start().
-		 * VALID_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START -->
+		 * S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START -->
 		 *      clone read page into write page.
-		 * VALID_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END -->
-		 * VALID_DIRTY
+		 * S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END -->
+		 * S_DIRTY
+		 */
+		/*
+		 * clean to dirty partial write hit:
+		 * (same as dirty to dirty partial write hit)
+		 *
+		 * S_DIRTY_NO_DATA -->
+		 * S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START -->
+		 * S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START -->
+		 * S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END -->
+		 * S_DIRTY
 		 */
 	case S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START:
 	case S_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START:
@@ -1110,126 +1088,6 @@ void cache_handle_read_hit(struct bittern_cache *bc,
 	cache_state_machine(bc, wi, bio);
 }
 
-void cache_handle_write_hit_wb(struct bittern_cache *bc,
-			       struct work_item *wi,
-			       struct cache_block *cache_block,
-			       struct bio *bio)
-{
-	unsigned long flags, cache_flags;
-	int partial_page;
-
-	/*
-	 * here we are either in a process or kernel thread context,
-	 * i.e., we can sleep during resource allocation if needed.
-	 */
-	M_ASSERT(!in_softirq());
-	M_ASSERT(!in_irq());
-
-	ASSERT(bc != NULL);
-	ASSERT(cache_block != NULL);
-	ASSERT(bio != NULL);
-	ASSERT(wi != NULL);
-	if (bio_is_request_cache_block(bio))
-		partial_page = 0;
-	else
-		partial_page = 1;
-	BT_TRACE(BT_LEVEL_TRACE3, bc, wi, cache_block, bio, NULL,
-		 "enter, partial_page=%d",
-		 partial_page);
-	ASSERT_BITTERN_CACHE(bc);
-	ASSERT_CACHE_BLOCK(cache_block, bc);
-	ASSERT_WORK_ITEM(wi, bc);
-	ASSERT(wi->wi_original_bio == bio);
-	ASSERT(bio_is_request_single_cache_block(bio));
-	ASSERT(cache_block->bcb_sector ==
-	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(wi->wi_cache_block == cache_block);
-	ASSERT_CACHE_BLOCK(cache_block, bc);
-	ASSERT(cache_block->bcb_state == S_CLEAN ||
-	       cache_block->bcb_state == S_DIRTY);
-	ASSERT(cache_block->bcb_cache_transition == TS_NONE);
-	ASSERT(atomic_read(&cache_block->bcb_refcount) > 0);
-	ASSERT(cache_block->bcb_sector ==
-	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(bio_data_dir(bio) == WRITE);
-
-	spin_lock_irqsave(&bc->bc_entries_lock, flags);
-	spin_lock_irqsave(&cache_block->bcb_spinlock, cache_flags);
-
-	/* set transaction xid */
-	cache_block->bcb_xid = wi->wi_io_xid;
-	atomic_inc(&bc->bc_total_write_hits);
-	ASSERT(is_work_item_mode_writeback(wi));
-
-	/*
-	 * this a clean write hit
-	 * write cloning on dirty write hit is handled in a separate function
-	 */
-	ASSERT(cache_block->bcb_state != S_DIRTY);
-	ASSERT(cache_block->bcb_state == S_CLEAN);
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
-	ASSERT(wi->wi_original_cache_block == NULL);
-
-	/*!
-	 * \todo this is bad, should have a function to do this
-	 * and the function should be in bittern_cache_getput()
-	 * where these counters are manipulated.
-	 */
-	atomic_inc(&bc->bc_clean_write_hits);
-	atomic_dec(&bc->bc_valid_entries_clean);
-	atomic_inc(&bc->bc_valid_entries_dirty);
-
-	M_ASSERT(atomic_read(&bc->bc_valid_entries_clean) >= 0);
-	M_ASSERT(atomic_read(&bc->bc_valid_entries_dirty) <=
-		 atomic_read(&bc->bc_total_entries));
-	M_ASSERT(atomic_read(&bc->bc_valid_entries_clean) <=
-		 atomic_read(&bc->bc_total_entries));
-	M_ASSERT(atomic_read(&bc->bc_valid_entries) <=
-		 atomic_read(&bc->bc_total_entries));
-	M_ASSERT(atomic_read(&bc->bc_invalid_entries) <=
-		 atomic_read(&bc->bc_total_entries));
-
-	/*
-	 * write cloning handles full page write.
-	 * this handles partial page write (will also
-	 * turn into write cloning).
-	 */
-	ASSERT(bio->bi_iter.bi_size != PAGE_SIZE);
-	/* partial page write */
-	atomic_inc(&bc->bc_clean_write_hits_rmw);
-	/*
-	 * [ partial write hit (wb-clean) ]
-	 * uses the same states as [ write miss (wb) ]
-	 * plus the initial copy-from-cache phase
-	 *
-	 * write hit (wb-clean):
-	 *
-	 * VALID_CLEAN -->
-	 * VALID_DIRTY_P_WRITE_HIT_CPF_CACHE_START -->
-	 * VALID_DIRTY_P_WRITE_HIT_CPT_CACHE_START -->
-	 * VALID_DIRTY_P_WRITE_HIT_CPT_CACHE_END -->
-	 * VALID_DIRTY
-	 */
-	cache_state_transition_initial(bc,
-				cache_block,
-				TS_P_WRITE_HIT_WB_CLEAN,
-				S_DIRTY_P_WRITE_HIT_CPF_CACHE_START);
-
-	/* add/move to the tail of the dirty list */
-	list_del_init(&cache_block->bcb_entry_cleandirty);
-	list_add_tail(&cache_block->bcb_entry_cleandirty,
-		      &bc->bc_valid_entries_dirty_list);
-
-	spin_unlock_irqrestore(&cache_block->bcb_spinlock, cache_flags);
-	spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
-
-	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
-		 "handle-cache-write-hit-wb");
-	ASSERT(cache_block->bcb_sector ==
-	       bio_sector_to_cache_block_sector(bio));
-	cache_state_machine(bc, wi, bio);
-}
-
 void cache_handle_write_hit_wt(struct bittern_cache *bc,
 			       struct work_item *wi,
 			       struct cache_block *cache_block,
@@ -1389,6 +1247,16 @@ void cache_handle_cache_hit_write_clone(struct bittern_cache *bc,
 	wi->wi_flags |= WI_FLAG_WRITE_CLONING;
 	wi->wi_original_cache_block = original_cache_block;
 	wi->wi_cache_block = cloned_cache_block;
+
+	M_ASSERT(atomic_read(&bc->bc_valid_entries_clean) >= 0);
+	M_ASSERT(atomic_read(&bc->bc_valid_entries_dirty) <=
+		 atomic_read(&bc->bc_total_entries));
+	M_ASSERT(atomic_read(&bc->bc_valid_entries_clean) <=
+		 atomic_read(&bc->bc_total_entries));
+	M_ASSERT(atomic_read(&bc->bc_valid_entries) <=
+		 atomic_read(&bc->bc_total_entries));
+	M_ASSERT(atomic_read(&bc->bc_invalid_entries) <=
+		 atomic_read(&bc->bc_total_entries));
 
 	atomic_inc(&bc->bc_total_write_hits);
 	if (original_cache_block->bcb_state == S_CLEAN) {
@@ -2028,16 +1896,6 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 			 "dirty-write-hit-cloned-cache-block");
 		ASSERT(r == CACHE_GET_RET_MISS_INVALID_IDLE);
 		ASSERT(cloned_cache_block != NULL);
-		/* WRITE_CLONE_FIXME_LATER */
-		/*
-		 * In the case of write cloning we need to handle the request
-		 * as if cache mode were writeback, even if the cache mode is
-		 * write-through. This can happen right after switching cache
-		 * mode from writeback to write-through while the dirty blocks
-		 * are being flushed asynchronously.
-		 * FIXME: once all writes are write clones, remove this change.
-		 */
-		do_writeback = 1;
 	} else {
 		BT_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, bio, NULL,
 			 "read-or-write-hit");

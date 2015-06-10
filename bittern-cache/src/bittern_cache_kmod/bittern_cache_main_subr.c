@@ -18,6 +18,7 @@
 
 #include "bittern_cache.h"
 
+/*! \todo replace switch with a static array of strings */
 const char *cache_state_to_str(enum cache_state cache_state)
 {
 	switch (cache_state) {
@@ -105,6 +106,10 @@ const char *cache_state_to_str(enum cache_state cache_state)
 		return "S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START";
 	case S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END:
 		return "S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END";
+	case S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START:
+		return "S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START";
+	case S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END:
+		return "S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END";
 	case S_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START:
 		return
 		    "S_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START";
@@ -170,6 +175,8 @@ const char *cache_transition_to_str(enum cache_transition ts)
 		return "TS_P_WRITE_HIT_WT";
 	case TS_WRITE_HIT_WB_CLEAN:
 		return "TS_WRITE_HIT_WB_CLEAN";
+	case TS_WRITE_HIT_WB_CLEAN_DWC_CLONE:
+		return "TS_WRITE_HIT_WB_CLEAN_DWC_CLONE";
 	case TS_P_WRITE_HIT_WB_CLEAN:
 		return "TS_P_WRITE_HIT_WB_CLEAN";
 	case TS_P_WRITE_HIT_WB_DIRTY_DWC_CLONE:
@@ -205,6 +212,12 @@ struct cache_state_transitions {
 	enum cache_state state_to;
 };
 
+/*!
+ * \todo right now this code is only used to validate transitions
+ * which are hard coded in the state machine code. at some point this
+ * code ought to be cleaned up and ought to be used to drive state transitions
+ * directly, so there will be no need for hard coding.
+ */
 const struct cache_state_transitions cache_valid_state_transitions[] = {
 /*
  * read miss (wt/wb-clean):
@@ -420,6 +433,12 @@ const struct cache_state_transitions cache_valid_state_transitions[] = {
 	 TS_NONE,
 	 S_CLEAN,
 	 },
+#if 0
+	/*
+	 * NOTE TO REVIEWBOARD REVIEWER:
+	 * THESE ANNOTATIONS WILL BE REMOVED IN A SEPARATE REVIEWBOARD
+	 * WHICH WILL REMOVE OBSOLETE CODE AFTER WRITE CLONING IS COMPLETE.
+	 */
 /*
  * [ write hit (wb-clean) ] uses the same states as [ write miss (wb) ]
  * write hit (wb-clean):        VALID_CLEAN -->
@@ -445,6 +464,7 @@ const struct cache_state_transitions cache_valid_state_transitions[] = {
 	 TS_NONE,
 	 S_DIRTY,
 	 },
+#endif
 /*
  * [ partial write hit (wb-clean) ] uses the same states as [ write miss (wb) ]
  * plus the initial copy-from-cache phase
@@ -512,7 +532,32 @@ const struct cache_state_transitions cache_valid_state_transitions[] = {
 	 S_DIRTY,
 	 },
 /*
- * dirty write hit (dirty write cloning - clone):
+ * clean to dirty write hit (dirty write cloning - clone):
+ * VALID_DIRTY_NO_DATA -->
+ * VALID_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START -->
+ * VALID_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END -->
+ * VALID_DIRTY
+ */
+	{
+	 TS_NONE,
+	 S_DIRTY_NO_DATA,
+	 TS_WRITE_HIT_WB_CLEAN_DWC_CLONE,
+	 S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START,
+	 },
+	{
+	 TS_WRITE_HIT_WB_CLEAN_DWC_CLONE,
+	 S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START,
+	 TS_WRITE_HIT_WB_CLEAN_DWC_CLONE,
+	 S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END,
+	 },
+	{
+	 TS_WRITE_HIT_WB_CLEAN_DWC_CLONE,
+	 S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END,
+	 TS_NONE,
+	 S_DIRTY,
+	 },
+/*
+ * dirty to dirty write hit (dirty write cloning - clone):
  * VALID_DIRTY_NO_DATA -->
  * VALID_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START -->
  * VALID_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END -->
@@ -756,6 +801,12 @@ const struct cache_state_transitions cache_valid_state_transitions[] = {
 	(int)(sizeof(cache_valid_state_transitions) / \
 	sizeof(struct cache_state_transitions))
 
+/*!
+ * \todo right now this code is only used to validate transitions
+ * which are hard coded in the state machine code. at some point this
+ * code ought to be cleaned up and ought to be used to drive state transitions
+ * directly, so there will be no need for hard coding.
+ */
 int __cache_validate_state_transition(struct bittern_cache *bc,
 					      struct cache_block
 					      *cache_block,

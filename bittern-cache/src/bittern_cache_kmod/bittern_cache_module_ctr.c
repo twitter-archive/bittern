@@ -308,15 +308,13 @@ int cache_ctr_restore_block(struct bittern_cache *bc,
 		    bcb->bcb_sector,
 		    bcb->bcb_state,
 		    cache_state_to_str(bcb->bcb_state));
-	printk_info("old_cache_block old_id=#%d, old_xid=#%llu, old_sector=%lu, old_state=%d(%s): old bcb found\n",
-		    old_bcb->bcb_block_id,
-		    old_bcb->bcb_xid,
-		    old_bcb->bcb_sector,
+	printk_info("block old_bcb=%p, old_id=#%d, old_xid=#%llu, old_cache_block=%lu, old_state=%d(%s): old bcb found\n",
+		    old_bcb, old_bcb->bcb_block_id,
+		    old_bcb->bcb_xid, old_bcb->bcb_sector,
 		    old_bcb->bcb_state,
 		    cache_state_to_str(old_bcb->bcb_state));
 	M_ASSERT(old_bcb->bcb_state == S_CLEAN ||
 		 old_bcb->bcb_state == S_DIRTY);
-
 	/*
 	 * This just cannot happen.
 	 * Period.

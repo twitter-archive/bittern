@@ -598,7 +598,17 @@ struct bittern_cache {
 	atomic_t bc_clean_read_hits;
 	/* read misses */
 	atomic_t bc_read_misses;
-	/* clean write hits */
+	/*!
+	 * \todo having the distinction between clean hits and dirty hits
+	 * is now almost completely irrelevant given write cloning is used
+	 * anyway.
+	 * keeping clean hits vs dirty hits is general is probably just very
+	 * confusing given that cache operating mode will almost always be
+	 * writeback. all in all, this distinction should be just removed,
+	 * which would also simplify code.
+	 *
+	 * clean write hits
+	 */
 	atomic_t bc_clean_write_hits;
 	/* clean write hits - partial page */
 	atomic_t bc_clean_write_hits_rmw;
@@ -652,8 +662,12 @@ struct bittern_cache {
 	/* count of discard requests */
 	atomic_t bc_discard_requests;
 	/* write clone allocation ok */
+	/* WRITE_CLONE_FIXME_LATER */
+	/* \todo rename to "bc_write_clone_alloc_ok once done w/ cloning */
 	atomic_t bc_dirty_write_clone_alloc_ok;
 	/* write clone allocation fail */
+	/* WRITE_CLONE_FIXME_LATER */
+	/* \todo rename to "bc_write_clone_alloc_ok once done w/ cloning */
 	atomic_t bc_dirty_write_clone_alloc_fail;
 
 	/* reads timer (pending i/o time only) */

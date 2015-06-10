@@ -136,7 +136,7 @@ void cache_state_machine_endio(struct bio *cloned_bio, int err)
 	 */
 	if (wi->wi_io_endio != NULL) {
 		ASSERT((wi->wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
-		ASSERT((wi->wi_flags & WI_FLAG_HAS_ENDIO) != 0);
+		ASSERT((wi->wi_flags & WI_FLAG_HAS_END) != 0);
 		ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) == 0);
 		ASSERT(wi->wi_io_endio != NULL);
 		ASSERT(original_bio == NULL);
@@ -146,7 +146,7 @@ void cache_state_machine_endio(struct bio *cloned_bio, int err)
 			 "wi_io_endio=%p", wi->wi_io_endio);
 	} else {
 		ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
-		ASSERT((wi->wi_flags & WI_FLAG_HAS_ENDIO) == 0);
+		ASSERT((wi->wi_flags & WI_FLAG_HAS_END) == 0);
 		ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
 		ASSERT(wi->wi_io_endio == NULL);
 		ASSERT(original_bio != NULL);
@@ -604,8 +604,8 @@ void cache_state_machine(struct bittern_cache *bc,
 		 *
 		 * INVALID -->
 		 * VALID_CLEAN_NO_DATA -->
-		 * VALID_CLEAN_READ_MISS_CPF_DEVICE_STARTIO -->
-		 * VALID_CLEAN_READ_MISS_CPF_DEVICE_ENDIO -->
+		 * VALID_CLEAN_READ_MISS_CPF_DEVICE_START -->
+		 * VALID_CLEAN_READ_MISS_CPF_DEVICE_END -->
 		 * VALID_CLEAN_READ_MISS_CPT_CACHE_END -->
 		 * VALID_CLEAN_READ_MISS_METADATA_UPDATE_END -->
 		 * VALID_CLEAN
@@ -613,11 +613,11 @@ void cache_state_machine(struct bittern_cache *bc,
 		/*
 		 * read miss (wt/wb-clean):
 		 *
-		 * VALID_CLEAN_READ_MISS_CPF_DEVICE_STARTIO
+		 * VALID_CLEAN_READ_MISS_CPF_DEVICE_START
 		 *      get_page_write.
 		 *      start async cached device disk read into cache.
 		 *      sm_read_miss_copy_from_device_startio().
-		 * VALID_CLEAN_READ_MISS_CPF_DEVICE_ENDIO
+		 * VALID_CLEAN_READ_MISS_CPF_DEVICE_END
 		 *      completes disk io.
 		 *      copy data to userland.
 		 *      start async put_page_write to write data to cache and
@@ -628,11 +628,11 @@ void cache_state_machine(struct bittern_cache *bc,
 		 *      start async transaction to update metadata.
 		 *      sm_read_miss_copy_to_cache_end().
 		 */
-	case S_CLEAN_READ_MISS_CPF_DEVICE_STARTIO:
+	case S_CLEAN_READ_MISS_CPF_DEVICE_START:
 		sm_read_miss_copy_from_device_startio(bc, wi, bio);
 		break;
 
-	case S_CLEAN_READ_MISS_CPF_DEVICE_ENDIO:
+	case S_CLEAN_READ_MISS_CPF_DEVICE_END:
 		sm_read_miss_copy_from_device_endio(bc, wi, bio);
 		break;
 
@@ -679,12 +679,12 @@ void cache_state_machine(struct bittern_cache *bc,
 		 *
 		 * INVALID
 		 * VALID_CLEAN_NO_DATA
-		 * VALID_CLEAN_WRITE_MISS_CPT_DEVICE_STARTIO
+		 * VALID_CLEAN_WRITE_MISS_CPT_DEVICE_START
 		 *      get_page_write.
 		 *      copy data from userland.
 		 *      start async write to cached device.
 		 *      sm_clean_write_miss_copy_to_device_startio().
-		 * VALID_CLEAN_WRITE_MISS_CPT_DEVICE_ENDIO
+		 * VALID_CLEAN_WRITE_MISS_CPT_DEVICE_END
 		 *      completes i/o to cached device.
 		 *      start async put_page_write to write data to cache and
 		 *      update metadata as well.
@@ -700,18 +700,18 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * write hit (wt):
 		 *
 		 * VALID_CLEAN -->
-		 * VALID_CLEAN_WRITE_HIT_CPT_DEVICE_STARTIO  -->
-		 * VALID_CLEAN_WRITE_HIT_CPT_DEVICE_ENDIO  -->
+		 * VALID_CLEAN_WRITE_HIT_CPT_DEVICE_START  -->
+		 * VALID_CLEAN_WRITE_HIT_CPT_DEVICE_END  -->
 		 * VALID_CLEAN_WRITE_HIT_CPT_CACHE_END -->
 		 * VALID_CLEAN
 		 */
-	case S_CLEAN_WRITE_MISS_CPT_DEVICE_STARTIO:
-	case S_CLEAN_WRITE_HIT_CPT_DEVICE_STARTIO:
+	case S_CLEAN_WRITE_MISS_CPT_DEVICE_START:
+	case S_CLEAN_WRITE_HIT_CPT_DEVICE_START:
 		sm_clean_write_miss_copy_to_device_startio(bc, wi, bio);
 		break;
 
-	case S_CLEAN_WRITE_MISS_CPT_DEVICE_ENDIO:
-	case S_CLEAN_WRITE_HIT_CPT_DEVICE_ENDIO:
+	case S_CLEAN_WRITE_MISS_CPT_DEVICE_END:
+	case S_CLEAN_WRITE_HIT_CPT_DEVICE_END:
 		sm_clean_write_miss_copy_to_device_endio(bc, wi, bio);
 		break;
 
@@ -727,8 +727,8 @@ void cache_state_machine(struct bittern_cache *bc,
 		 *
 		 * VALID_CLEAN -->
 		 * VALID_CLEAN_P_WRITE_HIT_CPF_CACHE_START -->
-		 * VALID_CLEAN_P_WRITE_HIT_CPT_DEVICE_STARTIO  -->
-		 * VALID_CLEAN_P_WRITE_HIT_CPT_DEVICE_ENDIO  -->
+		 * VALID_CLEAN_P_WRITE_HIT_CPT_DEVICE_START  -->
+		 * VALID_CLEAN_P_WRITE_HIT_CPT_DEVICE_END  -->
 		 * VALID_CLEAN_P_WRITE_HIT_CPT_CACHE_END -->
 		 * VALID_CLEAN
 		 *
@@ -740,11 +740,11 @@ void cache_state_machine(struct bittern_cache *bc,
 		sm_clean_pwrite_hit_copy_from_cache_start(bc, wi, bio);
 		break;
 
-	case S_CLEAN_P_WRITE_HIT_CPT_DEVICE_STARTIO:
+	case S_CLEAN_P_WRITE_HIT_CPT_DEVICE_START:
 		sm_clean_write_miss_copy_to_device_startio(bc, wi, bio);
 		break;
 
-	case S_CLEAN_P_WRITE_HIT_CPT_DEVICE_ENDIO:
+	case S_CLEAN_P_WRITE_HIT_CPT_DEVICE_END:
 		sm_clean_write_miss_copy_to_device_endio(bc, wi, bio);
 		break;
 
@@ -756,17 +756,17 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * dirty to dirty write hit:
 		 *
 		 * S_DIRTY_NO_DATA -->
-		 * S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START -->
+		 * S_DIRTY_WRITE_HIT_CPT_CACHE_START -->
 		 *      get_page_write.
 		 *      copy data from userland.
 		 *      start async write to cached device.
-		 *      sm_dirty_write_hit_clone_copy_to_cache_start().
-		 * VALID_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END -->
+		 *      sm_dirty_write_hit_copy_to_cache_start().
+		 * S_DIRTY_WRITE_HIT_CPT_CACHE_END -->
 		 *      completes i/o to cached device.
 		 *      start async put_page_write to write data to cache and
 		 *      update metadata as well.
 		 *      start async invalidate of original cache block.
-		 *      sm_dirty_write_hit_clone_copy_to_cache_end().
+		 *      sm_dirty_write_hit_copy_to_cache_end().
 		 * S_DIRTY
 		 */
 		/*
@@ -774,21 +774,21 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * (same as dirty to dirty write hit)
 		 *
 		 * S_DIRTY_NO_DATA -->
-		 * S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START -->
-		 * S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END -->
+		 * S_C2_DIRTY_WRITE_HIT_CPT_CACHE_START -->
+		 * S_C2_DIRTY_WRITE_HIT_CPT_CACHE_END -->
 		 * S_DIRTY
 		 */
 		/*
 		 * dirty to dirty partial write hit:
 		 *
 		 * S_DIRTY_NO_DATA -->
-		 * S_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START -->
+		 * S_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START -->
 		 *      get_page_read.
 		 *      start async read from cached device.
-		 *      sm_dirty_pwrite_hit_clone_copy_from_cache_start().
-		 * S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START -->
+		 *      sm_dirty_pwrite_hit_copy_from_cache_start().
+		 * S_DIRTY_P_WRITE_HIT_CPT_CACHE_START -->
 		 *      clone read page into write page.
-		 * S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END -->
+		 * S_DIRTY_P_WRITE_HIT_CPT_CACHE_END -->
 		 * S_DIRTY
 		 */
 		/*
@@ -796,28 +796,28 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * (same as dirty to dirty partial write hit)
 		 *
 		 * S_DIRTY_NO_DATA -->
-		 * S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START -->
-		 * S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START -->
-		 * S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END -->
+		 * S_C2_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START -->
+		 * S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_START -->
+		 * S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_END -->
 		 * S_DIRTY
 		 */
-	case S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START:
-	case S_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START:
-		sm_dirty_pwrite_hit_clone_copy_from_cache_start(bc, wi, bio);
+	case S_C2_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START:
+	case S_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START:
+		sm_dirty_pwrite_hit_copy_from_cache_start(bc, wi, bio);
 		break;
 
-	case S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START:
-	case S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START:
-	case S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START:
-	case S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START:
-		sm_dirty_write_hit_clone_copy_to_cache_start(bc, wi, bio);
+	case S_DIRTY_WRITE_HIT_CPT_CACHE_START:
+	case S_C2_DIRTY_WRITE_HIT_CPT_CACHE_START:
+	case S_DIRTY_P_WRITE_HIT_CPT_CACHE_START:
+	case S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_START:
+		sm_dirty_write_hit_copy_to_cache_start(bc, wi, bio);
 		break;
 
-	case S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END:
-	case S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END:
-	case S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END:
-	case S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END:
-		sm_dirty_write_hit_clone_copy_to_cache_end(bc, wi, bio);
+	case S_DIRTY_WRITE_HIT_CPT_CACHE_END:
+	case S_C2_DIRTY_WRITE_HIT_CPT_CACHE_END:
+	case S_DIRTY_P_WRITE_HIT_CPT_CACHE_END:
+	case S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_END:
+		sm_dirty_write_hit_copy_to_cache_end(bc, wi, bio);
 		break;
 
 		/*
@@ -830,8 +830,8 @@ void cache_state_machine(struct bittern_cache *bc,
 		 *
 		 * INVALID -->
 		 * VALID_DIRTY_NO_DATA -->
-		 * VALID_DIRTY_P_WRITE_MISS_CPF_DEVICE_STARTIO -->
-		 * VALID_DIRTY_P_WRITE_MISS_CPF_DEVICE_ENDIO -->
+		 * VALID_DIRTY_P_WRITE_MISS_CPF_DEVICE_START -->
+		 * VALID_DIRTY_P_WRITE_MISS_CPF_DEVICE_END -->
 		 * VALID_DIRTY_P_WRITE_MISS_CPT_CACHE_END -->
 		 */
 		/*
@@ -839,15 +839,15 @@ void cache_state_machine(struct bittern_cache *bc,
 		 *
 		 * INVALID -->
 		 * VALID_CLEAN_NO_DATA -->
-		 * VALID_CLEAN_P_WRITE_MISS_CPF_DEVICE_STARTIO -->
+		 * VALID_CLEAN_P_WRITE_MISS_CPF_DEVICE_START -->
 		 *      get_page_read.
 		 *      start async read from cached device.
 		 *      sm_pwrite_miss_copy_from_device_startio().
-		 * VALID_CLEAN_P_WRITE_MISS_CPF_DEVICE_ENDIO -->
+		 * VALID_CLEAN_P_WRITE_MISS_CPF_DEVICE_END -->
 		 *      copy data from userland to cache.
 		 *      start async write to cached device.
 		 *      sm_pwrite_miss_copy_from_device_startio().
-		 * VALID_CLEAN_P_WRITE_MISS_CPT_DEVICE_ENDIO -->
+		 * VALID_CLEAN_P_WRITE_MISS_CPT_DEVICE_END -->
 		 *      completes async write to cached device.
 		 *      starts async write of data and metadata to cache.
 		 *      sm_pwrite_miss_copy_to_device_endio().
@@ -856,17 +856,17 @@ void cache_state_machine(struct bittern_cache *bc,
 		 *      sm_pwrite_miss_copy_to_cache_end().
 		 * VALID_CLEAN
 		 */
-	case S_CLEAN_P_WRITE_MISS_CPF_DEVICE_STARTIO:
-	case S_DIRTY_P_WRITE_MISS_CPF_DEVICE_STARTIO:
+	case S_CLEAN_P_WRITE_MISS_CPF_DEVICE_START:
+	case S_DIRTY_P_WRITE_MISS_CPF_DEVICE_START:
 		sm_pwrite_miss_copy_from_device_startio(bc, wi, bio);
 		break;
 
-	case S_CLEAN_P_WRITE_MISS_CPF_DEVICE_ENDIO:
-	case S_DIRTY_P_WRITE_MISS_CPF_DEVICE_ENDIO:
+	case S_CLEAN_P_WRITE_MISS_CPF_DEVICE_END:
+	case S_DIRTY_P_WRITE_MISS_CPF_DEVICE_END:
 		sm_pwrite_miss_copy_from_device_endio(bc, wi, bio);
 		break;
 
-	case S_CLEAN_P_WRITE_MISS_CPT_DEVICE_ENDIO:
+	case S_CLEAN_P_WRITE_MISS_CPT_DEVICE_END:
 		sm_pwrite_miss_copy_to_device_endio(bc, wi, bio);
 		break;
 
@@ -881,8 +881,8 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * VALID_DIRTY -->
 		 * VALID_DIRTY_WRITEBACK_CPF_CACHE_START -->
 		 * VALID_DIRTY_WRITEBACK_CPF_CACHE_END -->
-		 * VALID_DIRTY_WRITEBACK_CPT_DEVICE_ENDIO -->
-		 * VALID_DIRTY_WRITEBACK_UPDATE_METADATA_END -->
+		 * VALID_DIRTY_WRITEBACK_CPT_DEVICE_END -->
+		 * VALID_DIRTY_WRITEBACK_UPD_METADATA_END -->
 		 * VALID_CLEAN
 		 *
 		 * bgwriter-initiated state path to write out dirty data.
@@ -895,11 +895,11 @@ void cache_state_machine(struct bittern_cache *bc,
 		 *      done setup cache buffer for read.
 		 *      start io write to cached device.
 		 *      sm_writeback_copy_from_cache_end().
-		 * VALID_DIRTY_WRITEBACK_CPT_DEVICE_ENDIO
+		 * VALID_DIRTY_WRITEBACK_CPT_DEVICE_END
 		 *      done io write to cached device.
 		 *      start async metadata update.
 		 *      sm_writeback_copy_to_device_endio().
-		 * VALID_DIRTY_WRITEBACK_UPDATE_METADATA_END
+		 * VALID_DIRTY_WRITEBACK_UPD_METADATA_END
 		 *      complete async metadata update.
 		 *      sm_writeback_update_metadata_end().
 		 * VALID_CLEAN
@@ -911,8 +911,8 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * VALID_DIRTY -->
 		 * VALID_DIRTY_WRITEBACK_INV_CPF_CACHE_START -->
 		 * VALID_DIRTY_WRITEBACK_INV_CPF_CACHE_END -->
-		 * VALID_DIRTY_WRITEBACK_INV_CPT_DEVICE_ENDIO -->
-		 * VALID_DIRTY_WRITEBACK_INV_UPDATE_METADATA_END -->
+		 * VALID_DIRTY_WRITEBACK_INV_CPT_DEVICE_END -->
+		 * VALID_DIRTY_WRITEBACK_INV_UPD_METADATA_END -->
 		 * VALID_CLEAN
 		 *
 		 * writeback_invalidate is the same as writeback_flush,
@@ -928,13 +928,13 @@ void cache_state_machine(struct bittern_cache *bc,
 		sm_writeback_copy_from_cache_end(bc, wi, bio);
 		break;
 
-	case S_DIRTY_WRITEBACK_CPT_DEVICE_ENDIO:
-	case S_DIRTY_WRITEBACK_INV_CPT_DEVICE_ENDIO:
+	case S_DIRTY_WRITEBACK_CPT_DEVICE_END:
+	case S_DIRTY_WRITEBACK_INV_CPT_DEVICE_END:
 		sm_writeback_copy_to_device_endio(bc, wi, bio);
 		break;
 
-	case S_DIRTY_WRITEBACK_UPDATE_METADATA_END:
-	case S_DIRTY_WRITEBACK_INV_UPDATE_METADATA_END:
+	case S_DIRTY_WRITEBACK_UPD_METADATA_END:
+	case S_DIRTY_WRITEBACK_INV_UPD_METADATA_END:
 		sm_writeback_update_metadata_end(bc, wi, bio);
 		break;
 
@@ -1152,15 +1152,15 @@ void cache_handle_write_hit_wt(struct bittern_cache *bc,
 		 *
 		 * write hit (wt):
 		 * VALID_CLEAN -->
-		 * VALID_CLEAN_WRITE_HIT_CPT_DEVICE_STARTIO  -->
-		 * VALID_CLEAN_WRITE_HIT_CPT_DEVICE_ENDIO  -->
+		 * VALID_CLEAN_WRITE_HIT_CPT_DEVICE_START  -->
+		 * VALID_CLEAN_WRITE_HIT_CPT_DEVICE_END  -->
 		 * VALID_CLEAN_WRITE_HIT_CPT_CACHE_END -->
 		 * VALID_CLEAN
 		 */
 		cache_state_transition_initial(bc,
 					cache_block,
 					TS_WRITE_HIT_WT,
-					S_CLEAN_WRITE_HIT_CPT_DEVICE_STARTIO);
+					S_CLEAN_WRITE_HIT_CPT_DEVICE_START);
 	} else {
 		/* partial page write */
 		atomic_inc(&bc->bc_clean_write_hits_rmw);
@@ -1173,8 +1173,8 @@ void cache_handle_write_hit_wt(struct bittern_cache *bc,
 		 *
 		 * VALID_CLEAN -->
 		 * VALID_CLEAN_P_WRITE_HIT_CPF_CACHE_START -->
-		 * VALID_CLEAN_P_WRITE_HIT_CPT_DEVICE_STARTIO-->
-		 * VALID_CLEAN_P_WRITE_HIT_CPT_DEVICE_ENDIO  -->
+		 * VALID_CLEAN_P_WRITE_HIT_CPT_DEVICE_START-->
+		 * VALID_CLEAN_P_WRITE_HIT_CPT_DEVICE_END  -->
 		 * VALID_CLEAN_P_WRITE_HIT_CPT_CACHE_END -->
 		 * VALID_CLEAN
 		 */
@@ -1199,11 +1199,11 @@ void cache_handle_write_hit_wt(struct bittern_cache *bc,
 	cache_state_machine(bc, wi, bio);
 }
 
-void cache_handle_cache_hit_write_clone(struct bittern_cache *bc,
-					struct work_item *wi,
-					struct cache_block *original_cache_block,
-					struct bio *bio,
-					struct cache_block *cloned_cache_block)
+void cache_handle_write_hit_wb(struct bittern_cache *bc,
+			       struct work_item *wi,
+			       struct cache_block *original_cache_block,
+			       struct bio *bio,
+			       struct cache_block *cloned_cache_block)
 {
 	unsigned long flags, cache_flags;
 	enum cache_state original_cache_block_state;
@@ -1290,18 +1290,18 @@ void cache_handle_cache_hit_write_clone(struct bittern_cache *bc,
 	spin_lock_irqsave(&original_cache_block->bcb_spinlock, cache_flags);
 	if (original_cache_block_state == S_CLEAN) {
 		cache_state_transition_initial(bc,
-				       original_cache_block,
-				       TS_CLEAN_INVALIDATION_WTWB,
-				       S_CLEAN_INVALIDATE_START);
+					       original_cache_block,
+					       TS_CLEAN_INVALIDATION_WTWB,
+					       S_CLEAN_INVALIDATE_START);
 		/* move to the tail of the clean list */
 		list_del_init(&original_cache_block->bcb_entry_cleandirty);
 		list_add_tail(&original_cache_block->bcb_entry_cleandirty,
 			      &bc->bc_valid_entries_clean_list);
 	} else {
 		cache_state_transition_initial(bc,
-				       original_cache_block,
-				       TS_DIRTY_INVALIDATION_WB,
-				       S_DIRTY_INVALIDATE_START);
+					       original_cache_block,
+					       TS_DIRTY_INVALIDATION_WB,
+					       S_DIRTY_INVALIDATE_START);
 		/* move to the tail of the dirty list */
 		list_del_init(&original_cache_block->bcb_entry_cleandirty);
 		list_add_tail(&original_cache_block->bcb_entry_cleandirty,
@@ -1327,27 +1327,27 @@ void cache_handle_cache_hit_write_clone(struct bittern_cache *bc,
 			 * clean to dirty write hit:
 			 *
 			 * S_DIRTY_NO_DATA -->
-			 * S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START -->
-			 * S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END -->
+			 * S_C2_DIRTY_WRITE_HIT_CPT_CACHE_START -->
+			 * S_C2_DIRTY_WRITE_HIT_CPT_CACHE_END -->
 			 * S_DIRTY
 			 */
 			cache_state_transition_initial(bc,
-				cloned_cache_block,
-				TS_WRITE_HIT_WB_CLEAN_DWC_CLONE,
-				S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START);
+					cloned_cache_block,
+					TS_WRITE_HIT_WB_C2_DIRTY,
+					S_C2_DIRTY_WRITE_HIT_CPT_CACHE_START);
 		} else {
 			/*
 			 * dirty to dirty write hit:
 			 *
 			 * S_DIRTY_NO_DATA -->
-			 * S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START -->
-			 * S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END -->
+			 * S_DIRTY_WRITE_HIT_CPT_CACHE_START -->
+			 * S_DIRTY_WRITE_HIT_CPT_CACHE_END -->
 			 * S_DIRTY
 			 */
 			cache_state_transition_initial(bc,
-				cloned_cache_block,
-				TS_WRITE_HIT_WB_DIRTY_DWC_CLONE,
-				S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START);
+					cloned_cache_block,
+					TS_WRITE_HIT_WB_DIRTY,
+					S_DIRTY_WRITE_HIT_CPT_CACHE_START);
 		}
 	} else {
 		/*
@@ -1355,35 +1355,31 @@ void cache_handle_cache_hit_write_clone(struct bittern_cache *bc,
 		 */
 		atomic_inc(&bc->bc_dirty_write_hits_rmw);
 		if (original_cache_block_state == S_CLEAN) {
-		/* FIXME: intendation is bad, will get cleaned up when
-		 * cache state names are shortened again once full cloning
-		 * is implemented
-		 */
-		/*
-		 * partial clean to dirty write hit:
-		 * S_DIRTY_NO_DATA -->
-		 * S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START -->
-		 * S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START -->
-		 * S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END -->
-		 * S_DIRTY
-		 */
+			/*
+			 * partial clean to dirty write hit:
+			 * S_DIRTY_NO_DATA -->
+			 * S_C2_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START -->
+			 * S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_START -->
+			 * S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_END -->
+			 * S_DIRTY
+			 */
 			cache_state_transition_initial(bc,
 				cloned_cache_block,
-				TS_P_WRITE_HIT_WB_CLEAN_DWC_CLONE,
-S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START);
+				TS_P_WRITE_HIT_WB_C2_DIRTY,
+				S_C2_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START);
 		} else {
 			/*
 			 * partial dirty to dirty write hit:
 			 * S_DIRTY_NO_DATA -->
-			 * S_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START -->
-			 * S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START -->
-			 * S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END -->
+			 * S_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START -->
+			 * S_DIRTY_P_WRITE_HIT_CPT_CACHE_START -->
+			 * S_DIRTY_P_WRITE_HIT_CPT_CACHE_END -->
 			 * S_DIRTY
 			 */
 			cache_state_transition_initial(bc,
-			cloned_cache_block,
-			TS_P_WRITE_HIT_WB_DIRTY_DWC_CLONE,
-			S_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START);
+					cloned_cache_block,
+					TS_P_WRITE_HIT_WB_DIRTY,
+					S_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START);
 		}
 	}
 	/* add/move to the tail of the dirty list */
@@ -1466,8 +1462,8 @@ void cache_handle_read_miss(struct bittern_cache *bc,
 	 *
 	 * INVALID -->
 	 * VALID_CLEAN_NO_DATA -->
-	 * VALID_CLEAN_READ_MISS_CPF_DEVICE_STARTIO -->
-	 * VALID_CLEAN_READ_MISS_CPF_DEVICE_ENDIO -->
+	 * VALID_CLEAN_READ_MISS_CPF_DEVICE_START -->
+	 * VALID_CLEAN_READ_MISS_CPF_DEVICE_END -->
 	 * VALID_CLEAN_READ_MISS_CPT_CACHE_END -->
 	 * VALID_CLEAN_READ_MISS_METADATA_UPDATE_END -->
 	 * VALID_CLEAN
@@ -1475,7 +1471,7 @@ void cache_handle_read_miss(struct bittern_cache *bc,
 	cache_state_transition_initial(bc,
 				       cache_block,
 				       TS_READ_MISS_WTWB_CLEAN,
-				       S_CLEAN_READ_MISS_CPF_DEVICE_STARTIO);
+				       S_CLEAN_READ_MISS_CPF_DEVICE_START);
 	/* add/move to the tail of the clean list */
 	list_del_init(&cache_block->bcb_entry_cleandirty);
 	list_add_tail(&cache_block->bcb_entry_cleandirty,
@@ -1553,14 +1549,14 @@ void cache_handle_write_miss_wb(struct bittern_cache *bc,
 		 *
 		 * INVALID -->
 		 * VALID_DIRTY_NO_DATA -->
-		 * VALID_DIRTY_P_WRITE_MISS_CPF_DEVICE_STARTIO -->
-		 * VALID_DIRTY_P_WRITE_MISS_CPF_DEVICE_ENDIO -->
+		 * VALID_DIRTY_P_WRITE_MISS_CPF_DEVICE_START -->
+		 * VALID_DIRTY_P_WRITE_MISS_CPF_DEVICE_END -->
 		 * VALID_DIRTY_P_WRITE_MISS_CPT_CACHE_END -->
 		 */
 		cache_state_transition_initial(bc,
 				cache_block,
 				TS_P_WRITE_MISS_WB,
-				S_DIRTY_P_WRITE_MISS_CPF_DEVICE_STARTIO);
+				S_DIRTY_P_WRITE_MISS_CPF_DEVICE_START);
 		BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 			 "partial-write-rmw");
 		/* add/move to the tail of the dirty list */
@@ -1661,16 +1657,16 @@ void cache_handle_write_miss_wt(struct bittern_cache *bc,
 		 *
 		 * INVALID -->
 		 * VALID_CLEAN_NO_DATA -->
-		 * VALID_CLEAN_P_WRITE_MISS_CPF_DEVICE_STARTIO -->
-		 * VALID_CLEAN_P_WRITE_MISS_CPF_DEVICE_ENDIO -->
-		 * VALID_CLEAN_P_WRITE_MISS_CPT_DEVICE_ENDIO -->
+		 * VALID_CLEAN_P_WRITE_MISS_CPF_DEVICE_START -->
+		 * VALID_CLEAN_P_WRITE_MISS_CPF_DEVICE_END -->
+		 * VALID_CLEAN_P_WRITE_MISS_CPT_DEVICE_END -->
 		 * VALID_CLEAN_P_WRITE_MISS_CPT_CACHE_END -->
 		 * VALID_CLEAN
 		 */
 		cache_state_transition_initial(bc,
 				cache_block,
 				TS_P_WRITE_MISS_WT,
-				S_CLEAN_P_WRITE_MISS_CPF_DEVICE_STARTIO);
+				S_CLEAN_P_WRITE_MISS_CPF_DEVICE_START);
 		/* add/move to the tail of the clean list */
 		list_del_init(&cache_block->
 			      bcb_entry_cleandirty);
@@ -1685,15 +1681,15 @@ void cache_handle_write_miss_wt(struct bittern_cache *bc,
 		 *
 		 * INVALID -->
 		 * VALID_CLEAN_NO_DATA -->
-		 * VALID_CLEAN_WRITE_MISS_CPT_DEVICE_STARTIO -->
-		 * VALID_CLEAN_WRITE_MISS_CPT_DEVICE_ENDIO -->
+		 * VALID_CLEAN_WRITE_MISS_CPT_DEVICE_START -->
+		 * VALID_CLEAN_WRITE_MISS_CPT_DEVICE_END -->
 		 * VALID_CLEAN_WRITE_MISS_CPT_CACHE_END -->
 		 * VALID_CLEAN
 		 */
 		cache_state_transition_initial(bc,
 					cache_block,
 					TS_WRITE_MISS_WT,
-					S_CLEAN_WRITE_MISS_CPT_DEVICE_STARTIO);
+					S_CLEAN_WRITE_MISS_CPT_DEVICE_START);
 		/* add/move to the tail of the clean list */
 		list_del_init(&cache_block->
 			      bcb_entry_cleandirty);
@@ -1829,7 +1825,6 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 	struct cache_block *cloned_cache_block = NULL;
 	uint64_t tstamp = current_kernel_time_nsec();
 	int ret;
-	int partial_page;
 
 	/*
 	 * here we are either in a process or kernel thread context,
@@ -1843,29 +1838,9 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 
-	partial_page = (bio_is_request_cache_block(bio) == 0);
 	/*
 	 * If write cloning is needed, allocate clone first. If there are no
 	 * resources, release the original cache_block and defer the request.
-	 *
-	 * NOTE TO REVIEWBOARD REVIEWER: THESE ANNOTATIONS ARE HERE TO DOCUMENT
-	 * CHANGES AND WILL BE REMOVED LATER ONCE TRANSITION TO FULL WRITE
-	 * CLONING IS COMPLETE. THIS REMOVAL WILL BE DONE IN A SEPARATE RB.
-	 * THIS CODE IS TRANSITIONAL AT THIS POINT. ONCE THIS IS ALL DONE,
-	 * EVERY WRITE WILL HAVE WRITE CLONING.
-	 * Before: write cloning used only for dirty write hit.
-	 * Now: write cloning used for dirty write hit as well as
-	 *      full page clean-2-dirty write hit.
-	 *
-	 * Remember to remove the setting of "do_writeback" inside this "if"
-	 * when write cloning for WT mode is tackled.
-	 *
-	 * The if condition is very complex right now because write cloning
-	 * is being added one write path at a time. Once write cloning is fully
-	 * implemented, it will simply be:
-	 *
-	 * if (bio_data_dir(bio) == WRITE) { ... } else { ... }
-	 *
 	 */
 	if (bio_data_dir(bio) == WRITE && do_writeback != 0) {
 		int r;
@@ -1939,17 +1914,27 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 	 */
 	cache_update_pending(bc, bio, false);
 
-	/*
-	 * write cloning is now fully implemented for the writeback case.
-	 * still to do: write cloning for writethrough.
-	 */
-	if (bio_data_dir(bio) == WRITE && do_writeback != 0) {
+	if (bio_data_dir(bio) == READ) {
 		/*
-		 * handle write cloning
+		 * wt or wb read hit
+		 */
+		/*
+		 * add to pending list and start state machine
+		 */
+		work_item_add_pending_io(bc,
+					 wi,
+					 'J',
+					 cache_block->bcb_sector,
+					 bio->bi_rw);
+		cache_handle_read_hit(bc, wi, cache_block, bio);
+	} else if (do_writeback != 0) {
+		ASSERT(bio_data_dir(bio) == WRITE);
+		/*
+		 * wb write hit
 		 */
 		ASSERT(cloned_cache_block != NULL);
 		ASSERT(do_writeback == 1);
-		ASSERT(wi->wi_cache_mode_writeback == 1);
+		ASSERT(is_work_item_mode_writeback(wi));
 		/*
 		 * add to pending list and start state machine
 		 */
@@ -1958,12 +1943,18 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 					 'H',
 					 cache_block->bcb_sector,
 					 bio->bi_rw);
-		cache_handle_cache_hit_write_clone(bc,
-						   wi,
-						   cache_block,
-						   bio,
-						   cloned_cache_block);
+		cache_handle_write_hit_wb(bc,
+					  wi,
+					  cache_block,
+					  bio,
+					  cloned_cache_block);
 	} else {
+		ASSERT(bio_data_dir(bio) == WRITE);
+		/*
+		 * wt write hit
+		 */
+		ASSERT(do_writeback == 0);
+		ASSERT(!is_work_item_mode_writeback(wi));
 		/*
 		 * add to pending list and start state machine
 		 */
@@ -1972,22 +1963,10 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 					 'I',
 					 cache_block->bcb_sector,
 					 bio->bi_rw);
-		if (bio_data_dir(bio) == READ) {
-			/*
-			 * read hit, all cases
-			 */
-			cache_handle_read_hit(bc, wi, cache_block, bio);
-		} else {
-			/*
-			 * wt write hit
-			 */
-			ASSERT(do_writeback == 0);
-			ASSERT(!is_work_item_mode_writeback(wi));
-			cache_handle_write_hit_wt(bc,
-						  wi,
-						  cache_block,
-						  bio);
-		}
+		cache_handle_write_hit_wt(bc,
+					  wi,
+					  cache_block,
+					  bio);
 	}
 
 	return 1;

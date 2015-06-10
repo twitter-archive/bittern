@@ -119,13 +119,13 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 					cache_block,
 					TS_WRITEBACK_WB,
 					S_DIRTY_WRITEBACK_CPF_CACHE_END,
-					S_DIRTY_WRITEBACK_CPT_DEVICE_ENDIO);
+					S_DIRTY_WRITEBACK_CPT_DEVICE_END);
 	else
 		cache_state_transition3(bc,
 					cache_block,
 					TS_WRITEBACK_INV_WB,
 					S_DIRTY_WRITEBACK_INV_CPF_CACHE_END,
-					S_DIRTY_WRITEBACK_INV_CPT_DEVICE_ENDIO);
+					S_DIRTY_WRITEBACK_INV_CPT_DEVICE_END);
 
 	atomic_inc(&bc->bc_write_cached_device_requests);
 	val = atomic_inc_return(&bc->bc_pending_cached_device_requests);
@@ -158,9 +158,9 @@ void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,
 
 	atomic_dec(&bc->bc_pending_cached_device_requests);
 
-	ASSERT(cache_block->bcb_state == S_DIRTY_WRITEBACK_CPT_DEVICE_ENDIO ||
+	ASSERT(cache_block->bcb_state == S_DIRTY_WRITEBACK_CPT_DEVICE_END ||
 	       cache_block->bcb_state ==
-	       S_DIRTY_WRITEBACK_INV_CPT_DEVICE_ENDIO);
+	       S_DIRTY_WRITEBACK_INV_CPT_DEVICE_END);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "writeback-copy-to-device-endio");
@@ -176,23 +176,23 @@ void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT_WORK_ITEM(wi, bc);
 
-	if (cache_block->bcb_state == S_DIRTY_WRITEBACK_CPT_DEVICE_ENDIO)
+	if (cache_block->bcb_state == S_DIRTY_WRITEBACK_CPT_DEVICE_END)
 		metadata_state = S_CLEAN;
 	else
 		metadata_state = S_INVALID;
 
-	if (cache_block->bcb_state == S_DIRTY_WRITEBACK_CPT_DEVICE_ENDIO)
+	if (cache_block->bcb_state == S_DIRTY_WRITEBACK_CPT_DEVICE_END)
 		cache_state_transition3(bc,
 				cache_block,
 				TS_WRITEBACK_WB,
-				S_DIRTY_WRITEBACK_CPT_DEVICE_ENDIO,
-				S_DIRTY_WRITEBACK_UPDATE_METADATA_END);
+				S_DIRTY_WRITEBACK_CPT_DEVICE_END,
+				S_DIRTY_WRITEBACK_UPD_METADATA_END);
 	else
 		cache_state_transition3(bc,
 				cache_block,
 				TS_WRITEBACK_INV_WB,
-				S_DIRTY_WRITEBACK_INV_CPT_DEVICE_ENDIO,
-				S_DIRTY_WRITEBACK_INV_UPDATE_METADATA_END);
+				S_DIRTY_WRITEBACK_INV_CPT_DEVICE_END,
+				S_DIRTY_WRITEBACK_INV_UPD_METADATA_END);
 
 	/*
 	 * start updating metadata
@@ -222,9 +222,9 @@ void sm_writeback_update_metadata_end(struct bittern_cache *bc,
 	cache_block = wi->wi_cache_block;
 
 	ASSERT(cache_block->bcb_state ==
-	       S_DIRTY_WRITEBACK_UPDATE_METADATA_END ||
+	       S_DIRTY_WRITEBACK_UPD_METADATA_END ||
 	       cache_block->bcb_state ==
-	       S_DIRTY_WRITEBACK_INV_UPDATE_METADATA_END);
+	       S_DIRTY_WRITEBACK_INV_UPD_METADATA_END);
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "writeback-update-metadata-end, wi_io_endio=%p",
 		 wi->wi_io_endio);
@@ -237,7 +237,7 @@ void sm_writeback_update_metadata_end(struct bittern_cache *bc,
 	 * given this is an externally initiated request, we expect callback
 	 * to be valid
 	 */
-	ASSERT((wi->wi_flags & WI_FLAG_HAS_ENDIO) != 0);
+	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) != 0);
 	ASSERT(wi->wi_io_endio != NULL);
 	(*wi->wi_io_endio)(bc, wi, cache_block);
 }

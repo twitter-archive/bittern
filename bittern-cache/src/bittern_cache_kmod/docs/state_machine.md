@@ -34,9 +34,9 @@ The following are all the possible cache state transitions:
 * TS_P_WRITE_HIT_WT
 * TS_WRITE_HIT_WB_CLEAN
 * TS_P_WRITE_HIT_WB_CLEAN
-* TS_WRITE_HIT_WB_DIRTY_DWC_ORIGINAL
-* TS_P_WRITE_HIT_WB_DIRTY_DWC_CLONE
-* TS_WRITE_HIT_WB_DIRTY_DWC_CLONE
+* TS_WRITE_HIT_WB_DIRTY_ORIGINAL
+* TS_P_WRITE_HIT_WB_DIRTY
+* TS_WRITE_HIT_WB_DIRTY
 * TS_P_WRITE_MISS_WT
 * TS_P_WRITE_MISS_WB
 * TS_WRITEBACK_WB
@@ -62,14 +62,14 @@ By way of example, this is how a cache read miss is handled:
   An invalid cache block is allocated to satisfy
   the cache fill operation. At this point all the metadata is properly set up
   (including indexing in the red-black lookup tree), but there is no data yet.
-* VALID_CLEAN_NO_DATA --> VALID_CLEAN_READ_MISS_CPF_DEVICE_STARTIO:
+* VALID_CLEAN_NO_DATA --> VALID_CLEAN_READ_MISS_CPF_DEVICE_START:
   An asynchronous read from the cached device into the cache buffer is
   initiated.
-* VALID_CLEAN_READ_MISS_CPF_DEVICE_STARTIO -->
-  VALID_CLEAN_READ_MISS_CPF_DEVICE_ENDIO:
+* VALID_CLEAN_READ_MISS_CPF_DEVICE_START -->
+  VALID_CLEAN_READ_MISS_CPF_DEVICE_END:
   Data is copied to userland. An asynchronous cache data and metadata is
   initiated.
-* VALID_CLEAN_READ_MISS_CPF_DEVICE_ENDIO -->
+* VALID_CLEAN_READ_MISS_CPF_DEVICE_END -->
   VALID_CLEAN_READ_MISS_CPT_CACHE_END:
   Everything is complete, resources are released.
 * VALID_CLEAN_READ_MISS_CPT_CACHE_END --> VALID_CLEAN:

@@ -34,16 +34,16 @@ void cache_bgwriter_io_endio(struct bittern_cache *bc,
 	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, NULL, NULL,
 		 "writeback-done");
 	ASSERT(cache_block->bcb_state ==
-	       S_DIRTY_WRITEBACK_UPDATE_METADATA_END
+	       S_DIRTY_WRITEBACK_UPD_METADATA_END
 	       || cache_block->bcb_state ==
-	       S_DIRTY_WRITEBACK_INV_UPDATE_METADATA_END);
+	       S_DIRTY_WRITEBACK_INV_UPD_METADATA_END);
 
 	ASSERT((wi->wi_flags & WI_FLAG_WRITEBACK_IO) != 0);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
 	ASSERT(cache_block_is_held(bc, cache_block));
 
 	if (cache_block->bcb_state ==
-	    S_DIRTY_WRITEBACK_INV_UPDATE_METADATA_END) {
+	    S_DIRTY_WRITEBACK_INV_UPD_METADATA_END) {
 		/*
 		 * move to invalid list
 		 */
@@ -227,7 +227,7 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 				(WI_FLAG_WRITEBACK_IO |
 				 WI_FLAG_BIO_NOT_CLONED |
 				 WI_FLAG_XID_USE_CACHE_BLOCK |
-				 WI_FLAG_HAS_ENDIO),
+				 WI_FLAG_HAS_END),
 				cache_bgwriter_io_endio);
 	M_ASSERT_FIXME(wi != NULL);
 	ASSERT_WORK_ITEM(wi, bc);

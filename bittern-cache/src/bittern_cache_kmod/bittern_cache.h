@@ -205,7 +205,7 @@ static inline sector_t sector_to_cache_block_sector(sector_t s)
 /*! @ref wi_flags : if set, use the XID from the cache_block */
 #define WI_FLAG_XID_USE_CACHE_BLOCK 0x0200
 /*! @ref wi_flags : if set, call endio function instead of the main state machine */
-#define WI_FLAG_HAS_ENDIO 0x1000
+#define WI_FLAG_HAS_END 0x1000
 /*! @ref wi_flags : mask of all possible legal values for wi_flag */
 #define WI_FLAG_MASK (WI_FLAG_MAP_IO |        \
 		WI_FLAG_WRITEBACK_IO |        \
@@ -215,7 +215,7 @@ static inline sector_t sector_to_cache_block_sector(sector_t s)
 		WI_FLAG_BIO_NOT_CLONED |      \
 		WI_FLAG_XID_NEW |             \
 		WI_FLAG_XID_USE_CACHE_BLOCK | \
-		WI_FLAG_HAS_ENDIO)
+		WI_FLAG_HAS_END)
 /*! @} */
 
 /*forward*/ struct work_item;

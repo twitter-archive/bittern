@@ -485,18 +485,18 @@ extern void sm_clean_pwrite_hit_copy_from_cache_start(struct bittern_cache *bc,
  * write path - dirty write hit state machine functions
  */
 extern void
-sm_dirty_pwrite_hit_clone_copy_from_cache_start(struct bittern_cache *bc,
-						struct work_item *wi,
-						struct bio *bio);
+sm_dirty_pwrite_hit_copy_from_cache_start(struct bittern_cache *bc,
+					  struct work_item *wi,
+					  struct bio *bio);
 extern void
-sm_dirty_write_hit_clone_copy_to_cache_start(struct bittern_cache *bc,
-					     struct work_item *wi,
-					     struct bio *bio);
+sm_dirty_write_hit_copy_to_cache_start(struct bittern_cache *bc,
+				       struct work_item *wi,
+				       struct bio *bio);
 
 extern void
-sm_dirty_write_hit_clone_copy_to_cache_end(struct bittern_cache *bc,
-					   struct work_item *wi,
-					   struct bio *bio);
+sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
+				     struct work_item *wi,
+				     struct bio *bio);
 
 /*
  * write path - partial write miss

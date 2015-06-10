@@ -30,7 +30,7 @@ void sm_invalidate_start(struct bittern_cache *bc,
 	ASSERT(wi->wi_original_bio == NULL);
 	ASSERT(wi->wi_cloned_bio == NULL);
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
-	ASSERT((wi->wi_flags & WI_FLAG_HAS_ENDIO) != 0);
+	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) != 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 	cache_block = wi->wi_cache_block;
 
@@ -83,7 +83,7 @@ void sm_invalidate_end(struct bittern_cache *bc,
 	ASSERT(wi->wi_original_bio == NULL);
 	ASSERT(wi->wi_cloned_bio == NULL);
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
-	ASSERT((wi->wi_flags & WI_FLAG_HAS_ENDIO) != 0);
+	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) != 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 	cache_block = wi->wi_cache_block;
 
@@ -100,7 +100,7 @@ void sm_invalidate_end(struct bittern_cache *bc,
 	 * given this is an externally initiated request, we expect callback
 	 * to be valid
 	 */
-	ASSERT((wi->wi_flags & WI_FLAG_HAS_ENDIO) != 0);
+	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) != 0);
 	ASSERT(wi->wi_io_endio != NULL);
 	(*wi->wi_io_endio)(bc, wi, cache_block);
 }

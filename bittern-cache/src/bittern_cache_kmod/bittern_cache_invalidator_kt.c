@@ -40,7 +40,7 @@ void cache_invalidate_block_io_end(struct bittern_cache *bc,
 	       S_DIRTY_INVALIDATE_END);
 
 	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
-	ASSERT((wi->wi_flags & WI_FLAG_HAS_ENDIO) != 0);
+	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) != 0);
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 
 	if (cache_block->bcb_state == S_DIRTY_INVALIDATE_END)
@@ -112,7 +112,7 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 				(WI_FLAG_INVALIDATE_IO |
 				 WI_FLAG_BIO_NOT_CLONED |
 				 WI_FLAG_XID_USE_CACHE_BLOCK |
-				 WI_FLAG_HAS_ENDIO),
+				 WI_FLAG_HAS_END),
 				cache_invalidate_block_io_end);
 	M_ASSERT_FIXME(wi != NULL);
 	ASSERT_WORK_ITEM(wi, bc);

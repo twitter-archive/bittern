@@ -667,12 +667,10 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * VALID_DIRTY
 		 */
 	case S_DIRTY_WRITE_MISS_CPT_CACHE_START:
-	case S_DIRTY_WRITE_HIT_CPT_CACHE_START:
 		sm_dirty_write_miss_copy_to_cache_start(bc, wi, bio);
 		break;
 
 	case S_DIRTY_WRITE_MISS_CPT_CACHE_END:
-	case S_DIRTY_WRITE_HIT_CPT_CACHE_END:
 		sm_dirty_write_miss_copy_to_cache_end(bc, wi, bio);
 		break;
 
@@ -1188,44 +1186,31 @@ void cache_handle_write_hit_wb(struct bittern_cache *bc,
 	M_ASSERT(atomic_read(&bc->bc_invalid_entries) <=
 		 atomic_read(&bc->bc_total_entries));
 
-	if (bio->bi_iter.bi_size == PAGE_SIZE) {
-		/* full page write */
-		/*
-		 * [ write hit (wb-clean) ] uses the same states
-		 * as [ write miss (wb) ]
-		 *
-		 * write hit (wb-clean):
-		 *
-		 * VALID_CLEAN -->
-		 * VALID_DIRTY_WRITE_HIT_CPT_CACHE_START -->
-		 * VALID_DIRTY_WRITE_HIT_CPT_CACHE_END -->
-		 * VALID_DIRTY
-		 */
-		cache_state_transition_initial(bc,
-					cache_block,
-					TS_WRITE_HIT_WB_CLEAN,
-					S_DIRTY_WRITE_HIT_CPT_CACHE_START);
-	} else {
-		/* partial page write */
-		atomic_inc(&bc->bc_clean_write_hits_rmw);
-		/*
-		 * [ partial write hit (wb-clean) ]
-		 * uses the same states as [ write miss (wb) ]
-		 * plus the initial copy-from-cache phase
-		 *
-		 * write hit (wb-clean):
-		 *
-		 * VALID_CLEAN -->
-		 * VALID_DIRTY_P_WRITE_HIT_CPF_CACHE_START -->
-		 * VALID_DIRTY_P_WRITE_HIT_CPT_CACHE_START -->
-		 * VALID_DIRTY_P_WRITE_HIT_CPT_CACHE_END -->
-		 * VALID_DIRTY
-		 */
-		cache_state_transition_initial(bc,
-					cache_block,
-					TS_P_WRITE_HIT_WB_CLEAN,
-					S_DIRTY_P_WRITE_HIT_CPF_CACHE_START);
-	}
+	/*
+	 * write cloning handles full page write.
+	 * this handles partial page write (will also
+	 * turn into write cloning).
+	 */
+	ASSERT(bio->bi_iter.bi_size != PAGE_SIZE);
+	/* partial page write */
+	atomic_inc(&bc->bc_clean_write_hits_rmw);
+	/*
+	 * [ partial write hit (wb-clean) ]
+	 * uses the same states as [ write miss (wb) ]
+	 * plus the initial copy-from-cache phase
+	 *
+	 * write hit (wb-clean):
+	 *
+	 * VALID_CLEAN -->
+	 * VALID_DIRTY_P_WRITE_HIT_CPF_CACHE_START -->
+	 * VALID_DIRTY_P_WRITE_HIT_CPT_CACHE_START -->
+	 * VALID_DIRTY_P_WRITE_HIT_CPT_CACHE_END -->
+	 * VALID_DIRTY
+	 */
+	cache_state_transition_initial(bc,
+				cache_block,
+				TS_P_WRITE_HIT_WB_CLEAN,
+				S_DIRTY_P_WRITE_HIT_CPF_CACHE_START);
 
 	/* add/move to the tail of the dirty list */
 	list_del_init(&cache_block->bcb_entry_cleandirty);

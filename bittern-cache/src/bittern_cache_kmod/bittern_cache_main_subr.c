@@ -90,10 +90,6 @@ const char *cache_state_to_str(enum cache_state cache_state)
 		return "S_DIRTY_WRITE_MISS_CPT_CACHE_START";
 	case S_DIRTY_WRITE_MISS_CPT_CACHE_END:
 		return "S_DIRTY_WRITE_MISS_CPT_CACHE_END";
-	case S_DIRTY_WRITE_HIT_CPT_CACHE_START:
-		return "S_DIRTY_WRITE_HIT_CPT_CACHE_START";
-	case S_DIRTY_WRITE_HIT_CPT_CACHE_END:
-		return "S_DIRTY_WRITE_HIT_CPT_CACHE_END";
 	case S_DIRTY_P_WRITE_HIT_CPF_CACHE_START:
 		return
 		    "S_DIRTY_P_WRITE_HIT_CPF_CACHE_START";
@@ -173,8 +169,6 @@ const char *cache_transition_to_str(enum cache_transition ts)
 		return "TS_WRITE_HIT_WT";
 	case TS_P_WRITE_HIT_WT:
 		return "TS_P_WRITE_HIT_WT";
-	case TS_WRITE_HIT_WB_CLEAN:
-		return "TS_WRITE_HIT_WB_CLEAN";
 	case TS_WRITE_HIT_WB_CLEAN_DWC_CLONE:
 		return "TS_WRITE_HIT_WB_CLEAN_DWC_CLONE";
 	case TS_P_WRITE_HIT_WB_CLEAN:
@@ -433,38 +427,6 @@ const struct cache_state_transitions cache_valid_state_transitions[] = {
 	 TS_NONE,
 	 S_CLEAN,
 	 },
-#if 0
-	/*
-	 * NOTE TO REVIEWBOARD REVIEWER:
-	 * THESE ANNOTATIONS WILL BE REMOVED IN A SEPARATE REVIEWBOARD
-	 * WHICH WILL REMOVE OBSOLETE CODE AFTER WRITE CLONING IS COMPLETE.
-	 */
-/*
- * [ write hit (wb-clean) ] uses the same states as [ write miss (wb) ]
- * write hit (wb-clean):        VALID_CLEAN -->
- *                              VALID_DIRTY_WRITE_HIT_CPT_CACHE_START -->
- *                              VALID_DIRTY_WRITE_HIT_CPT_CACHE_END -->
- *                              VALID_DIRTY
- */
-	{
-	 TS_NONE,
-	 S_CLEAN,
-	 TS_WRITE_HIT_WB_CLEAN,
-	 S_DIRTY_WRITE_HIT_CPT_CACHE_START,
-	 },
-	{
-	 TS_WRITE_HIT_WB_CLEAN,
-	 S_DIRTY_WRITE_HIT_CPT_CACHE_START,
-	 TS_WRITE_HIT_WB_CLEAN,
-	 S_DIRTY_WRITE_HIT_CPT_CACHE_END,
-	 },
-	{
-	 TS_WRITE_HIT_WB_CLEAN,
-	 S_DIRTY_WRITE_HIT_CPT_CACHE_END,
-	 TS_NONE,
-	 S_DIRTY,
-	 },
-#endif
 /*
  * [ partial write hit (wb-clean) ] uses the same states as [ write miss (wb) ]
  * plus the initial copy-from-cache phase

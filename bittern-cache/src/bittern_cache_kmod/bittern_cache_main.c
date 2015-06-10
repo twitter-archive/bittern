@@ -823,6 +823,7 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * VALID_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END -->
 		 * VALID_DIRTY
 		 */
+	case S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START:
 	case S_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START:
 		sm_dirty_pwrite_hit_clone_copy_from_cache_start(bc, wi, bio);
 		break;
@@ -830,12 +831,14 @@ void cache_state_machine(struct bittern_cache *bc,
 	case S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START:
 	case S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START:
 	case S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START:
+	case S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START:
 		sm_dirty_write_hit_clone_copy_to_cache_start(bc, wi, bio);
 		break;
 
 	case S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END:
 	case S_CLEAN_2_DIRTY_WRITE_HIT_DWC_CPT_CACHE_END:
 	case S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END:
+	case S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END:
 		sm_dirty_write_hit_clone_copy_to_cache_end(bc, wi, bio);
 		break;
 
@@ -1448,7 +1451,9 @@ void cache_handle_cache_hit_write_clone(struct bittern_cache *bc,
 
 	cloned_cache_block->bcb_xid = wi->wi_io_xid;
 	if (bio->bi_iter.bi_size == PAGE_SIZE) {
-		/* full page write */
+		/*
+		 * handle full page write
+		 */
 		if (original_cache_block_state == S_CLEAN) {
 			/*
 			 * clean to dirty write hit:
@@ -1477,21 +1482,41 @@ void cache_handle_cache_hit_write_clone(struct bittern_cache *bc,
 				S_DIRTY_WRITE_HIT_DWC_CPT_CACHE_START);
 		}
 	} else {
-		/* partial page write */
-		atomic_inc(&bc->bc_dirty_write_hits_rmw);
 		/*
-		 * partial dirty write hit (dirty write cloning - clone):
-		 * VALID_DIRTY_NO_DATA -->
-		 * VALID_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START -->
-		 * VALID_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START -->
-		 * VALID_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END -->
-		 * VALID_DIRTY_P_WRITE_HIT_DWC_INVALIDATE_ORIGINAL_END -->
-		 * VALID_DIRTY
+		 * handle partial page write
 		 */
-		cache_state_transition_initial(bc,
+		atomic_inc(&bc->bc_dirty_write_hits_rmw);
+		if (original_cache_block_state == S_CLEAN) {
+		/* FIXME: intendation is bad, will get cleaned up when
+		 * cache state names are shortened again once full cloning
+		 * is implemented
+		 */
+		/*
+		 * partial clean to dirty write hit:
+		 * S_DIRTY_NO_DATA -->
+		 * S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START -->
+		 * S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START -->
+		 * S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END -->
+		 * S_DIRTY
+		 */
+			cache_state_transition_initial(bc,
+				cloned_cache_block,
+				TS_P_WRITE_HIT_WB_CLEAN_DWC_CLONE,
+S_CLEAN_2_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START);
+		} else {
+			/*
+			 * partial dirty to dirty write hit:
+			 * S_DIRTY_NO_DATA -->
+			 * S_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START -->
+			 * S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_START -->
+			 * S_DIRTY_P_WRITE_HIT_DWC_CPT_CLONED_CACHE_END -->
+			 * S_DIRTY
+			 */
+			cache_state_transition_initial(bc,
 			cloned_cache_block,
 			TS_P_WRITE_HIT_WB_DIRTY_DWC_CLONE,
 			S_DIRTY_P_WRITE_HIT_DWC_CPF_ORIGINAL_CACHE_START);
+		}
 	}
 	/* add/move to the tail of the dirty list */
 	list_del_init(&cloned_cache_block->bcb_entry_cleandirty);
@@ -1974,12 +1999,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 	 * if (bio_data_dir(bio) == WRITE) { ... } else { ... }
 	 *
 	 */
-	/* WRITE_CLONE_FIXME_LATER */
-	if (bio_data_dir(bio) == WRITE &&
-	    (cache_block->bcb_state == S_DIRTY ||
-	     (cache_block->bcb_state == S_CLEAN &&
-	      partial_page == 0 &&
-	      do_writeback != 0))) {
+	if (bio_data_dir(bio) == WRITE && do_writeback != 0) {
 		int r;
 
 		r = cache_get_clone(bc, cache_block, &cloned_cache_block);
@@ -2061,12 +2081,11 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 	 */
 	cache_update_pending(bc, bio, false);
 
-	/* see above explanation why this "if" condition is so complicated */
-	if (bio_data_dir(bio) == WRITE &&
-	    (cache_block->bcb_state == S_DIRTY ||
-	     (cache_block->bcb_state == S_CLEAN &&
-	      partial_page == 0 &&
-	      do_writeback != 0))) {
+	/*
+	 * write cloning is now fully implemented for the writeback case.
+	 * still to do: write cloning for writethrough.
+	 */
+	if (bio_data_dir(bio) == WRITE && do_writeback != 0) {
 		/*
 		 * handle write cloning
 		 */
@@ -2096,18 +2115,20 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 					 cache_block->bcb_sector,
 					 bio->bi_rw);
 		if (bio_data_dir(bio) == READ) {
+			/*
+			 * read hit, all cases
+			 */
 			cache_handle_read_hit(bc, wi, cache_block, bio);
 		} else {
-			if (is_work_item_mode_writeback(wi))
-				cache_handle_write_hit_wb(bc,
-							  wi,
-							  cache_block,
-							  bio);
-			else
-				cache_handle_write_hit_wt(bc,
-							  wi,
-							  cache_block,
-							  bio);
+			/*
+			 * wt write hit
+			 */
+			ASSERT(do_writeback == 0);
+			ASSERT(!is_work_item_mode_writeback(wi));
+			cache_handle_write_hit_wt(bc,
+						  wi,
+						  cache_block,
+						  bio);
 		}
 	}
 

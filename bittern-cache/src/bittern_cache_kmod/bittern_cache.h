@@ -66,7 +66,7 @@
  * Release codenames are National Wildlife Refuges wetlands where the Bittern
  * can be found.
  */
-#define BITTERN_CACHE_VERSION "0.26.9"
+#define BITTERN_CACHE_VERSION "0.26.10"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -963,13 +963,13 @@ struct bittern_cache {
 	int bc_magic4;
 };
 
-static inline int is_cache_mode_writeback(struct bittern_cache *bc)
+static inline bool is_cache_mode_writeback(struct bittern_cache *bc)
 {
 	ASSERT(bc->bc_cache_mode_writeback == 0 ||
 	       bc->bc_cache_mode_writeback == 1);
 	return bc->bc_cache_mode_writeback != 0;
 }
-static inline int is_cache_mode_writethru(struct bittern_cache *bc)
+static inline bool is_cache_mode_writethru(struct bittern_cache *bc)
 {
 	return !is_cache_mode_writeback(bc);
 }

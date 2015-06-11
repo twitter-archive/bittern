@@ -191,17 +191,8 @@
 /*
  * Allowable cache state transitions.
  *
- * These identifiers would be too long if fully spelled out, so shortening
- * acronyms are used.
- * Rosetta stone for these words:
- *
  * "_P_" means "_PARTIAL_"
  * "_C2_" means "_CLEAN_TO_"
- *
- * For example,
- *         TS_P_WRITE_HIT_WB_C2_DIRTY
- * means
- *         TS_PARTIAL_WRITE_HIT_WB_CLEAN_TO_DIRTY
  */
 enum cache_transition {
 	TS_NONE = 0,	/* keep this entry first */
@@ -236,10 +227,6 @@ enum cache_transition {
  * Transient states need not be compatible as they all get rolled back
  * on recovery.
  *
- * These identifiers would be too long if fully spelled out, so shortening
- * acronyms are used.
- * Rosetta stone for these words:
- *
  * "_P_" means "_PARTIAL_"
  * "_CPF_" means "_COPY_FROM_"
  * "_CPT_" means "_COPY_TO_"
@@ -247,11 +234,6 @@ enum cache_transition {
  * "_O_CACHE_" means "_ORIGINAL_CACHE_"
  *              that is, original cache block,
  *              to distinguish it from cloned block.
- *
- * For example,
- *         S_C2_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START
- * means:
- *         S_CLEAN_TO_DIRTY_PARTIAL_WRITE_HIT_COPY_FROM_ORIGINAL_CACHE_START.
  *
  * NOTE: Once write cloning if fully implemented, cleanup and shorten
  * cache states.
@@ -272,7 +254,7 @@ enum cache_state {
 	S_CLEAN_WRITE_HIT_CPT_DEVICE_START,
 	S_CLEAN_WRITE_HIT_CPT_DEVICE_END,
 	S_CLEAN_WRITE_HIT_CPT_CACHE_END,
-	S_CLEAN_P_WRITE_HIT_CPF_CACHE_START,
+	S_CLEAN_P_WRITE_HIT_CPF_O_CACHE_START,
 	S_CLEAN_P_WRITE_HIT_CPT_DEVICE_START,
 	S_CLEAN_P_WRITE_HIT_CPT_DEVICE_END,
 	S_CLEAN_P_WRITE_HIT_CPT_CACHE_END,

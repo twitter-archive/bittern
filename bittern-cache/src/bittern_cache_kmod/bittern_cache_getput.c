@@ -768,24 +768,25 @@ int cache_get_dirty_from_head(struct bittern_cache *bc,
 
 enum cache_get_ret cache_get_clone(struct bittern_cache *bc,
 				   struct cache_block *original_cache_block,
-				   struct cache_block **o_cache_block)
+				   struct cache_block **o_cache_block,
+				   bool is_dirty)
 {
 	int ret;
+	int cache_fl;
 
+	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, original_cache_block, NULL, NULL,
+		 "enter, is_dirty=%d", is_dirty);
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(original_cache_block, bc);
 	ASSERT(o_cache_block != NULL);
-
-	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, original_cache_block, NULL, NULL,
-		 "enter");
-
-	ASSERT_BITTERN_CACHE(bc);
+	ASSERT(is_dirty == false || is_dirty == true);
 
 	*o_cache_block = NULL;
 
+	cache_fl = (is_dirty ? CACHE_FL_DIRTY : CACHE_FL_CLEAN);
 	ret = cache_get_invalid_block(bc,
 				      original_cache_block->bcb_sector,
-				      CACHE_FL_DIRTY,
+				      cache_fl,
 				      o_cache_block);
 	ASSERT(ret == CACHE_GET_RET_MISS_INVALID_IDLE ||
 	       ret == CACHE_GET_RET_MISS);

@@ -725,18 +725,18 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * [ write miss (wb) ] plus the initial copy-from-cache phase
 		 * write hit (wt):
 		 *
-		 * VALID_CLEAN -->
-		 * VALID_CLEAN_P_WRITE_HIT_CPF_CACHE_START -->
-		 * VALID_CLEAN_P_WRITE_HIT_CPT_DEVICE_START  -->
-		 * VALID_CLEAN_P_WRITE_HIT_CPT_DEVICE_END  -->
-		 * VALID_CLEAN_P_WRITE_HIT_CPT_CACHE_END -->
-		 * VALID_CLEAN
+		 * S_CLEAN -->
+		 * S_CLEAN_P_WRITE_HIT_CPF_O_CACHE_START -->
+		 * S_CLEAN_P_WRITE_HIT_CPT_DEVICE_START  -->
+		 * S_CLEAN_P_WRITE_HIT_CPT_DEVICE_END  -->
+		 * S_CLEAN_P_WRITE_HIT_CPT_CACHE_END -->
+		 * S_CLEAN
 		 *
 		 * the initial step will make the cache page available for
 		 * read/write, all the next steps are the same as in
 		 * [ write miss (wb) ].
 		 */
-	case S_CLEAN_P_WRITE_HIT_CPF_CACHE_START:
+	case S_CLEAN_P_WRITE_HIT_CPF_O_CACHE_START:
 		sm_clean_pwrite_hit_copy_from_cache_start(bc, wi, bio);
 		break;
 
@@ -1090,8 +1090,9 @@ void cache_handle_read_hit(struct bittern_cache *bc,
 
 void cache_handle_write_hit_wt(struct bittern_cache *bc,
 			       struct work_item *wi,
-			       struct cache_block *cache_block,
-			       struct bio *bio)
+			       struct cache_block *original_cache_block,
+			       struct bio *bio,
+			       struct cache_block *cloned_cache_block)
 {
 	unsigned long flags, cache_flags;
 	int partial_page;
@@ -1104,46 +1105,80 @@ void cache_handle_write_hit_wt(struct bittern_cache *bc,
 	M_ASSERT(!in_irq());
 
 	ASSERT(bc != NULL);
-	ASSERT(cache_block != NULL);
+	ASSERT(original_cache_block != NULL);
+	ASSERT(cloned_cache_block != NULL);
 	ASSERT(bio != NULL);
 	ASSERT(wi != NULL);
 	if (bio_is_request_cache_block(bio))
 		partial_page = 0;
 	else
 		partial_page = 1;
-	BT_TRACE(BT_LEVEL_TRACE3, bc, wi, cache_block, bio, NULL,
+	BT_TRACE(BT_LEVEL_TRACE3, bc, wi, original_cache_block, bio, NULL,
 		 "enter, partial_page=%d",
 		 partial_page);
 	ASSERT_BITTERN_CACHE(bc);
-	ASSERT_CACHE_BLOCK(cache_block, bc);
+	ASSERT_CACHE_BLOCK(original_cache_block, bc);
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_original_bio == bio);
 	ASSERT(bio_is_request_single_cache_block(bio));
-	ASSERT(cache_block->bcb_sector ==
+	ASSERT(original_cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(wi->wi_cache_block == cache_block);
-	ASSERT_CACHE_BLOCK(cache_block, bc);
-	ASSERT(cache_block->bcb_state == S_CLEAN ||
-	       cache_block->bcb_state == S_DIRTY);
-	ASSERT(cache_block->bcb_cache_transition == TS_NONE);
-	ASSERT(atomic_read(&cache_block->bcb_refcount) > 0);
-	ASSERT(cache_block->bcb_sector ==
+	ASSERT(wi->wi_cache_block == original_cache_block);
+	ASSERT_CACHE_BLOCK(original_cache_block, bc);
+	ASSERT(original_cache_block->bcb_state == S_CLEAN);
+	ASSERT(original_cache_block->bcb_cache_transition == TS_NONE);
+	ASSERT(atomic_read(&original_cache_block->bcb_refcount) > 0);
+	ASSERT(original_cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio_data_dir(bio) == WRITE);
 	ASSERT(!is_work_item_mode_writeback(wi));
 
-	spin_lock_irqsave(&bc->bc_entries_lock, flags);
-	spin_lock_irqsave(&cache_block->bcb_spinlock, cache_flags);
-
-	/* set transaction xid */
-	cache_block->bcb_xid = wi->wi_io_xid;
 	atomic_inc(&bc->bc_total_write_hits);
-
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
-	ASSERT(cache_block->bcb_state == S_CLEAN);
-	ASSERT(wi->wi_original_cache_block == NULL);
 	atomic_inc(&bc->bc_clean_write_hits);
 
+	/* set transaction xid */
+	cloned_cache_block->bcb_xid = wi->wi_io_xid;
+
+	wi->wi_flags |= WI_FLAG_WRITE_CLONING;
+	wi->wi_original_cache_block = original_cache_block;
+	wi->wi_cache_block = cloned_cache_block;
+
+	ASSERT(original_cache_block->bcb_state == S_CLEAN);
+
+	/*
+	 * set state for original cache block,
+	 * either clean invalidation or dirty invalidation.
+	 */
+	/*
+	 * clean invalidation (wtwb):
+	 *      S_CLEAN -->
+	 *      S_CLEAN_INVALIDATE_START,
+	 *      S_CLEAN_INVALIDATE_END,
+	 *      S_INVALID
+	 */
+	spin_lock_irqsave(&bc->bc_entries_lock, flags);
+	spin_lock_irqsave(&original_cache_block->bcb_spinlock, cache_flags);
+	cache_state_transition_initial(bc,
+				       original_cache_block,
+				       TS_CLEAN_INVALIDATION_WTWB,
+				       S_CLEAN_INVALIDATE_START);
+	/* move to the tail of the clean list */
+	list_del_init(&original_cache_block->bcb_entry_cleandirty);
+	list_add_tail(&original_cache_block->bcb_entry_cleandirty,
+		      &bc->bc_valid_entries_clean_list);
+	spin_unlock_irqrestore(&original_cache_block->bcb_spinlock,
+			       cache_flags);
+	/*
+	 * Note the global lock is not released, as it is still needed
+	 * for the next operation. This is just an optimization, the two cache
+	 * block operations can be manipulated independently, and in we could
+	 * just as well release and acquire the global lock again, as it was
+	 * with the original code.
+	 */
+
+	spin_lock_irqsave(&cloned_cache_block->bcb_spinlock, cache_flags);
+
+	cloned_cache_block->bcb_xid = wi->wi_io_xid;
 	if (bio->bi_iter.bi_size == PAGE_SIZE) {
 		/* full page write */
 		/*
@@ -1151,14 +1186,14 @@ void cache_handle_write_hit_wt(struct bittern_cache *bc,
 		 * [ write miss (wb) ]
 		 *
 		 * write hit (wt):
-		 * VALID_CLEAN -->
-		 * VALID_CLEAN_WRITE_HIT_CPT_DEVICE_START  -->
-		 * VALID_CLEAN_WRITE_HIT_CPT_DEVICE_END  -->
-		 * VALID_CLEAN_WRITE_HIT_CPT_CACHE_END -->
-		 * VALID_CLEAN
+		 * S_CLEAN -->
+		 * S_CLEAN_WRITE_HIT_CPT_DEVICE_START  -->
+		 * S_CLEAN_WRITE_HIT_CPT_DEVICE_END  -->
+		 * S_CLEAN_WRITE_HIT_CPT_CACHE_END -->
+		 * S_CLEAN
 		 */
 		cache_state_transition_initial(bc,
-					cache_block,
+					cloned_cache_block,
 					TS_WRITE_HIT_WT,
 					S_CLEAN_WRITE_HIT_CPT_DEVICE_START);
 	} else {
@@ -1171,30 +1206,32 @@ void cache_handle_write_hit_wt(struct bittern_cache *bc,
 		 *
 		 * write hit (wt):
 		 *
-		 * VALID_CLEAN -->
-		 * VALID_CLEAN_P_WRITE_HIT_CPF_CACHE_START -->
-		 * VALID_CLEAN_P_WRITE_HIT_CPT_DEVICE_START-->
-		 * VALID_CLEAN_P_WRITE_HIT_CPT_DEVICE_END  -->
-		 * VALID_CLEAN_P_WRITE_HIT_CPT_CACHE_END -->
-		 * VALID_CLEAN
+		 * S_CLEAN -->
+		 * S_CLEAN_P_WRITE_HIT_CPF_CACHE_START -->
+		 * S_CLEAN_P_WRITE_HIT_CPT_DEVICE_START-->
+		 * S_CLEAN_P_WRITE_HIT_CPT_DEVICE_END  -->
+		 * S_CLEAN_P_WRITE_HIT_CPT_CACHE_END -->
+		 * S_CLEAN
 		 */
 		cache_state_transition_initial(bc,
-					cache_block,
+					cloned_cache_block,
 					TS_P_WRITE_HIT_WT,
-					S_CLEAN_P_WRITE_HIT_CPF_CACHE_START);
+					S_CLEAN_P_WRITE_HIT_CPF_O_CACHE_START);
 	}
 
 	/* add/move to the tail of the clean list */
-	list_del_init(&cache_block->bcb_entry_cleandirty);
-	list_add_tail(&cache_block->bcb_entry_cleandirty,
+	list_del_init(&cloned_cache_block->bcb_entry_cleandirty);
+	list_add_tail(&cloned_cache_block->bcb_entry_cleandirty,
 		      &bc->bc_valid_entries_clean_list);
 
-	spin_unlock_irqrestore(&cache_block->bcb_spinlock, cache_flags);
+	spin_unlock_irqrestore(&cloned_cache_block->bcb_spinlock, cache_flags);
 	spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
 
-	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
-		 "handle-cache-write-hit-wt");
-	ASSERT(cache_block->bcb_sector ==
+	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, original_cache_block, bio, NULL,
+		 "handle-cache-write-hit-wt-original");
+	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cloned_cache_block, bio, NULL,
+		 "handle-cache-write-hit-wt-cloned");
+	ASSERT(cloned_cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 	cache_state_machine(bc, wi, bio);
 }
@@ -1247,16 +1284,6 @@ void cache_handle_write_hit_wb(struct bittern_cache *bc,
 	wi->wi_flags |= WI_FLAG_WRITE_CLONING;
 	wi->wi_original_cache_block = original_cache_block;
 	wi->wi_cache_block = cloned_cache_block;
-
-	M_ASSERT(atomic_read(&bc->bc_valid_entries_clean) >= 0);
-	M_ASSERT(atomic_read(&bc->bc_valid_entries_dirty) <=
-		 atomic_read(&bc->bc_total_entries));
-	M_ASSERT(atomic_read(&bc->bc_valid_entries_clean) <=
-		 atomic_read(&bc->bc_total_entries));
-	M_ASSERT(atomic_read(&bc->bc_valid_entries) <=
-		 atomic_read(&bc->bc_total_entries));
-	M_ASSERT(atomic_read(&bc->bc_invalid_entries) <=
-		 atomic_read(&bc->bc_total_entries));
 
 	atomic_inc(&bc->bc_total_write_hits);
 	if (original_cache_block->bcb_state == S_CLEAN) {
@@ -1819,12 +1846,22 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 int cache_map_workfunc_hit(struct bittern_cache *bc,
 			   struct cache_block *cache_block,
 			   struct bio *bio,
-			   int do_writeback)
+			   bool do_writeback)
 {
 	struct work_item *wi;
 	struct cache_block *cloned_cache_block = NULL;
 	uint64_t tstamp = current_kernel_time_nsec();
 	int ret;
+
+	M_ASSERT(atomic_read(&bc->bc_valid_entries_clean) >= 0);
+	M_ASSERT(atomic_read(&bc->bc_valid_entries_dirty) <=
+		 atomic_read(&bc->bc_total_entries));
+	M_ASSERT(atomic_read(&bc->bc_valid_entries_clean) <=
+		 atomic_read(&bc->bc_total_entries));
+	M_ASSERT(atomic_read(&bc->bc_valid_entries) <=
+		 atomic_read(&bc->bc_total_entries));
+	M_ASSERT(atomic_read(&bc->bc_invalid_entries) <=
+		 atomic_read(&bc->bc_total_entries));
 
 	/*
 	 * here we are either in a process or kernel thread context,
@@ -1837,15 +1874,18 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 	ASSERT(bio != NULL);
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
+	ASSERT(do_writeback == false || do_writeback == true);
 
 	/*
-	 * If write cloning is needed, allocate clone first. If there are no
-	 * resources, release the original cache_block and defer the request.
+	 * Allocate cache block clone for write operations.
 	 */
-	if (bio_data_dir(bio) == WRITE && do_writeback != 0) {
+	if (bio_data_dir(bio) == WRITE) {
 		int r;
 
-		r = cache_get_clone(bc, cache_block, &cloned_cache_block);
+		r = cache_get_clone(bc,
+				    cache_block,
+				    &cloned_cache_block,
+				    do_writeback);
 		if (r == CACHE_GET_RET_MISS) {
 			ASSERT(cloned_cache_block == NULL);
 			/*
@@ -1873,7 +1913,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 		ASSERT(cloned_cache_block != NULL);
 	} else {
 		BT_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, bio, NULL,
-			 "read-or-write-hit");
+			 "read-hit");
 	}
 
 	wi = work_item_allocate(bc,
@@ -1953,6 +1993,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 		/*
 		 * wt write hit
 		 */
+		ASSERT(cloned_cache_block != NULL);
 		ASSERT(do_writeback == 0);
 		ASSERT(!is_work_item_mode_writeback(wi));
 		/*
@@ -1966,7 +2007,8 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 		cache_handle_write_hit_wt(bc,
 					  wi,
 					  cache_block,
-					  bio);
+					  bio,
+					  cloned_cache_block);
 	}
 
 	return 1;
@@ -2010,6 +2052,16 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 	ASSERT(bio != NULL);
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
+
+	M_ASSERT(atomic_read(&bc->bc_valid_entries_clean) >= 0);
+	M_ASSERT(atomic_read(&bc->bc_valid_entries_dirty) <=
+		 atomic_read(&bc->bc_total_entries));
+	M_ASSERT(atomic_read(&bc->bc_valid_entries_clean) <=
+		 atomic_read(&bc->bc_total_entries));
+	M_ASSERT(atomic_read(&bc->bc_valid_entries) <=
+		 atomic_read(&bc->bc_total_entries));
+	M_ASSERT(atomic_read(&bc->bc_invalid_entries) <=
+		 atomic_read(&bc->bc_total_entries));
 
 	/*
 	 * here we are either in a process or kernel thread context,
@@ -2122,7 +2174,7 @@ int cache_map_workfunc(struct bittern_cache *bc, struct bio *bio)
 	int ret;
 	int cache_get_flags;
 	int do_bypass;
-	int do_writeback;
+	bool do_writeback;
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, NULL, NULL, bio, NULL, "enter");
 	ASSERT_BITTERN_CACHE(bc);
@@ -2197,7 +2249,7 @@ int cache_map_workfunc(struct bittern_cache *bc, struct bio *bio)
 	 * context of any single request.
 	 */
 	do_writeback = is_cache_mode_writeback(bc);
-	ASSERT(do_writeback == 0 || do_writeback == 1);
+	ASSERT(do_writeback == false || do_writeback == true);
 
 	/*
 	 * By default we do want to get a "valid_no_valid" block if we

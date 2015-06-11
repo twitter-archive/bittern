@@ -50,8 +50,8 @@ const char *cache_state_to_str(enum cache_state cache_state)
 		return "S_CLEAN_WRITE_HIT_CPT_DEVICE_END";
 	case S_CLEAN_WRITE_HIT_CPT_CACHE_END:
 		return "S_CLEAN_WRITE_HIT_CPT_CACHE_END";
-	case S_CLEAN_P_WRITE_HIT_CPF_CACHE_START:
-		return "S_CLEAN_P_WRITE_HIT_CPF_CACHE_START";
+	case S_CLEAN_P_WRITE_HIT_CPF_O_CACHE_START:
+		return "S_CLEAN_P_WRITE_HIT_CPF_O_CACHE_START";
 	case S_CLEAN_P_WRITE_HIT_CPT_DEVICE_START:
 		return "S_CLEAN_P_WRITE_HIT_CPT_DEVICE_START";
 	case S_CLEAN_P_WRITE_HIT_CPT_DEVICE_END:
@@ -351,7 +351,7 @@ const struct cache_state_transitions cache_valid_state_transitions[] = {
  */
 	{
 	 TS_NONE,
-	 S_CLEAN,
+	 S_CLEAN_NO_DATA,
 	 TS_WRITE_HIT_WT,
 	 S_CLEAN_WRITE_HIT_CPT_DEVICE_START,
 	 },
@@ -386,13 +386,13 @@ const struct cache_state_transitions cache_valid_state_transitions[] = {
  */
 	{
 	 TS_NONE,
-	 S_CLEAN,
+	 S_CLEAN_NO_DATA,
 	 TS_P_WRITE_HIT_WT,
-	 S_CLEAN_P_WRITE_HIT_CPF_CACHE_START,
+	 S_CLEAN_P_WRITE_HIT_CPF_O_CACHE_START,
 	 },
 	{
 	 TS_P_WRITE_HIT_WT,
-	 S_CLEAN_P_WRITE_HIT_CPF_CACHE_START,
+	 S_CLEAN_P_WRITE_HIT_CPF_O_CACHE_START,
 	 TS_P_WRITE_HIT_WT,
 	 S_CLEAN_P_WRITE_HIT_CPT_DEVICE_START,
 	 },

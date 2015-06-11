@@ -79,10 +79,6 @@ typedef void (*pmem_callback_t)(struct bittern_cache *bc,
 				void *callback_context,
 				int err);
 
-#define PMEM_ASYNC_CONTEXT_MAGIC1	0xf10c7a71
-#define PMEM_ASYNC_CONTEXT_MAGIC3	0xf10c7a72
-#define CACHE_PMEM_ASYNC_CONTEXT_MAGIC3	0xf10c7a73
-
 /*!
  * data buffer info holds virtual address and page struct pointer to cache data
  * being transferred.  if the pmem hardware does not support direct dma access
@@ -146,6 +142,9 @@ struct data_buffer_info {
 #define ASSERT_PMEM_DBI_DOUBLE_BUFFERING(__dbi)				\
 		__ASSERT_PMEM_DBI(__dbi, CACHE_DI_FLAGS_DOUBLE_BUFFERING)
 
+#define ASYNC_CONTEXT_MAGIC1	0xf10c7a71
+#define ASYNC_CONTEXT_MAGIC2	0xf10c7a72
+
 /*!
  * The content of this data structure is only used within pmem_api layer.
  * The context is used by the pmem APIs to keep track of async calls.
@@ -154,7 +153,6 @@ struct async_context {
 	unsigned int ma_magic1;
 	struct bio *ma_bio;
 	struct work_struct ma_work;
-	unsigned int ma_magic2;
 	struct bittern_cache *ma_bc;
 	struct cache_block *ma_cache_block;
 	void *ma_callback_context;
@@ -165,7 +163,7 @@ struct async_context {
 	int ma_datadir;
 	/*! desired metadata update state */
 	enum cache_state ma_metadata_state;
-	unsigned int ma_magic3;
+	unsigned int ma_magic2;
 };
 
 #define PMEM_CONTEXT_MAGIC1 0xf10c2af1

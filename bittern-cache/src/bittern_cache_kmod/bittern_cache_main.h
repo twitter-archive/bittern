@@ -90,11 +90,13 @@ extern int cache_get_dirty_from_head(struct bittern_cache *bc,
 extern int cache_get_clean(struct bittern_cache *bc,
 			   struct cache_block **o_cache_block);
 /*!
- * clone a cache block into a new one
+ * Clone a cache block into a new one.
+ * "is_dirty" determines if the cloned block should be S_CLEAN or S_DIRTY.
  */
 extern enum cache_get_ret cache_get_clone(struct bittern_cache  *bc,
 					  struct cache_block *cache_block,
-					  struct cache_block **o_cache_block);
+					  struct cache_block **o_cache_block,
+					  bool is_dirty);
 /*!
  * get cache_block by id
  */

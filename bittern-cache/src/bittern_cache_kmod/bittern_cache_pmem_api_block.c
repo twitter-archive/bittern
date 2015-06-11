@@ -315,9 +315,8 @@ void pmem_do_make_request_block(struct bittern_cache *bc,
 
 	ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
 	ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
-	ASSERT(ctx->ma_magic1 == PMEM_ASYNC_CONTEXT_MAGIC1);
-	ASSERT(ctx->ma_magic2 == PMEM_ASYNC_CONTEXT_MAGIC3);
-	ASSERT(ctx->ma_magic3 == CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
+	ASSERT(ctx->ma_magic1 == ASYNC_CONTEXT_MAGIC1);
+	ASSERT(ctx->ma_magic2 == ASYNC_CONTEXT_MAGIC2);
 
 	ASSERT(bc == ctx->ma_bc);
 	ASSERT_BITTERN_CACHE(bc);
@@ -333,9 +332,8 @@ void pmem_do_make_request_block(struct bittern_cache *bc,
 
 	ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
 	ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
-	ASSERT(ctx->ma_magic1 == PMEM_ASYNC_CONTEXT_MAGIC1);
-	ASSERT(ctx->ma_magic2 == PMEM_ASYNC_CONTEXT_MAGIC3);
-	ASSERT(ctx->ma_magic3 == CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
+	ASSERT(ctx->ma_magic1 == ASYNC_CONTEXT_MAGIC1);
+	ASSERT(ctx->ma_magic2 == ASYNC_CONTEXT_MAGIC2);
 	ASSERT_BITTERN_CACHE(bc);
 	M_ASSERT(!in_irq());
 	M_ASSERT(!in_softirq());
@@ -369,9 +367,8 @@ void pmem_make_request_worker_block(struct work_struct *work)
 	struct pmem_api *pa;
 
 	ctx = container_of(work, struct async_context, ma_work);
-	ASSERT(ctx->ma_magic1 == PMEM_ASYNC_CONTEXT_MAGIC1);
-	ASSERT(ctx->ma_magic2 == PMEM_ASYNC_CONTEXT_MAGIC3);
-	ASSERT(ctx->ma_magic3 == CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
+	ASSERT(ctx->ma_magic1 == ASYNC_CONTEXT_MAGIC1);
+	ASSERT(ctx->ma_magic2 == ASYNC_CONTEXT_MAGIC2);
 	pmem_ctx = container_of(ctx, struct pmem_context, async_ctx);
 	ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
 	ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
@@ -407,9 +404,8 @@ void pmem_make_request_defer_block(struct bittern_cache *bc,
 
 	ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
 	ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
-	ASSERT(ctx->ma_magic1 == PMEM_ASYNC_CONTEXT_MAGIC1);
-	ASSERT(ctx->ma_magic2 == PMEM_ASYNC_CONTEXT_MAGIC3);
-	ASSERT(ctx->ma_magic3 == CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
+	ASSERT(ctx->ma_magic1 == ASYNC_CONTEXT_MAGIC1);
+	ASSERT(ctx->ma_magic2 == ASYNC_CONTEXT_MAGIC2);
 	ASSERT_BITTERN_CACHE(bc);
 
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
@@ -446,9 +442,8 @@ void pmem_metadata_async_write_block_endio(struct bio *bio, int err)
 	ctx = &pmem_ctx->async_ctx;
 	dbi_data = &pmem_ctx->dbi;
 
-	M_ASSERT(ctx->ma_magic1 == PMEM_ASYNC_CONTEXT_MAGIC1);
-	ASSERT(ctx->ma_magic2 == PMEM_ASYNC_CONTEXT_MAGIC3);
-	ASSERT(ctx->ma_magic3 == CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
+	M_ASSERT(ctx->ma_magic1 == ASYNC_CONTEXT_MAGIC1);
+	ASSERT(ctx->ma_magic2 == ASYNC_CONTEXT_MAGIC2);
 	ASSERT(ctx->ma_bio == bio);
 
 	bio_put(bio);
@@ -567,9 +562,8 @@ void pmem_metadata_async_write_block(struct bittern_cache *bc,
 	 * setup context descriptor and start async transfer.
 	 */
 	ASSERT(ctx != NULL);
-	ctx->ma_magic1 = PMEM_ASYNC_CONTEXT_MAGIC1;
-	ctx->ma_magic2 = PMEM_ASYNC_CONTEXT_MAGIC3;
-	ctx->ma_magic3 = CACHE_PMEM_ASYNC_CONTEXT_MAGIC3;
+	ctx->ma_magic1 = ASYNC_CONTEXT_MAGIC1;
+	ctx->ma_magic2 = ASYNC_CONTEXT_MAGIC2;
 	ctx->ma_bc = bc;
 	ctx->ma_cache_block = cache_block;
 	ctx->ma_callback_context = callback_context;
@@ -609,9 +603,8 @@ void pmem_data_get_page_read_block_endio(struct bio *bio, int err)
 	ctx = &pmem_ctx->async_ctx;
 	dbi_data = &pmem_ctx->dbi;
 
-	M_ASSERT(ctx->ma_magic1 == PMEM_ASYNC_CONTEXT_MAGIC1);
-	ASSERT(ctx->ma_magic2 == PMEM_ASYNC_CONTEXT_MAGIC3);
-	ASSERT(ctx->ma_magic3 == CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
+	M_ASSERT(ctx->ma_magic1 == ASYNC_CONTEXT_MAGIC1);
+	ASSERT(ctx->ma_magic2 == ASYNC_CONTEXT_MAGIC2);
 	ASSERT(ctx->ma_bio == bio);
 
 	bio_put(bio);
@@ -724,9 +717,8 @@ void pmem_data_get_page_read_block(struct bittern_cache *bc,
 	 * start async transfer
 	 */
 	ASSERT(ctx != NULL);
-	ctx->ma_magic1 = PMEM_ASYNC_CONTEXT_MAGIC1;
-	ctx->ma_magic2 = PMEM_ASYNC_CONTEXT_MAGIC3;
-	ctx->ma_magic3 = CACHE_PMEM_ASYNC_CONTEXT_MAGIC3;
+	ctx->ma_magic1 = ASYNC_CONTEXT_MAGIC1;
+	ctx->ma_magic2 = ASYNC_CONTEXT_MAGIC2;
 	ctx->ma_bc = bc;
 	ctx->ma_cache_block = cache_block;
 	ctx->ma_callback_context = callback_context;
@@ -997,9 +989,8 @@ void pmem_data_put_page_write_metadata_endio_block(struct bio *bio, int err)
 	dbi_data = &pmem_ctx->dbi;
 	ctx = &pmem_ctx->async_ctx;
 
-	M_ASSERT(ctx->ma_magic1 == PMEM_ASYNC_CONTEXT_MAGIC1);
-	ASSERT(ctx->ma_magic2 == PMEM_ASYNC_CONTEXT_MAGIC3);
-	ASSERT(ctx->ma_magic3 == CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
+	M_ASSERT(ctx->ma_magic1 == ASYNC_CONTEXT_MAGIC1);
+	ASSERT(ctx->ma_magic2 == ASYNC_CONTEXT_MAGIC2);
 	bc = ctx->ma_bc;
 	ASSERT(bc != NULL);
 	pa = &bc->bc_papi;
@@ -1071,9 +1062,8 @@ void pmem_data_put_page_write_endio_block(struct bio *bio, int err)
 	M_ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
 	dbi_data = &pmem_ctx->dbi;
 	ctx = &pmem_ctx->async_ctx;
-	M_ASSERT(ctx->ma_magic1 == PMEM_ASYNC_CONTEXT_MAGIC1);
-	ASSERT(ctx->ma_magic2 == PMEM_ASYNC_CONTEXT_MAGIC3);
-	ASSERT(ctx->ma_magic3 == CACHE_PMEM_ASYNC_CONTEXT_MAGIC3);
+	M_ASSERT(ctx->ma_magic1 == ASYNC_CONTEXT_MAGIC1);
+	ASSERT(ctx->ma_magic2 == ASYNC_CONTEXT_MAGIC2);
 
 	M_ASSERT_FIXME(err == 0);
 	bio_put(bio);
@@ -1215,9 +1205,8 @@ void pmem_data_put_page_write_block(struct bittern_cache *bc,
 	ASSERT((dbi_data->di_flags & CACHE_DI_FLAGS_DOUBLE_BUFFERING) != 0);
 	ASSERT((dbi_data->di_flags & CACHE_DI_FLAGS_PMEM_WRITE) != 0);
 	ASSERT(ctx != NULL);
-	ctx->ma_magic1 = PMEM_ASYNC_CONTEXT_MAGIC1;
-	ctx->ma_magic2 = PMEM_ASYNC_CONTEXT_MAGIC3;
-	ctx->ma_magic3 = CACHE_PMEM_ASYNC_CONTEXT_MAGIC3;
+	ctx->ma_magic1 = ASYNC_CONTEXT_MAGIC1;
+	ctx->ma_magic2 = ASYNC_CONTEXT_MAGIC2;
 	ctx->ma_bc = bc;
 	ctx->ma_cache_block = cache_block;
 	ctx->ma_callback_context = callback_context;

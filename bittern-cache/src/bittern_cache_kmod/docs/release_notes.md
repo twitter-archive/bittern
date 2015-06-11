@@ -28,9 +28,6 @@ production ready:
 * *Error handling* currently unimplemented. The code will currently
   sane crash the machine whenever any kind of IO error or during some
   memory allocation in critical sections.
-* *Write Cloning* The current code only performs write-cloning for the dirty
-  write hit case. This is incorrect. Write cloning must be performed on all
-  write hits, clean or dirty.
 * *Target Device Flushing* The target device (i.e. the device being cached,
   typically a hard disk drive) needs to be properly flushed, that is, SEQ_FLUSH
   must be implemented.

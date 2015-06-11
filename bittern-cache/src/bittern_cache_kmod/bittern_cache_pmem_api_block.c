@@ -28,20 +28,23 @@ int pmem_allocate_papi_block(struct bittern_cache *bc,
 	struct pmem_api *pa = &bc->bc_papi;
 	size_t blockdev_size_bytes;
 
-	printk_info("partition: %p\n", blockdev->bd_part);
+	printk_info("%s: partition: %p\n", bc->bc_name, blockdev->bd_part);
 	M_ASSERT(blockdev->bd_part != NULL);
-	printk_info("device has %lu sectors\n",
+	printk_info("%s: device has %lu sectors\n",
+		    bc->bc_name,
 		    blockdev->bd_part->nr_sects);
 	blockdev_size_bytes = blockdev->bd_part->nr_sects * SECTOR_SIZE;
 
-	printk_info("device size %lu(%lumb)\n",
-		    blockdev_size_bytes, blockdev_size_bytes / (1024 * 1024));
+	printk_info("%s: device size %lu(%lumb)\n",
+		    bc->bc_name,
+		    blockdev_size_bytes,
+		    blockdev_size_bytes / (1024 * 1024));
 
 	pa->papi_bdev = blockdev;
 	pa->papi_bdev_size_bytes = blockdev_size_bytes;
 	pa->papi_bdev_actual_size_bytes = blockdev_size_bytes;
 
-	printk_info("initializing workqueue\n");
+	printk_info("%s: initializing workqueue\n", bc->bc_name);
 	/*
 	 * TODO:
 	 * these alloc_workqueue params are the same as create_workqueue().
@@ -51,20 +54,27 @@ int pmem_allocate_papi_block(struct bittern_cache *bc,
 	 */
 	pa->papi_make_request_wq = alloc_workqueue("b_wkq_blk:%s",
 						   WQ_MEM_RECLAIM,
-						   1, bc->bc_name);
-	M_ASSERT_FIXME(pa->papi_make_request_wq != NULL);
+						   1,
+						   bc->bc_name);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (pa->papi_make_request_wq == NULL) {
+		printk_err("%s: alloc workqueue failed\n", bc->bc_name);
+		return -ENOMEM;
+	}
 
 	return 0;
 }
 
 void pmem_deallocate_papi_block(struct bittern_cache *bc)
 {
-	printk_info("bc->bc_papi.papi_bdev=%p\n", bc->bc_papi.papi_bdev);
+	printk_info("%s: bc->bc_papi.papi_bdev=%p\n",
+		    bc->bc_name,
+		    bc->bc_papi.papi_bdev);
 
-	printk_info("flushing make_request workqueue\n");
+	printk_info("%s: flushing make_request workqueue\n", bc->bc_name);
 	M_ASSERT(bc->bc_papi.papi_make_request_wq != NULL);
 	flush_workqueue(bc->bc_papi.papi_make_request_wq);
-	printk_info("destroying make_request workqueue\n");
+	printk_info("%s: destroying make_request workqueue\n", bc->bc_name);
 	destroy_workqueue(bc->bc_papi.papi_make_request_wq);
 }
 
@@ -100,12 +110,13 @@ void pmem_rw_sync_block_endio(struct bio *bio, int err)
  * this API does double buffering.
  */
 int pmem_read_sync_block(struct bittern_cache *bc,
-				       uint64_t from_pmem_offset,
-				       void *to_buffer, size_t size)
+			 uint64_t from_pmem_offset,
+			 void *to_buffer,
+			 size_t size)
 {
 	int ret;
-	struct pmem_rw_sync_block_ctx *ctx;
-	void *buffer_vaddr;
+	struct pmem_rw_sync_block_ctx *ctx = NULL;
+	void *buffer_vaddr = NULL;
 	struct page *buffer_page;
 	uint64_t ts_started;
 	struct pmem_api *pa = &bc->bc_papi;
@@ -135,21 +146,36 @@ int pmem_read_sync_block(struct bittern_cache *bc,
 	 * so we need to use an intermediate buffer
 	 */
 	buffer_vaddr = kmem_cache_alloc(bc->bc_kmem_map, GFP_NOIO);
-	M_ASSERT_FIXME(buffer_vaddr != NULL);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (buffer_vaddr == NULL) {
+		printk_err("cannot allocate buffer_vaddr\n");
+		ret = -ENOMEM;
+		goto done;
+	}
 	ASSERT(PAGE_ALIGNED(buffer_vaddr));
 	buffer_page = virtual_to_page(buffer_vaddr);
-	ASSERT(buffer_page != NULL);
+	M_ASSERT(buffer_page != NULL);
 
 	/*
 	 * setup bio context, alloc bio and start io
 	 * */
 	ctx = kmem_alloc(sizeof(struct pmem_rw_sync_block_ctx), GFP_NOIO);
-	M_ASSERT_FIXME(ctx != NULL);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (ctx == NULL) {
+		printk_err("cannot allocate synchronous context\n");
+		ret = -ENOMEM;
+		goto done;
+	}
 	ctx->papi_ctx_magic = PMEM_RW_PAPI_CTX_MAGIC;
 	sema_init(&ctx->papi_ctx_sema, 0);
 
 	bio = bio_alloc(GFP_NOIO, 1);
-	M_ASSERT_FIXME(bio != NULL);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (bio == NULL) {
+		printk_err("cannot allocate bio struct\n");
+		ret = -ENOMEM;
+		goto done;
+	}
 	ctx->papi_ctx_bio = bio;
 	bio_set_data_dir_read(bio);
 	bio->bi_iter.bi_idx = 0;
@@ -175,22 +201,22 @@ int pmem_read_sync_block(struct bittern_cache *bc,
 		     "from_pmem_offset=%llu, to_buffer=%p, size=%lu: ret=%d",
 		     from_pmem_offset, to_buffer, size, ret);
 
-	M_ASSERT_FIXME(ret == 0);
-
-	kmem_free(ctx, sizeof(struct pmem_rw_sync_block_ctx));
-
 	memcpy(to_buffer, buffer_vaddr, size);
 
-	kmem_cache_free(bc->bc_kmem_map, buffer_vaddr);
+done:
+	if (ctx != NULL)
+		kmem_free(ctx, sizeof(struct pmem_rw_sync_block_ctx));
+
+	if (buffer_vaddr != NULL)
+		kmem_cache_free(bc->bc_kmem_map, buffer_vaddr);
 
 	if (size == PAGE_SIZE) {
 		atomic_dec(&pa->papi_stats.pmem_read_4k_pending);
-		cache_timer_add(&pa->papi_stats.pmem_read_4k_timer,
-					ts_started);
+		cache_timer_add(&pa->papi_stats.pmem_read_4k_timer, ts_started);
 	} else {
 		atomic_dec(&pa->papi_stats.pmem_read_not4k_pending);
-		cache_timer_add(&pa->papi_stats.
-					pmem_read_not4k_timer, ts_started);
+		cache_timer_add(&pa->papi_stats.pmem_read_not4k_timer,
+				ts_started);
 	}
 	return ret;
 }
@@ -200,12 +226,13 @@ int pmem_read_sync_block(struct bittern_cache *bc,
  * this API does double buffering.
  */
 int pmem_write_sync_block(struct bittern_cache *bc,
-					uint64_t to_pmem_offset,
-					void *from_buffer, size_t size)
+			  uint64_t to_pmem_offset,
+			  void *from_buffer,
+			  size_t size)
 {
 	int ret;
-	struct pmem_rw_sync_block_ctx *ctx;
-	void *buffer_vaddr;
+	struct pmem_rw_sync_block_ctx *ctx = NULL;
+	void *buffer_vaddr = NULL;
 	struct page *buffer_page;
 	uint64_t ts_started;
 	struct pmem_api *pa = &bc->bc_papi;
@@ -235,10 +262,17 @@ int pmem_write_sync_block(struct bittern_cache *bc,
 	 * so we need to use an intermediate buffer
 	 */
 	buffer_vaddr = kmem_cache_alloc(bc->bc_kmem_map, GFP_NOIO);
-	M_ASSERT_FIXME(buffer_vaddr != NULL);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (buffer_vaddr == NULL) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot allocate_buffer_vaddr");
+		printk_err("%s: cannot allocate buffer_vaddr\n", bc->bc_name);
+		ret = -ENOMEM;
+		goto done;
+	}
 	ASSERT(PAGE_ALIGNED(buffer_vaddr));
 	buffer_page = virtual_to_page(buffer_vaddr);
-	ASSERT(buffer_page != NULL);
+	M_ASSERT(buffer_page != NULL);
 
 	if (size < PAGE_SIZE) {
 		/*
@@ -254,12 +288,27 @@ int pmem_write_sync_block(struct bittern_cache *bc,
 	 * setup bio context, alloc bio and start io
 	 * */
 	ctx = kmem_alloc(sizeof(struct pmem_rw_sync_block_ctx), GFP_NOIO);
-	M_ASSERT_FIXME(ctx != NULL);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (ctx == NULL) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot allocate synchronous context");
+		printk_err("%s: cannot allocate synchronous context\n",
+			   bc->bc_name);
+		ret = -ENOMEM;
+		goto done;
+	}
 	ctx->papi_ctx_magic = PMEM_RW_PAPI_CTX_MAGIC;
 	sema_init(&ctx->papi_ctx_sema, 0);
 
 	bio = bio_alloc(GFP_NOIO, 1);
-	M_ASSERT_FIXME(bio != NULL);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (bio == NULL) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot allocate bio struct");
+		printk_err("%s: cannot allocate bio struct\n", bc->bc_name);
+		ret = -ENOMEM;
+		goto done;
+	}
 	ctx->papi_ctx_bio = bio;
 	bio_set_data_dir_write(bio);
 	bio->bi_iter.bi_idx = 0;
@@ -285,21 +334,21 @@ int pmem_write_sync_block(struct bittern_cache *bc,
 		     "to_pmem_offset=%llu, from_buffer=%p, size=%lu: ret=%d",
 		     to_pmem_offset, from_buffer, size, ret);
 
-	M_ASSERT_FIXME(ret == 0);
+done:
+	if (ctx != NULL)
+		kmem_free(ctx, sizeof(struct pmem_rw_sync_block_ctx));
 
-	kmem_free(ctx, sizeof(struct pmem_rw_sync_block_ctx));
-
-	kmem_cache_free(bc->bc_kmem_map, buffer_vaddr);
+	if (buffer_vaddr != NULL)
+		kmem_cache_free(bc->bc_kmem_map, buffer_vaddr);
 
 	if (size == PAGE_SIZE) {
 		atomic_dec(&pa->papi_stats.pmem_write_4k_pending);
-		cache_timer_add(&pa->papi_stats.
-					pmem_write_4k_timer, ts_started);
+		cache_timer_add(&pa->papi_stats.pmem_write_4k_timer,
+				ts_started);
 	} else {
 		atomic_dec(&pa->papi_stats.pmem_write_not4k_pending);
-		cache_timer_add(&pa->papi_stats.
-					pmem_write_not4k_timer,
-					ts_started);
+		cache_timer_add(&pa->papi_stats.pmem_write_not4k_timer,
+				ts_started);
 	}
 	return ret;
 }
@@ -422,7 +471,7 @@ void pmem_make_request_defer_block(struct bittern_cache *bc,
 	/* defer to worker thread, which will start io */
 	INIT_WORK(&ctx->ma_work, pmem_make_request_worker_block);
 	ret = queue_work(pa->papi_make_request_wq, &ctx->ma_work);
-	ASSERT(ret == 1);
+	M_ASSERT(ret == 1);
 }
 
 void pmem_metadata_async_write_block_endio(struct bio *bio, int err)

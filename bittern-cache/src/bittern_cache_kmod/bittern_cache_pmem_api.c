@@ -1058,18 +1058,23 @@ int pmem_allocate(struct bittern_cache *bc, struct block_device *blockdev)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
 	/* direct_access() calling convention changed in 4.0 */
 	if (blockdev->bd_disk->fops->direct_access != NULL) {
-		printk_info("detected direct_access-based pmem API implementation\n");
+		printk_info("%s: detected direct_access-based pmem API implementation\n",
+			    bc->bc_name);
 		ret = pmem_allocate_papi_mem(bc, blockdev);
 		pp = &cache_papi_mem;
 	} else
 #endif /* LINUX_VERSION_CODE >= 4.0.0 */
 	{
-		printk_info("detected blockdev-based pmem API implementation\n");
+		printk_info("%s: detected blockdev-based pmem API implementation\n",
+			    bc->bc_name);
 		ret = pmem_allocate_papi_block(bc, blockdev);
 		pp = &cache_papi_block;
 	}
 
-	printk_info("%s: allocate_func ret=%d\n", pp->interface_name, ret);
+	printk_info("%s: %s: allocate_func ret=%d\n",
+		    bc->bc_name,
+		    pp->interface_name,
+		    ret);
 	if (ret != 0)
 		return ret;
 	ASSERT(pa->papi_bdev_size_bytes > 0);

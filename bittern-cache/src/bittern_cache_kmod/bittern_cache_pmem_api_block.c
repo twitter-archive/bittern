@@ -148,7 +148,9 @@ int pmem_read_sync_block(struct bittern_cache *bc,
 	buffer_vaddr = kmem_cache_alloc(bc->bc_kmem_map, GFP_NOIO);
 	/*TODO_ADD_ERROR_INJECTION*/
 	if (buffer_vaddr == NULL) {
-		printk_err("cannot allocate buffer_vaddr\n");
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot allocate_buffer_vaddr");
+		printk_err("%s: cannot allocate buffer_vaddr\n", bc->bc_name);
 		ret = -ENOMEM;
 		goto done;
 	}
@@ -162,7 +164,10 @@ int pmem_read_sync_block(struct bittern_cache *bc,
 	ctx = kmem_alloc(sizeof(struct pmem_rw_sync_block_ctx), GFP_NOIO);
 	/*TODO_ADD_ERROR_INJECTION*/
 	if (ctx == NULL) {
-		printk_err("cannot allocate synchronous context\n");
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot allocate synchronous context");
+		printk_err("%s: cannot allocate synchronous context\n",
+			   bc->bc_name);
 		ret = -ENOMEM;
 		goto done;
 	}
@@ -172,7 +177,9 @@ int pmem_read_sync_block(struct bittern_cache *bc,
 	bio = bio_alloc(GFP_NOIO, 1);
 	/*TODO_ADD_ERROR_INJECTION*/
 	if (bio == NULL) {
-		printk_err("cannot allocate bio struct\n");
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot allocate bio struct");
+		printk_err("%s: cannot allocate bio struct\n", bc->bc_name);
 		ret = -ENOMEM;
 		goto done;
 	}
@@ -353,6 +360,25 @@ done:
 	return ret;
 }
 
+static void pmem_do_make_request_block_endbio(struct bio *bio, int err)
+{
+	struct pmem_context *pmem_ctx;
+	struct async_context *ctx = &pmem_ctx->async_ctx;
+
+	pmem_ctx = (struct pmem_context *)bio->bi_private;
+	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
+	ctx = &pmem_ctx->async_ctx;
+
+	M_ASSERT(ctx->ma_magic1 == ASYNC_CONTEXT_MAGIC1);
+	ASSERT(ctx->ma_magic2 == ASYNC_CONTEXT_MAGIC2);
+	ASSERT(ctx->ma_bio == bio);
+	bio_put(bio);
+
+	M_ASSERT(pmem_ctx->ctx_endio != NULL);
+	(*pmem_ctx->ctx_endio)(pmem_ctx, err);
+}
+
 /*! allocate bio and make the request */
 void pmem_do_make_request_block(struct bittern_cache *bc,
 				struct pmem_context *pmem_ctx)
@@ -388,7 +414,21 @@ void pmem_do_make_request_block(struct bittern_cache *bc,
 	M_ASSERT(!in_softirq());
 
 	bio = bio_alloc(GFP_NOIO, 1);
-	M_ASSERT_FIXME(bio != NULL);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (bio == NULL) {
+		/* see comment in struct pmem_context declaration */
+		M_ASSERT(pmem_ctx->bi_endio == NULL);
+		M_ASSERT(pmem_ctx->ctx_endio != NULL);
+		printk_err("%s: failed to allocate bio struct\n", bc->bc_name);
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "failed to allocate bio struct");
+		/*
+		 * Allocation failed, bubble up the error.
+		 */
+		(*pmem_ctx->ctx_endio)(pmem_ctx, -ENOMEM);
+		return;
+	}
+
 	ctx->ma_bio = bio;
 	if (pmem_ctx->bi_datadir == WRITE)
 		bio_set_data_dir_write(bio);
@@ -398,7 +438,16 @@ void pmem_do_make_request_block(struct bittern_cache *bc,
 	bio->bi_iter.bi_sector = pmem_ctx->bi_sector;
 	bio->bi_iter.bi_size = PAGE_SIZE;
 	bio->bi_bdev = pa->papi_bdev;
-	bio->bi_end_io = pmem_ctx->bi_endio;
+
+	/* see comment in struct pmem_context declaration */
+	if (pmem_ctx->bi_endio != NULL) {
+		M_ASSERT(pmem_ctx->ctx_endio == NULL);
+		bio->bi_end_io = pmem_ctx->bi_endio;
+	} else {
+		M_ASSERT(pmem_ctx->ctx_endio != NULL);
+		bio->bi_end_io = pmem_do_make_request_block_endbio;
+	}
+
 	bio->bi_private = (void *)pmem_ctx;
 	bio->bi_io_vec[0].bv_page = dbi_data->di_page;
 	bio->bi_io_vec[0].bv_len = PAGE_SIZE;
@@ -474,7 +523,8 @@ void pmem_make_request_defer_block(struct bittern_cache *bc,
 	M_ASSERT(ret == 1);
 }
 
-void pmem_metadata_async_write_block_endio(struct bio *bio, int err)
+static void pmem_metadata_async_write_block_endio(struct pmem_context *pmem_ctx,
+						  int err)
 {
 	struct async_context *ctx;
 	struct bittern_cache *bc;
@@ -483,9 +533,7 @@ void pmem_metadata_async_write_block_endio(struct bio *bio, int err)
 	void *f_callback_context;
 	pmem_callback_t f_callback_function;
 	struct pmem_api *pa;
-	struct pmem_context *pmem_ctx;
 
-	pmem_ctx = (struct pmem_context *)bio->bi_private;
 	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
 	M_ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
 	ctx = &pmem_ctx->async_ctx;
@@ -493,9 +541,6 @@ void pmem_metadata_async_write_block_endio(struct bio *bio, int err)
 
 	M_ASSERT(ctx->ma_magic1 == ASYNC_CONTEXT_MAGIC1);
 	ASSERT(ctx->ma_magic2 == ASYNC_CONTEXT_MAGIC2);
-	ASSERT(ctx->ma_bio == bio);
-
-	bio_put(bio);
 
 	bc = ctx->ma_bc;
 	pa = &bc->bc_papi;
@@ -517,10 +562,8 @@ void pmem_metadata_async_write_block_endio(struct bio *bio, int err)
 	ASSERT(f_callback_context != NULL);
 	ASSERT_PMEM_DBI_DOUBLE_BUFFERING(dbi_data);
 
-	M_ASSERT_FIXME(err == 0);
-
 	cache_timer_add(&pa->papi_stats.metadata_write_async_timer,
-				ctx->ma_start_timer);
+			ctx->ma_start_timer);
 
 	pmem_clear_dbi_double_buffering(dbi_data);
 
@@ -628,7 +671,8 @@ void pmem_metadata_async_write_block(struct bittern_cache *bc,
 	 */
 	pmem_ctx->bi_datadir = WRITE;
 	pmem_ctx->bi_sector = to_pmem_offset / SECTOR_SIZE;
-	pmem_ctx->bi_endio = pmem_metadata_async_write_block_endio;
+	pmem_ctx->bi_endio = NULL;
+	pmem_ctx->ctx_endio = pmem_metadata_async_write_block_endio;
 	pmem_make_request_defer_block(bc, pmem_ctx);
 }
 
@@ -678,9 +722,8 @@ void pmem_data_get_page_read_block_endio(struct bio *bio, int err)
 
 	M_ASSERT_FIXME(err == 0);
 
-	cache_timer_add(&pa->papi_stats.
-				data_get_page_read_async_timer,
-				ctx->ma_start_timer);
+	cache_timer_add(&pa->papi_stats.data_get_page_read_async_timer,
+			ctx->ma_start_timer);
 
 	/*
 	 * just call the higher level callback
@@ -783,6 +826,7 @@ void pmem_data_get_page_read_block(struct bittern_cache *bc,
 	pmem_ctx->bi_datadir = READ;
 	pmem_ctx->bi_sector = from_pmem_offset / SECTOR_SIZE;
 	pmem_ctx->bi_endio = pmem_data_get_page_read_block_endio;
+	pmem_ctx->ctx_endio = NULL;
 	pmem_make_request_defer_block(bc, pmem_ctx);
 
 	cache_timer_add(&pa->papi_stats.data_get_page_read_timer, ts_started);
@@ -1174,6 +1218,7 @@ void pmem_data_put_page_write_endio_block(struct bio *bio, int err)
 	pmem_ctx->bi_datadir = WRITE;
 	pmem_ctx->bi_sector = to_pmem_offset / SECTOR_SIZE;
 	pmem_ctx->bi_endio = pmem_data_put_page_write_metadata_endio_block;
+	pmem_ctx->ctx_endio = NULL;
 	pmem_make_request_defer_block(bc, pmem_ctx);
 }
 
@@ -1272,6 +1317,7 @@ void pmem_data_put_page_write_block(struct bittern_cache *bc,
 	pmem_ctx->bi_datadir = WRITE;
 	pmem_ctx->bi_sector = to_pmem_offset / SECTOR_SIZE;
 	pmem_ctx->bi_endio = pmem_data_put_page_write_endio_block;
+	pmem_ctx->ctx_endio = NULL;
 	pmem_make_request_defer_block(bc, pmem_ctx);
 
 	cache_timer_add(&pa->papi_stats.data_put_page_write_timer, ts_started);

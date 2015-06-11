@@ -188,8 +188,14 @@ struct pmem_context {
 	int bi_datadir;
 	/*! bi_sector is passed as context for make request */
 	sector_t bi_sector;
-	/*! bi_endio is passed as context for make request */
+	/*! \todo
+	 * LEGACY bi_endio is passed as context for make request.
+	 * once all callbacks move to ctx_endio, this callback
+	 * will be deprecated.
+	 */
 	void (*bi_endio)(struct bio *bio, int err);
+	/*! ctx_endio is passed as context for make request */
+	void (*ctx_endio)(struct pmem_context *ctx, int err);
 	/*! timer */
 	uint64_t bi_started;
 };

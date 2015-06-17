@@ -20,9 +20,12 @@
 
 void cache_task_pmem_header_update_timeout(struct bittern_cache *bc)
 {
+	int ret;
+
 	ASSERT_BITTERN_CACHE(bc);
 	BT_TRACE(BT_LEVEL_TRACE3, bc, NULL, NULL, NULL, NULL, "bc=%p", bc);
-	pmem_header_update(bc, 0);
+	ret = pmem_header_update(bc, 0);
+	M_ASSERT_FIXME(ret == 0);
 }
 
 void cache_task_sequential_timeout(struct bittern_cache *bc)

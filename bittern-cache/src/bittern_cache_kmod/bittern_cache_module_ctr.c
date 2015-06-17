@@ -1061,7 +1061,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	}
 
 	if (ret != 0 && cache_operation == CACHE_DEVICE_OP_RESTORE) {
-		printk_err("cache restore failed (no header)\n");
+		printk_err("cache restore failed (no header), ret=%d\n", ret);
 		ti->error = "cache restore failed (no header)";
 		goto bad_1;
 	}
@@ -1073,7 +1073,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		printk_info("%s: initializing in-struct metadata header and ram metadata header copies\n",
 			    cache_operation_str);
 		ret = pmem_header_initialize(bc);
-		M_ASSERT(ret == 0);
+		M_ASSERT_FIXME(ret == 0);
 		M_ASSERT(bc->bc_papi.papi_hdr.lm_cache_blocks > 0);
 	}
 

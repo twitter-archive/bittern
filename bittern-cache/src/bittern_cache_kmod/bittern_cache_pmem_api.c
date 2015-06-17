@@ -137,8 +137,17 @@ int pmem_context_setup(struct bittern_cache *bc,
 	ASSERT(dbi->di_page == NULL);
 	ASSERT(dbi->di_flags == 0x0);
 	ASSERT(atomic_read(&dbi->di_busy) == 0);
+
 	dbi->di_buffer_vmalloc_buffer = kmem_cache_alloc(kmem_slab, GFP_NOIO);
-	M_ASSERT_FIXME(dbi->di_buffer_vmalloc_buffer != NULL);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (dbi->di_buffer_vmalloc_buffer == NULL) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, cache_block, NULL, NULL,
+			     "kmem_cache_alloc kmem_slab failed");
+		printk_err("%s: kmem_cache_alloc kmem_slab failed\n",
+			   bc->bc_name);
+		return -ENOMEM;
+	}
+
 	ASSERT(PAGE_ALIGNED(dbi->di_buffer_vmalloc_buffer));
 	dbi->di_buffer_vmalloc_page =
 				virtual_to_page(dbi->di_buffer_vmalloc_buffer);
@@ -424,28 +433,41 @@ int __pmem_header_restore(struct bittern_cache *bc,
 			     header_block_offset_bytes,
 			     pm,
 			     sizeof(struct pmem_header));
-	M_ASSERT_FIXME(ret == 0);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (ret != 0) {
+		ASSERT(ret < 0);
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "pmem_read_sync failed, ret=%d",
+			     ret);
+		printk_err("%s: pmem_read_sync failed, ret=%d\n",
+			   bc->bc_name,
+			   ret);
+		return ret;
+	}
 
+	/*TODO_ADD_ERROR_INJECTION*/
 	if (pm->lm_magic != LM_MAGIC) {
-		printk_err("[%d]: magic numbers invalid (0x%x/0x%x)\n",
+		printk_err("[%d]: magic number invalid (0x%x/0x%x)\n",
 			   header_block_number,
 			   pm->lm_magic,
 			   LM_MAGIC);
-		return -EINVAL;
+		return -EBADMSG;
 	}
+	/*TODO_ADD_ERROR_INJECTION*/
 	if (pm->lm_version != LM_VERSION) {
 		printk_err("[%d]: error: version number is incorrect %d/%d\n",
 			   header_block_number, pm->lm_version, LM_VERSION);
-		return -EINVAL;
+		return -EBADMSG;
 	}
 
 	computed_hash = murmurhash3_128(pm, PMEM_HEADER_HASHING_SIZE);
+	/*TODO_ADD_ERROR_INJECTION*/
 	if (uint128_ne(computed_hash, pm->lm_hash)) {
 		printk_err("[%d]: hash mismatch: stored_hash=" UINT128_FMT ", computed_hash" UINT128_FMT "\n",
 			    header_block_number,
 			    UINT128_ARG(pm->lm_hash),
 			    UINT128_ARG(computed_hash));
-		return -EINVAL;
+		return -EBADMSG;
 	}
 	printk_info("[%d]: stored_hash=" UINT128_FMT ", computed_hash" UINT128_FMT "\n",
 		    header_block_number,
@@ -464,8 +486,7 @@ int __pmem_header_restore(struct bittern_cache *bc,
 
 int pmem_header_restore(struct bittern_cache *bc)
 {
-	uint64_t hdr_0_xid = (uint64_t) -1ULL;
-	uint64_t hdr_1_xid = (uint64_t) -1ULL;
+	uint64_t hdr_0_xid, hdr_1_xid;
 	int ret;
 	struct pmem_api *pa = &bc->bc_papi;
 	struct pmem_header *pm = &pa->papi_hdr;
@@ -497,49 +518,58 @@ int pmem_header_restore(struct bittern_cache *bc)
 	/*
 	 * use the header with the highest xid
 	 */
-	if (hdr_0_xid == (uint64_t) -1ULL && hdr_1_xid == (uint64_t) -1ULL) {
-		printk_err("error: both headers invalid\n");
-		return -EINVAL;
-	} else if (hdr_0_xid != (uint64_t) -1ULL &&
-		   hdr_1_xid == (uint64_t) -1ULL) {
-		printk_info("[0/1]: using hdr_0_xid %llu\n", hdr_0_xid);
-		ret = __pmem_header_restore(bc, 0, &hdr_0_xid);
-		M_ASSERT(ret == 0);
-		printk_info("[0/1]: using hdr_0_xid %llu\n", hdr_0_xid);
-		cache_xid_set(bc, hdr_0_xid + 1);
-	} else if (hdr_0_xid == (uint64_t) -1ULL &&
-		   hdr_1_xid != (uint64_t) -1ULL) {
-		printk_info("[1/0]: using hdr_1_xid %llu\n", hdr_1_xid);
-		ret = __pmem_header_restore(bc, 1, &hdr_1_xid);
-		M_ASSERT(ret == 0);
-		printk_info("[1/0]: using hdr_1_xid %llu\n", hdr_1_xid);
-		cache_xid_set(bc, hdr_1_xid + 1);
-	} else if (hdr_0_xid > hdr_1_xid) {
-		printk_info("[1/1]: using hdr_0_xid=%llu\n", hdr_0_xid);
-		ret = __pmem_header_restore(bc, 0, &hdr_0_xid);
-		printk_info("[1/1]: using hdr_0_xid=%llu\n", hdr_0_xid);
-		M_ASSERT(ret == 0);
-		cache_xid_set(bc, hdr_0_xid + 1);
-	} else {		/* hdr_0_xid <= hdr_1_xid */
-		printk_info("[1/1]: using hdr_1_xid=%llu\n", hdr_1_xid);
-		ret = __pmem_header_restore(bc, 1, &hdr_1_xid);
-		printk_info("[1/1]: using hdr_1_xid=%llu\n", hdr_1_xid);
-		M_ASSERT(ret == 0);
-		cache_xid_set(bc, hdr_1_xid + 1);
+	if (pa->papi_stats.restore_header0_valid == 0 &&
+	    pa->papi_stats.restore_header1_valid == 0) {
+		printk_err("error: both headers invalid, ret=%d\n", ret);
+		M_ASSERT(ret < 0);
+		return ret;
 	}
-
-	ASSERT(pa->papi_stats.restore_header0_valid == 1 ||
-		pa->papi_stats.restore_header1_valid == 1);
 
 	printk_info("hdr_0_xid=%llu\n", hdr_0_xid);
 	printk_info("hdr_1_xid=%llu\n", hdr_1_xid);
+
+	if (pa->papi_stats.restore_header1_valid == 0) {
+		/* only header0 valid */
+		printk_info("[0/1]: using hdr_0_xid %llu\n", hdr_0_xid);
+		ret = __pmem_header_restore(bc, 0, &hdr_0_xid);
+		printk_info("[0/1]: using hdr_0_xid %llu\n", hdr_0_xid);
+		cache_xid_set(bc, hdr_0_xid + 1);
+	} else if (pa->papi_stats.restore_header0_valid == 0) {
+		/* only header0 valid */
+		printk_info("[1/0]: using hdr_1_xid %llu\n", hdr_1_xid);
+		ret = __pmem_header_restore(bc, 1, &hdr_1_xid);
+		printk_info("[1/0]: using hdr_1_xid %llu\n", hdr_1_xid);
+		cache_xid_set(bc, hdr_1_xid + 1);
+	} else if (hdr_0_xid > hdr_1_xid) {
+		/* both headers valid, use header0 as it has highest xid */
+		printk_info("[1/1]: using hdr_0_xid=%llu\n", hdr_0_xid);
+		ret = __pmem_header_restore(bc, 0, &hdr_0_xid);
+		printk_info("[1/1]: using hdr_0_xid=%llu\n", hdr_0_xid);
+		cache_xid_set(bc, hdr_0_xid + 1);
+	} else {
+		/* both headers valid, use header1 as it's highest or equal */
+		printk_info("[1/1]: using hdr_1_xid=%llu\n", hdr_1_xid);
+		ret = __pmem_header_restore(bc, 1, &hdr_1_xid);
+		printk_info("[1/1]: using hdr_1_xid=%llu\n", hdr_1_xid);
+		cache_xid_set(bc, hdr_1_xid + 1);
+	}
+
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (ret != 0) {
+		printk_err("error: header re-read failed, ret=%d\n", ret);
+		return ret;
+	}
+	M_ASSERT(pa->papi_stats.restore_header0_valid == 1 ||
+		pa->papi_stats.restore_header1_valid == 1);
+
+	cache_xid_inc(bc);
+
 	printk_info("bc->bc_xid=%lu\n", atomic64_read(&bc->bc_xid));
 	printk_info("pm->lm_cache_layout='%c'(0x%x)\n",
 		    pm->lm_cache_layout,
 		    pm->lm_cache_layout);
 	printk_info("pm->lm_cache_block_size=%llu\n", pm->lm_cache_block_size);
 	printk_info("pm->lm_xid_current=%llu\n", pm->lm_xid_current);
-	cache_xid_inc(bc);
 
 	printk_info("bc->bc_name=%s\n", bc->bc_name);
 	printk_info("bc->bc_cache_device_name=%s\n", bc->bc_cache_device_name);
@@ -549,29 +579,29 @@ int pmem_header_restore(struct bittern_cache *bc)
 	printk_info("pm->lm_uuid=%pUb\n", pm->lm_uuid);
 	printk_info("pm->lm_device_name=%s\n", pm->lm_device_name);
 	printk_info("pm->lm_device_uuid=%pUb\n", pm->lm_device_uuid);
-	printk_info("pm->lm_cache_size_bytes=%llu\n",
-		    pm->lm_cache_size_bytes);
+	printk_info("pm->lm_cache_size_bytes=%llu\n", pm->lm_cache_size_bytes);
 	printk_info("pm->lm_mcb_size_bytes=%llu\n", pm->lm_mcb_size_bytes);
 
+	/*TODO_ADD_ERROR_INJECTION*/
 	if (pm->lm_header_size_bytes != sizeof(struct pmem_header)) {
 		printk_err("lm_header_size mismatch %u/%lu\n",
 			   pm->lm_header_size_bytes,
 			   sizeof(struct pmem_header));
-		return -EINVAL;
+		return -EBADMSG;
 	}
 
 	if (pm->lm_cache_block_size != PAGE_SIZE) {
 		printk_err("lm_header_cache_block_size mismatch %llu/%lu\n",
 			   pm->lm_cache_block_size,
 			   PAGE_SIZE);
-		return -EINVAL;
+		return -EBADMSG;
 	}
 
 	if (pm->lm_cache_layout != pmem_cache_layout(bc)) {
 		printk_err("lm_cache_layout mismatch 0x%x/0x%x\n",
 			   pm->lm_cache_layout,
 			   pmem_cache_layout(bc));
-		return -EINVAL;
+		return -EBADMSG;
 	}
 
 	if (pm->lm_mcb_size_bytes != sizeof(struct pmem_block_metadata) &&
@@ -579,7 +609,7 @@ int pmem_header_restore(struct bittern_cache *bc)
 		printk_err("lm_mcb_size mismatch %llu:%lu/%lu\n",
 			   pm->lm_mcb_size_bytes,
 			   sizeof(struct pmem_header), PAGE_SIZE);
-		return -EINVAL;
+		return -EBADMSG;
 	}
 
 	if (pmem_page_size_transfer_only(bc)) {
@@ -601,7 +631,7 @@ int pmem_header_restore(struct bittern_cache *bc)
 		printk_err("lm_first_offset_bytes mismatch %llu/%lu\n",
 			   pm->lm_first_offset_bytes,
 			   CACHE_MEM_FIRST_OFFSET_BYTES);
-		return -EINVAL;
+		return -EBADMSG;
 	}
 
 	if (pm->lm_cache_layout == CACHE_LAYOUT_SEQUENTIAL) {
@@ -612,14 +642,14 @@ int pmem_header_restore(struct bittern_cache *bc)
 		if (m != pm->lm_first_data_block_offset_bytes) {
 			printk_err("first_data_block_offset mismatch %llu\n",
 				   pm->lm_first_data_block_offset_bytes);
-			return -EINVAL;
+			return -EBADMSG;
 		}
 		m += pm->lm_cache_blocks * PAGE_SIZE;
 		if (m > pm->lm_cache_size_bytes) {
 			printk_err("last offset exceeds cache size %llu/%llu\n",
 				   m,
 				   pm->lm_cache_size_bytes);
-			return -EINVAL;
+			return -EBADMSG;
 		}
 	} else {
 		uint64_t m = pm->lm_first_offset_bytes;
@@ -630,13 +660,13 @@ int pmem_header_restore(struct bittern_cache *bc)
 						CACHE_MEM_FIRST_OFFSET_BYTES) {
 			printk_err("first_data_block_offset mismatch %llu\n",
 				   pm->lm_first_data_block_offset_bytes);
-			return -EINVAL;
+			return -EBADMSG;
 		}
 		if (m > pm->lm_cache_size_bytes) {
 			printk_err("last offset exceeds cache size %llu/%llu\n",
 				   m,
 				   pm->lm_cache_size_bytes);
-			return -EINVAL;
+			return -EBADMSG;
 		}
 	}
 
@@ -657,7 +687,7 @@ int pmem_header_restore(struct bittern_cache *bc)
 		printk_err("device size %llumb exceeds allocated size %llumb\n",
 				pm->lm_cache_size_bytes / 1024ULL / 1024ULL,
 				pa->papi_bdev_size_bytes / 1024ULL / 1024ULL);
-		return -EINVAL;
+		return -EBADMSG;
 	}
 	if (pm->lm_cache_size_bytes == pa->papi_bdev_size_bytes) {
 		printk_info("device size %llu equals allocated size %lu\n",
@@ -690,7 +720,7 @@ int pmem_block_restore(struct bittern_cache *bc,
 		       struct cache_block *cache_block)
 {
 	struct pmem_block_metadata *pmbm;
-	uint128_t computed_hash_metadata, computed_hash_data;
+	uint128_t hash_metadata, hash_data;
 	int ret;
 	void *buffer_vaddr;
 	struct page *buffer_page;
@@ -710,13 +740,31 @@ int pmem_block_restore(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_block_id == block_id);
 
 	pmbm = kmem_alloc(sizeof(struct pmem_block_metadata), GFP_NOIO);
-	M_ASSERT_FIXME(pmbm != NULL);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (pmbm == NULL) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, cache_block, NULL, NULL,
+			     "kmem_alloc pmem_block_metadata failed");
+		printk_err("%s: kmem_alloc pmem_block_metadata failed\n",
+			   bc->bc_name);
+		return -ENOMEM;
+	}
 
 	ret = pmem_read_sync(bc,
 			__cache_block_id_2_metadata_pmem_offset(bc, block_id),
 			pmbm,
 			sizeof(struct pmem_block_metadata));
-	M_ASSERT_FIXME(ret == 0);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (ret != 0) {
+		ASSERT(ret < 0);
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "pmem_read_sync failed, ret=%d",
+			     ret);
+		printk_err("%s: pmem_read_sync failed, ret=%d\n",
+			   bc->bc_name,
+			   ret);
+		kmem_free(pmbm, sizeof(struct pmem_block_metadata));
+		return ret;
+	}
 
 	/*
 	 * this can only happen if pmem is corrupt
@@ -731,17 +779,16 @@ int pmem_block_restore(struct bittern_cache *bc,
 		return -EHWPOISON;
 	}
 
-	computed_hash_metadata = murmurhash3_128(pmbm,
-					PMEM_BLOCK_METADATA_HASHING_SIZE);
+	hash_metadata = murmurhash3_128(pmbm, PMEM_BLOCK_METADATA_HASHING_SIZE);
 
-	if (uint128_ne(computed_hash_metadata, pmbm->pmbm_hash_metadata)) {
+	if (uint128_ne(hash_metadata, pmbm->pmbm_hash_metadata)) {
 		printk_err("block id #%u: metadata hash mismatch: stored_hash_metadata=" UINT128_FMT ", computed_hash_metadata" UINT128_FMT "\n",
 			   block_id,
 			   UINT128_ARG(pmbm->pmbm_hash_metadata),
-			   UINT128_ARG(computed_hash_metadata));
+			   UINT128_ARG(hash_metadata));
 		pa->papi_stats.restore_hash_corrupt_metadata_blocks++;
 		kmem_free(pmbm, sizeof(struct pmem_block_metadata));
-		return 0;
+		return -EHWPOISON;
 	}
 
 	if (CACHE_STATE_VALID(pmbm->pmbm_status)) {
@@ -754,9 +801,9 @@ int pmem_block_restore(struct bittern_cache *bc,
 		 * this can only happen if pmem is corrupt
 		 */
 		pa->papi_stats.restore_corrupt_metadata_blocks++;
-		printk_err
-		    ("block id #%u: error: metadata cache status invalid %u(%s)\n",
-		     block_id, pmbm->pmbm_status,
+		printk_err("block id #%u: error: metadata cache status invalid %u(%s)\n",
+			   block_id,
+			   pmbm->pmbm_status,
 		     cache_state_to_str(pmbm->pmbm_status));
 		kmem_free(pmbm, sizeof(struct pmem_block_metadata));
 		return -EHWPOISON;
@@ -776,8 +823,7 @@ int pmem_block_restore(struct bittern_cache *bc,
 		return 1;
 	}
 
-	if (pmbm->pmbm_status != S_CLEAN
-	    && pmbm->pmbm_status != S_DIRTY) {
+	if (pmbm->pmbm_status != S_CLEAN && pmbm->pmbm_status != S_DIRTY) {
 		printk_info_ratelimited("block id #%u: warning: metadata cache status is %u(%s) (transaction in progress), nothing to restore\n",
 					block_id,
 					pmbm->pmbm_status,
@@ -785,7 +831,8 @@ int pmem_block_restore(struct bittern_cache *bc,
 		pa->papi_stats.restore_pending_metadata_blocks++;
 		kmem_free(pmbm, sizeof(struct pmem_block_metadata));
 		/*
-		 * intermediate state (crashed during a transaction)
+		 * Intermediate state (crashed during a transaction).
+		 * Caller will ignore this restore and reinitialize.
 		 */
 		return 0;
 	}
@@ -804,29 +851,50 @@ int pmem_block_restore(struct bittern_cache *bc,
 	ASSERT(is_sector_cache_aligned(pmbm->pmbm_device_sector));
 
 	buffer_vaddr = kmem_cache_alloc(bc->bc_kmem_map, GFP_NOIO);
-	M_ASSERT_FIXME(buffer_vaddr != NULL);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (buffer_vaddr == NULL) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, cache_block, NULL, NULL,
+			     "kmem_alloc kmem_map failed");
+		printk_err("%s: kmem_alloc kmem_map failed\n", bc->bc_name);
+		kmem_free(pmbm, sizeof(struct pmem_block_metadata));
+		return -ENOMEM;
+	}
+
 	ASSERT(PAGE_ALIGNED(buffer_vaddr));
 	buffer_page = virtual_to_page(buffer_vaddr);
-	ASSERT(buffer_page != NULL);
+	M_ASSERT(buffer_page != NULL);
 
 	ret = pmem_read_sync(bc,
 			     __cache_block_id_2_data_pmem_offset(bc, block_id),
 			     buffer_vaddr,
 			     PAGE_SIZE);
-	M_ASSERT_FIXME(ret == 0);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (ret != 0) {
+		ASSERT(ret < 0);
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "pmem_read_sync failed, ret=%d",
+			     ret);
+		printk_err("%s: pmem_read_sync failed, ret=%d\n",
+			   bc->bc_name,
+			   ret);
+		kmem_cache_free(bc->bc_kmem_map, buffer_vaddr);
+		kmem_free(pmbm, sizeof(struct pmem_block_metadata));
+		return ret;
+	}
 
-	computed_hash_data = murmurhash3_128(buffer_vaddr, PAGE_SIZE);
+	hash_data = murmurhash3_128(buffer_vaddr, PAGE_SIZE);
 
 	ASSERT(PAGE_ALIGNED(buffer_vaddr));
 	ASSERT(buffer_page != NULL);
 	ASSERT(buffer_page == virtual_to_page(buffer_vaddr));
+
 	kmem_cache_free(bc->bc_kmem_map, buffer_vaddr);
 
-	if (uint128_ne(computed_hash_metadata, pmbm->pmbm_hash_metadata)) {
+	if (uint128_ne(hash_data, pmbm->pmbm_hash_data)) {
 		printk_err("block id #%u: data hash mismatch: stored_hash_data=" UINT128_FMT ", computed_hash_data" UINT128_FMT "\n",
 			   block_id,
-			   UINT128_ARG(pmbm->pmbm_hash_metadata),
-			   UINT128_ARG(computed_hash_metadata));
+			   UINT128_ARG(pmbm->pmbm_hash_data),
+			   UINT128_ARG(hash_data));
 		pa->papi_stats.restore_hash_corrupt_data_blocks++;
 		kmem_free(pmbm, sizeof(struct pmem_block_metadata));
 		return -EHWPOISON;
@@ -926,7 +994,17 @@ int pmem_header_initialize(struct bittern_cache *bc)
 			      CACHE_MEM_HEADER_0_OFFSET_BYTES,
 			      pm,
 			      sizeof(struct pmem_header));
-	ASSERT(ret == 0);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (ret != 0) {
+		ASSERT(ret < 0);
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "pmem_write_sync header0 failed, ret=%d",
+			     ret);
+		printk_err("%s: pmem_write_sync header0 failed, ret=%d\n",
+			   bc->bc_name,
+			   ret);
+		return ret;
+	}
 
 	/*
 	 * initialize mem copy #1
@@ -938,7 +1016,17 @@ int pmem_header_initialize(struct bittern_cache *bc)
 			      CACHE_MEM_HEADER_1_OFFSET_BYTES,
 			      pm,
 			      sizeof(struct pmem_header));
-	ASSERT(ret == 0);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (ret != 0) {
+		ASSERT(ret < 0);
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "pmem_write_sync header0 failed, ret=%d",
+			     ret);
+		printk_err("%s: pmem_write_sync header0 failed, ret=%d\n",
+			   bc->bc_name,
+			   ret);
+		return ret;
+	}
 
 	/*
 	 * also initialize xid and bc_buffer_entries
@@ -962,9 +1050,18 @@ int pmem_metadata_initialize(struct bittern_cache *bc, unsigned int block_id)
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
 
-	pmbm = kmem_zalloc(sizeof(struct pmem_block_metadata),
-			GFP_NOIO);
-	M_ASSERT_FIXME(pmbm != NULL);
+	pmbm = kmem_zalloc(sizeof(struct pmem_block_metadata), GFP_NOIO);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (pmbm == NULL) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "kmem_zalloc pmem_block_metadata block_id=%u failed",
+			     block_id);
+		printk_err("%s: kmem_zalloc pmem_block_metadata block_id=%u failed\n",
+			   bc->bc_name,
+			   block_id);
+		kmem_free(pmbm, sizeof(struct pmem_block_metadata));
+		return -ENOMEM;
+	}
 
 	pmbm->pmbm_magic = MCBM_MAGIC;
 	pmbm->pmbm_block_id = block_id;
@@ -982,7 +1079,19 @@ int pmem_metadata_initialize(struct bittern_cache *bc, unsigned int block_id)
 			__cache_block_id_2_metadata_pmem_offset(bc, block_id),
 			pmbm,
 			sizeof(struct pmem_block_metadata));
-	M_ASSERT_FIXME(ret == 0);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (ret != 0) {
+		ASSERT(ret < 0);
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "pmem_write_sync block_id=%u failed, ret=%d",
+			     block_id,
+			     ret);
+		printk_err("%s: pmem_write_sync block_id=%u failed, ret=%d\n",
+			   bc->bc_name,
+			   block_id,
+			   ret);
+		return ret;
+	}
 
 	kmem_free(pmbm, sizeof(struct pmem_block_metadata));
 
@@ -1017,7 +1126,17 @@ int pmem_header_update(struct bittern_cache *bc, int update_both)
 				      CACHE_MEM_HEADER_0_OFFSET_BYTES,
 				      &pa->papi_hdr,
 				      sizeof(struct pmem_header));
-		M_ASSERT_FIXME(ret == 0);
+		/*TODO_ADD_ERROR_INJECTION*/
+		if (ret != 0) {
+			ASSERT(ret < 0);
+			BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+				     "pmem_write_sync header0 failed, ret=%d",
+				     ret);
+			printk_err("%s: pmem_write_sync header0 failed, ret=%d\n",
+				   bc->bc_name,
+				   ret);
+			return ret;
+		}
 	}
 	if (pa->papi_hdr_updated_last == 0 || update_both) {
 		/*
@@ -1029,7 +1148,17 @@ int pmem_header_update(struct bittern_cache *bc, int update_both)
 				      CACHE_MEM_HEADER_1_OFFSET_BYTES,
 				      &pa->papi_hdr,
 				      sizeof(struct pmem_header));
-		M_ASSERT_FIXME(ret == 0);
+		/*TODO_ADD_ERROR_INJECTION*/
+		if (ret != 0) {
+			ASSERT(ret < 0);
+			BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+				     "pmem_write_sync header1 failed, ret=%d",
+				     ret);
+			printk_err("%s: pmem_write_sync header1 failed, ret=%d\n",
+				   bc->bc_name,
+				   ret);
+			return ret;
+		}
 	}
 	pa->papi_hdr_updated_last = (pa->papi_hdr_updated_last + 1) % 2;
 
@@ -1071,12 +1200,17 @@ int pmem_allocate(struct bittern_cache *bc, struct block_device *blockdev)
 		pp = &cache_papi_block;
 	}
 
-	printk_info("%s: %s: allocate_func ret=%d\n",
+	if (ret != 0) {
+		printk_err("%s: %s: allocate_func error: ret=%d\n",
 		    bc->bc_name,
 		    pp->interface_name,
 		    ret);
-	if (ret != 0)
 		return ret;
+	}
+
+	printk_info("%s: %s: allocate_func ok\n",
+		    bc->bc_name,
+		    pp->interface_name);
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
 	/*
@@ -1160,13 +1294,21 @@ int pmem_metadata_sync_read(struct bittern_cache *bc,
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
 	ret = pmem_read_sync(bc,
-					   __cache_block_id_2_metadata_pmem_offset
-					   (bc, block_id), out_pmbm_mem,
-					   sizeof(struct
-						  pmem_block_metadata));
-	M_ASSERT_FIXME(ret == 0);
+			__cache_block_id_2_metadata_pmem_offset(bc, block_id),
+			out_pmbm_mem,
+			sizeof(struct pmem_block_metadata));
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (ret != 0) {
+		ASSERT(ret < 0);
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "pmem_read_sync failed, ret=%d",
+			     ret);
+		printk_err("%s: pmem_read_sync failed, ret=%d\n",
+			   bc->bc_name,
+			   ret);
+	}
 
-	return 0;
+	return ret;
 }
 
 void pmem_metadata_async_write(struct bittern_cache *bc,

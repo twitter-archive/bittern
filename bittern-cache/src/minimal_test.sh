@@ -131,6 +131,7 @@ sudo dd if=/dev/zero of=$MINIMAL_TEST_CACHED_DEVICE bs=1024k count=100
 echo $0: testing block, pass 1
 sudo ../scripts/bc_delete.sh $MINIMAL_TEST_CACHE_DEVICE --force
 sudo ../scripts/bc_setup.sh --cache-operation create --cache-name $BITTERN_DEVICE --cache-device $MINIMAL_TEST_CACHE_DEVICE --device $MINIMAL_TEST_CACHED_DEVICE
+sudo ../scripts/bc_control.sh --set verify_start $BITTERN_DEVICE
 sudo mkfs.ext4 /dev/mapper/$BITTERN_DEVICE
 sudo fsck -f /dev/mapper/$BITTERN_DEVICE
 # not sure why, but there seems to be a need for a bit of a delay here
@@ -141,6 +142,7 @@ sudo tools/bc_tool -r -c $MINIMAL_TEST_CACHE_DEVICE -b | tail -20
 echo $0: testing block, pass 2
 #
 sudo ../scripts/bc_setup.sh --cache-operation restore --cache-name $BITTERN_DEVICE --cache-device $MINIMAL_TEST_CACHE_DEVICE --device $MINIMAL_TEST_CACHED_DEVICE
+sudo ../scripts/bc_control.sh --set verify_start $BITTERN_DEVICE
 #
 sudo fsck -f /dev/mapper/$BITTERN_DEVICE
 sudo dd if=/dev/zero of=/dev/mapper/$BITTERN_DEVICE bs=4k count=1 oflag=direct
@@ -160,6 +162,7 @@ sudo ../scripts/bc_setup.sh --cache-operation restore \
 				--cache-name $BITTERN_DEVICE \
 				--cache-device $MINIMAL_TEST_CACHE_DEVICE \
 				--device $MINIMAL_TEST_CACHED_DEVICE
+sudo ../scripts/bc_control.sh --set verify_start $BITTERN_DEVICE
 sudo xfs_repair /dev/mapper/$BITTERN_DEVICE
 sudo rm -rf /tmp/bittern_minimal_test
 sudo mkdir /tmp/bittern_minimal_test
@@ -176,6 +179,7 @@ sudo ../scripts/bc_setup.sh --cache-operation restore \
 				--cache-name $BITTERN_DEVICE \
 				--cache-device $MINIMAL_TEST_CACHE_DEVICE \
 				--device $MINIMAL_TEST_CACHED_DEVICE
+sudo ../scripts/bc_control.sh --set verify_start $BITTERN_DEVICE
 sudo xfs_repair /dev/mapper/$BITTERN_DEVICE
 sudo mount /dev/mapper/$BITTERN_DEVICE /tmp/bittern_minimal_test
 pushd /tmp/bittern_minimal_test/bittern.git/bittern-cache/src/
@@ -206,6 +210,7 @@ echo $0: testing mem, pass 1
 ins_all_mods
 sudo ../scripts/bc_delete.sh $MEM_CACHE_DEVICE --force
 sudo ../scripts/bc_setup.sh --cache-operation create --cache-name $BITTERN_DEVICE --cache-device $MEM_CACHE_DEVICE --device $MINIMAL_TEST_CACHED_DEVICE
+sudo ../scripts/bc_control.sh --set verify_start $BITTERN_DEVICE
 sudo mkfs.ext4 /dev/mapper/$BITTERN_DEVICE
 sudo fsck -f /dev/mapper/$BITTERN_DEVICE
 # we repeat this three times to hit a bunch of dirty write hits
@@ -220,6 +225,7 @@ sudo tools/bc_tool -r -c $MEM_CACHE_DEVICE -b | tail -20
 echo $0: testing mem, pass 2
 #
 sudo ../scripts/bc_setup.sh --cache-operation restore --cache-name $BITTERN_DEVICE --cache-device $MEM_CACHE_DEVICE --device $MINIMAL_TEST_CACHED_DEVICE
+sudo ../scripts/bc_control.sh --set verify_start $BITTERN_DEVICE
 #
 sudo xfs_repair /dev/mapper/$BITTERN_DEVICE
 sudo dd if=/dev/zero of=/dev/mapper/$BITTERN_DEVICE bs=4k count=1 oflag=direct

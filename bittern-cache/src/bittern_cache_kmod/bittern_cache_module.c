@@ -275,59 +275,59 @@ static const char *param_show_replacement_mode(struct bittern_cache *bc)
 static int param_set_verifier_running(struct bittern_cache *bc, int value)
 {
 	ASSERT(value == 0 || value == 1);
-	ASSERT(bc->bc_cache_block_verifier_task != NULL);
-	bc->bc_cache_block_verifier_running = value;
+	ASSERT(bc->bc_verifier_task != NULL);
+	bc->bc_verifier_running = value;
 	wake_up_interruptible(&bc->bc_verifier_wait);
 	return 0;
 }
 
 static int param_get_verifier_running(struct bittern_cache *bc)
 {
-	return bc->bc_cache_block_verifier_running;
+	return bc->bc_verifier_running;
 }
 
 static int param_set_verifier_one_shot(struct bittern_cache *bc, int value)
 {
 	ASSERT(value == 0 || value == 1);
-	ASSERT(bc->bc_cache_block_verifier_task != NULL);
-	bc->bc_cache_block_verifier_one_shot = value;
+	ASSERT(bc->bc_verifier_task != NULL);
+	bc->bc_verifier_one_shot = value;
 	wake_up_interruptible(&bc->bc_verifier_wait);
 	return 0;
 }
 
 static int param_get_verifier_one_shot(struct bittern_cache *bc)
 {
-	return bc->bc_cache_block_verifier_one_shot;
+	return bc->bc_verifier_one_shot;
 }
 
 static int param_set_verifier_scan_delay_ms(struct bittern_cache *bc, int value)
 {
 	ASSERT(value >= CACHE_VERIFIER_BLOCK_SCAN_DELAY_MIN_MS);
 	ASSERT(value <= CACHE_VERIFIER_BLOCK_SCAN_DELAY_MAX_MS);
-	ASSERT(bc->bc_cache_block_verifier_task != NULL);
-	bc->bc_cache_block_verifier_scan_delay_ms = value;
+	ASSERT(bc->bc_verifier_task != NULL);
+	bc->bc_verifier_scan_delay_ms = value;
 	wake_up_interruptible(&bc->bc_verifier_wait);
 	return 0;
 }
 
 static int param_get_verifier_scan_delay_ms(struct bittern_cache *bc)
 {
-	return bc->bc_cache_block_verifier_scan_delay_ms;
+	return bc->bc_verifier_scan_delay_ms;
 }
 
 static int param_set_verifier_bugon_on_errors(struct bittern_cache *bc,
 					      int value)
 {
 	ASSERT(value == 0 || value == 1);
-	ASSERT(bc->bc_cache_block_verifier_task != NULL);
-	bc->bc_cache_block_verifier_bug_on_verify_errors = value;
+	ASSERT(bc->bc_verifier_task != NULL);
+	bc->bc_verifier_bug_on_verify_errors = value;
 	wake_up_interruptible(&bc->bc_verifier_wait);
 	return 0;
 }
 
 static int param_get_verifier_bugon_on_errors(struct bittern_cache *bc)
 {
-	return bc->bc_cache_block_verifier_bug_on_verify_errors;
+	return bc->bc_verifier_bug_on_verify_errors;
 }
 
 static int control_invalidate_cache(struct bittern_cache *bc, int value)
@@ -1115,76 +1115,47 @@ ssize_t cache_op_show_trace(struct bittern_cache *bc, char *result)
 ssize_t cache_op_show_verifier(struct bittern_cache *bc, char *result)
 {
 	size_t sz = 0, maxlen = PAGE_SIZE;
-	unsigned long s_started = 0, s_last_block = 0, s_completed =
-	    0, s_elapsed = 0;
+	unsigned long s_started = 0, s_completed = 0, s_elapsed = 0;
+	unsigned long s_last_block = 0;
 
-	if (bc->bc_cache_block_verifier_scan_started != 0
-	    && bc->bc_cache_block_verifier_scan_completed != 0) {
-		unsigned long j_jiffies = jiffies;
-
-		s_started =
-		    jiffies_to_msecs(j_jiffies -
-				     bc->bc_cache_block_verifier_scan_started);
-		s_last_block =
-		    jiffies_to_msecs(j_jiffies -
-				     bc->
-				     bc_cache_block_verifier_scan_last_block);
-		s_completed =
-		    jiffies_to_msecs(j_jiffies -
-				     bc->
-				     bc_cache_block_verifier_scan_completed);
-		s_elapsed = s_started - s_completed;
-		if (s_elapsed < 0)
+	if (bc->bc_verifier_scan_started != 0 &&
+	    bc->bc_verifier_scan_completed != 0) {
+		s_started = jiffies - bc->bc_verifier_scan_started;
+		s_last_block = jiffies - bc->bc_verifier_scan_last_block;
+		s_completed = jiffies - bc->bc_verifier_scan_completed;
+		if (s_started >= s_completed)
+			s_elapsed = s_started - s_completed;
+		else
 			s_elapsed = 0;
-	} else if (bc->bc_cache_block_verifier_scan_started != 0) {
-		unsigned long j_jiffies = jiffies;
-
-		s_started =
-		    jiffies_to_msecs(j_jiffies -
-				     bc->bc_cache_block_verifier_scan_started);
-		s_last_block =
-		    jiffies_to_msecs(j_jiffies -
-				     bc->
-				     bc_cache_block_verifier_scan_last_block);
+	} else if (bc->bc_verifier_scan_started != 0) {
+		s_started = jiffies - bc->bc_verifier_scan_started;
+		s_last_block = jiffies - bc->bc_verifier_scan_last_block;
 	}
-	DMEMIT("%s: verifier: "
-	       "running=%d "
-	       "one_shot=%d "
-	       "task=%p "
-	       "delay_ms=%d "
-	       "bug_on_verify_errors=%d "
-	       "\n",
+
+	DMEMIT("%s: verifier: running=%d one_shot=%d task=%p delay_ms=%d bug_on_verify_errors=%d\n",
 	       bc->bc_name,
-	       bc->bc_cache_block_verifier_running,
-	       bc->bc_cache_block_verifier_one_shot,
-	       bc->bc_cache_block_verifier_task,
-	       bc->bc_cache_block_verifier_scan_delay_ms,
-	       bc->bc_cache_block_verifier_bug_on_verify_errors);
-	DMEMIT("%s: verifier: "
-	       "blocks_verified=%d "
-	       "blocks_not_verified_dirty=%d "
-	       "blocks_not_verified_busy=%d "
-	       "blocks_not_verified_invalid=%d "
-	       "\n",
+	       bc->bc_verifier_running,
+	       bc->bc_verifier_one_shot,
+	       bc->bc_verifier_task,
+	       bc->bc_verifier_scan_delay_ms,
+	       bc->bc_verifier_bug_on_verify_errors);
+	DMEMIT("%s: verifier: blocks_verified=%d blocks_not_verified_dirty=%d blocks_not_verified_busy=%d blocks_not_verified_invalid=%d\n",
 	       bc->bc_name,
-	       bc->bc_cache_block_verifier_blocks_verified,
-	       bc->bc_cache_block_verifier_blocks_not_verified_dirty,
-	       bc->bc_cache_block_verifier_blocks_not_verified_busy,
-	       bc->bc_cache_block_verifier_blocks_not_verified_invalid);
-	DMEMIT("%s: verifier: "
-	       "scans=%d "
-	       "verify_errors=%d "
-	       "verify_errors_cumulative=%d "
-	       "scan_started=%lums "
-	       "scan_last_block=%lums "
-	       "scan_completed=%lums "
-	       "scan_elapsed=%lums "
-	       "\n",
+	       bc->bc_verifier_blocks_verified,
+	       bc->bc_verifier_blocks_not_verified_dirty,
+	       bc->bc_verifier_blocks_not_verified_busy,
+	       bc->bc_verifier_blocks_not_verified_invalid);
+	DMEMIT("%s: verifier: scans=%d verify_errors=%d verify_errors_cumulative=%d\n",
 	       bc->bc_name,
-	       bc->bc_cache_block_verifier_scans,
-	       bc->bc_cache_block_verifier_verify_errors,
-	       bc->bc_cache_block_verifier_verify_errors_cumulative,
-	       s_started, s_last_block, s_completed, s_elapsed);
+	       bc->bc_verifier_scans,
+	       bc->bc_verifier_verify_errors,
+	       bc->bc_verifier_verify_errors_cumulative);
+	DMEMIT("%s: verifier: scan_started=%ums scan_last_block=%ums scan_completed=%ums scan_elapsed=%ums\n",
+	       bc->bc_name,
+	       jiffies_to_msecs(s_started),
+	       jiffies_to_msecs(s_last_block),
+	       jiffies_to_msecs(s_completed),
+	       jiffies_to_msecs(s_elapsed));
 	return sz;
 }
 
@@ -1243,7 +1214,7 @@ ssize_t cache_op_show_kthreads(struct bittern_cache *bc, char *result)
 	struct deferred_queue *q;
 	DMEMIT("%s: kthreads: " KT_FMT_STRING "\n",
 	       bc->bc_name,
-	       KT_FMT_ARGS(bc, "verifier_task", bc_cache_block_verifier_task));
+	       KT_FMT_ARGS(bc, "verifier_task", bc_verifier_task));
 	DMEMIT("%s: kthreads: " KT_FMT_STRING ": "
 	       "bgwriter_no_work_count=%u "
 	       "bgwriter_work_count=%u "

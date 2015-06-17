@@ -165,6 +165,12 @@ $0: --set verify
         Early termination of this command will simply stop the verification
         cycle.
 
+$0: --set verify_start
+	Enable continuous clean block verification.
+
+$0: --set verify_stop
+	Disable continuous clean block verification.
+
 $0 --set writeback
         Set cache in writeback mode.
 
@@ -393,6 +399,7 @@ do_get() {
                 echo "         not_verified_invalid = $(get_cache_verifier blocks_not_verified_invalid)"
                 echo "         not_verified_dirty = $(get_cache_verifier blocks_not_verified_dirty)"
                 echo "         not_verified_busy = $(get_cache_verifier blocks_not_verified_busy)"
+                echo "         scans = $(get_cache_verifier scans)"
         fi
 }
 
@@ -434,7 +441,7 @@ do_verify() {
         # tell verifier to stop (if it was running)
         #
 	set_cache_conf_silent verifier_running 0
-        sleep 2
+        sleep 1
         #
         #
         #
@@ -481,6 +488,17 @@ do_verify() {
         fi
 }
 
+do_verify_start(){
+	set_cache_conf_silent verifier_running 0
+	sleep 1
+	set_cache_conf_silent verifier_one_shot 0
+	set_cache_conf_silent verifier_running 1
+}
+
+do_verify_stop(){
+	set_cache_conf_silent verifier_running 0
+}
+
 do_set_check_value(){
         if [ "$VALUE_OPTION" = "" ]
         then
@@ -510,8 +528,16 @@ do_set() {
                 set_cache_conf invalidate_cache 0
                 ;;
         "verify")
-                echo $0: $CACHE_NAME: verifying clean blocks
+                echo $0: $CACHE_NAME: verifying clean blocks '(hit ^C to stop)'
                 do_verify
+                ;;
+	"verify_start")
+                echo $0: $CACHE_NAME: enabling background verifier
+                do_verify_start
+                ;;
+	"verify_stop")
+                echo $0: $CACHE_NAME: disbling background verifier
+                do_verify_stop
                 ;;
 	"bgwriter_conf_flush_on_exit")
                 do_set_check_value

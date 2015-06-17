@@ -98,17 +98,16 @@ void cache_dtr_pre(struct dm_target *ti)
 		    atomic_read(&bc->bc_deferred_requests));
 	M_ASSERT(atomic_read(&bc->bc_deferred_requests) == 0);
 
-	printk_info
-	    ("stopping cache_block_verifier task (running=%d, task=%p)\n",
-	     bc->bc_cache_block_verifier_running,
-	     bc->bc_cache_block_verifier_task);
-	ret = kthread_stop(bc->bc_cache_block_verifier_task);
-	M_ASSERT(bc->bc_cache_block_verifier_task == NULL);
-	M_ASSERT(bc->bc_cache_block_verifier_running == 0);
-	printk_info
-	    ("stopped cache_block_verifier task (running=%d, task=%p): ret=%d\n",
-	     bc->bc_cache_block_verifier_running,
-	     bc->bc_cache_block_verifier_task, ret);
+	printk_info("stopping cache_block_verifier task (running=%d, task=%p)\n",
+		    bc->bc_verifier_running,
+		    bc->bc_verifier_task);
+	ret = kthread_stop(bc->bc_verifier_task);
+	M_ASSERT(bc->bc_verifier_task == NULL);
+	M_ASSERT(bc->bc_verifier_running == 0);
+	printk_info("stopped cache_block_verifier task (running=%d, task=%p): ret=%d\n",
+		    bc->bc_verifier_running,
+		    bc->bc_verifier_task,
+		    ret);
 
 	printk_info("pending_read_requests=%u\n",
 		    atomic_read(&bc->bc_pending_read_requests));

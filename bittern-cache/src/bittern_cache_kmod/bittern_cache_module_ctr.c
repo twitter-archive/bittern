@@ -1113,11 +1113,11 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	 */
 	printk_info("initializing all kthread structures\n");
 
-	bc->bc_cache_block_verifier_running = 0;
-	bc->bc_cache_block_verifier_task = NULL;
-	bc->bc_cache_block_verifier_scan_delay_ms =
-	    CACHE_VERIFIER_BLOCK_SCAN_DELAY_DEFAULT_MS;
-	bc->bc_cache_block_verifier_bug_on_verify_errors = 1;
+	bc->bc_verifier_running = 0;
+	bc->bc_verifier_task = NULL;
+	bc->bc_verifier_scan_delay_ms =
+				CACHE_VERIFIER_BLOCK_SCAN_DELAY_DEFAULT_MS;
+	bc->bc_verifier_bug_on_verify_errors = 1;
 	init_waitqueue_head(&bc->bc_verifier_wait);
 
 	/*
@@ -1269,15 +1269,13 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	 */
 	printk_info("starting off kernel threads\n");
 
-	bc->bc_cache_block_verifier_task = kthread_create(
-					cache_block_verifier_kthread,
-					bc,
-					"b_vrf/%s",
-					bc->bc_name);
-	M_ASSERT_FIXME(bc->bc_cache_block_verifier_task != NULL);
-	printk_info("verifier instantiated, task=%p\n",
-		    bc->bc_cache_block_verifier_task);
-	wake_up_process(bc->bc_cache_block_verifier_task);
+	bc->bc_verifier_task = kthread_create(cache_block_verifier_kthread,
+					      bc,
+					      "b_vrf/%s",
+					      bc->bc_name);
+	M_ASSERT_FIXME(bc->bc_verifier_task != NULL);
+	printk_info("verifier instantiated, task=%p\n", bc->bc_verifier_task);
+	wake_up_process(bc->bc_verifier_task);
 
 	bc->bc_deferred_wait_busy.bc_defer_task = kthread_create(
 					cache_deferred_busy_kthread,

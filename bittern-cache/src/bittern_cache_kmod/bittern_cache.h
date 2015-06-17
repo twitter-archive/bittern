@@ -66,7 +66,7 @@
  * Release codenames are National Wildlife Refuges wetlands where the Bittern
  * can be found.
  */
-#define BITTERN_CACHE_VERSION "0.26.12"
+#define BITTERN_CACHE_VERSION "0.26.13"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -938,22 +938,22 @@ struct bittern_cache {
 	/*! device acting as the cache */
 	struct dm_dev *bc_cache_dev;
 
-	int bc_cache_block_verifier_running;
-	struct task_struct *bc_cache_block_verifier_task;
+	int bc_verifier_running;
+	struct task_struct *bc_verifier_task;
 	wait_queue_head_t bc_verifier_wait;
-	int bc_cache_block_verifier_blocks_verified;
-	int bc_cache_block_verifier_blocks_not_verified_dirty;
-	int bc_cache_block_verifier_blocks_not_verified_busy;
-	int bc_cache_block_verifier_blocks_not_verified_invalid;
-	int bc_cache_block_verifier_one_shot;
-	int bc_cache_block_verifier_scans;
-	unsigned long bc_cache_block_verifier_scan_started;
-	unsigned long bc_cache_block_verifier_scan_last_block;
-	unsigned long bc_cache_block_verifier_scan_completed;
-	int bc_cache_block_verifier_scan_delay_ms;
-	int bc_cache_block_verifier_verify_errors;
-	int bc_cache_block_verifier_verify_errors_cumulative;
-	int bc_cache_block_verifier_bug_on_verify_errors;
+	int bc_verifier_blocks_verified;
+	int bc_verifier_blocks_not_verified_dirty;
+	int bc_verifier_blocks_not_verified_busy;
+	int bc_verifier_blocks_not_verified_invalid;
+	int bc_verifier_one_shot;
+	int bc_verifier_scans;
+	unsigned long bc_verifier_scan_started;
+	unsigned long bc_verifier_scan_last_block;
+	unsigned long bc_verifier_scan_completed;
+	int bc_verifier_scan_delay_ms;
+	int bc_verifier_verify_errors;
+	int bc_verifier_verify_errors_cumulative;
+	int bc_verifier_bug_on_verify_errors;
 
 	/*! slab used at init time and DM map entry point */
 	struct kmem_cache *bc_kmem_map;

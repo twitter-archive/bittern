@@ -61,8 +61,6 @@
 /* millisecond delay between one cache block scan and the next (default) */
 #define CACHE_VERIFIER_BLOCK_SCAN_DELAY_DEFAULT_MS 10
 
-/* #define CACHE_VERIFIER_DUMP_BLOCK_BYTES */
-
 /*! How many sequential IO streams we keep track */
 #define SEQ_IO_TRACK_DEPTH		32
 /*!

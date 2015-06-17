@@ -430,27 +430,6 @@ struct seq_io_bypass {
 	uint64_t lru_hit_depth_count;
 };
 
-#define BBR_MAGIC 0x1f0c337a
-#define BBR_BIO_STATE_INITIALIZED 1
-#define BBR_BIO_STATE_IO_IN_PROGRESS 2
-#define BBR_BIO_STATE_IO_DONE 3
-struct cache_bio_request {
-	int bbr_magic;
-	struct bittern_cache *bbr_bc;
-	sector_t bbr_sector;
-	void *bbr_vmalloc_buffer_page;
-	struct bio *bbr_bio;
-	int bbr_datadir;
-	struct semaphore bbr_sema;
-	int bbr_state;
-};
-#define cache_bio_request_get_buffer(__bbr) ({          \
-	struct cache_bio_request *___bbr = (__bbr);     \
-	ASSERT(___bbr != NULL);                                 \
-	ASSERT(___bbr->bbr_magic == BBR_MAGIC);                 \
-	___bbr->bbr_vmalloc_buffer_page;                        \
-})
-
 struct deferred_queue {
 	/*
 	 * task ptr
@@ -1102,22 +1081,6 @@ extern struct cache_block *cache_rb_prev(struct bittern_cache *bc,
 extern struct cache_block *cache_rb_last(struct bittern_cache *bc);
 
 #include "bittern_cache_main.h"
-
-/*
- * the cache_bio_request* primitives are not reentrant, i.e., they are
- * meant to be used by a single thread. Later we might decide to change this.
- *
- * FIXME: should get rid of this and just use bio directly.
- */
-extern int cache_bio_request_initialize(struct bittern_cache *bc,
-					struct cache_bio_request **bio_req);
-extern void cache_bio_request_deinitialize(struct bittern_cache *bc,
-					   struct cache_bio_request *bio_req);
-extern int cache_bio_request_start_async_page(
-    struct bittern_cache *bc, sector_t sector, int dir,
-    struct cache_bio_request *bio_req);
-extern int cache_bio_request_wait_page(struct bittern_cache *bc,
-				       struct cache_bio_request *bio_req);
 
 extern int cache_deferred_busy_kthread(void *__bc);
 extern int cache_deferred_page_kthread(void *__bc);

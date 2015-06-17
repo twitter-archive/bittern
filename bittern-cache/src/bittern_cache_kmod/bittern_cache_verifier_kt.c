@@ -33,6 +33,90 @@ void cache_block_verify_callback(struct bittern_cache *bc,
 	up(sema);
 }
 
+struct bio_context {
+	struct semaphore sema;
+	int err;
+};
+
+void cache_block_verify_data_enbio(struct bio *bio, int err)
+{
+	struct bio_context *bcont = (struct bio_context *)bio->bi_private;
+
+	bcont->err = err;
+	up(&bcont->sema);
+	bio_put(bio);
+}
+
+int cache_block_verify_data(struct bittern_cache *bc,
+			    int block_id,
+			    struct cache_block *cache_block,
+			    void *cache_vaddr)
+{
+	int errors = 0;
+	int ret;
+	struct bio *bio;
+	struct bio_context bcontext;
+	void *buf;
+
+	buf = vmalloc(PAGE_SIZE);
+	M_ASSERT_FIXME(buf != NULL);
+
+	bcontext.err = -EIO;
+	sema_init(&bcontext.sema, 0);
+	/*
+	 * read disk block and verify crc
+	 */
+
+	/*
+	 * in this case the bio argument is the original bio.
+	 * clone bio, start i/o to write data to device.
+	 */
+	bio = bio_alloc(GFP_NOIO, 1);
+	M_ASSERT_FIXME(bio != NULL);
+	bio_set_data_dir_read(bio);
+	bio->bi_iter.bi_sector = cache_block->bcb_sector;
+	bio->bi_iter.bi_size = PAGE_SIZE;
+	bio->bi_bdev = bc->bc_dev->bdev;
+	bio->bi_end_io = cache_block_verify_data_enbio;
+	bio->bi_private = (void *)&bcontext;
+	bio->bi_io_vec[0].bv_page = virtual_to_page(buf);
+	ASSERT(bio->bi_io_vec[0].bv_page != NULL);
+	bio->bi_io_vec[0].bv_len = PAGE_SIZE;
+	bio->bi_io_vec[0].bv_offset = 0;
+	bio->bi_vcnt = 1;
+	ASSERT(bio->bi_iter.bi_idx == 0);
+	ASSERT(bio->bi_vcnt == 1);
+
+	generic_make_request(bio);
+
+	down(&bcontext.sema);
+
+	M_ASSERT_FIXME(bcontext.err == 0);
+
+	errors += cache_verify_hash_data_buffer_ret(bc, cache_block, buf);
+
+	if (memcmp(buf, cache_vaddr, PAGE_SIZE) == 0) {
+		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL,
+			 NULL,
+			 "device block #%d data compare ok, hash_data=" UINT128_FMT,
+			 cache_block->bcb_block_id,
+			 UINT128_ARG(cache_block->bcb_hash_data));
+	} else {
+		BT_TRACE(BT_LEVEL_TRACE0, bc, NULL, cache_block, NULL,
+			 NULL,
+			 "device block #%d data compare mismatch, hash_data=" UINT128_FMT,
+			 cache_block->bcb_block_id,
+			 UINT128_ARG(cache_block->bcb_hash_data));
+		printk_err("error: block id #%d device block data compare mismatch\n",
+			   block_id);
+		errors++;
+	}
+
+	vfree(buf);
+
+	return errors;
+}
+
 int cache_block_verify(struct bittern_cache *bc,
 		       int block_id,
 		       struct cache_block *cache_block)
@@ -45,7 +129,6 @@ int cache_block_verify(struct bittern_cache *bc,
 	char *cache_vaddr;
 	struct pmem_block_metadata *pmbm;
 	uint128_t computed_hash_metadata;
-	struct cache_bio_request *bc_bio_req;
 
 	M_ASSERT(bc != NULL);
 	M_ASSERT(block_id >= 1 &&
@@ -102,6 +185,7 @@ int cache_block_verify(struct bittern_cache *bc,
 	 * check memory descriptor against cache memory.
 	 */
 	pmbm = &pmem_ctx->pmbm;
+
 	ASSERT(block_id == cache_block->bcb_block_id);
 	ret = pmem_metadata_sync_read(bc, cache_block, pmbm);
 	M_ASSERT_FIXME(ret == 0);
@@ -196,42 +280,10 @@ int cache_block_verify(struct bittern_cache *bc,
 			 UINT128_ARG(pmbm->pmbm_hash_data));
 	}
 
-	/*
-	 * read disk block and verify crc
-	 */
-	ret = cache_bio_request_initialize(bc, &bc_bio_req);
-	M_ASSERT(ret == 0);
-
-	ret = cache_bio_request_start_async_page(bc,
-						 cache_block->bcb_sector,
-						 READ,
-						 bc_bio_req);
-	M_ASSERT_FIXME(ret == 0);
-	ret = cache_bio_request_wait_page(bc, bc_bio_req);
-	M_ASSERT(ret == 0);
-
-	errors += cache_verify_hash_data_buffer_ret(bc,
-				cache_block,
-				cache_bio_request_get_buffer(bc_bio_req));
-
-	if (memcmp(cache_bio_request_get_buffer(bc_bio_req),
-		   cache_vaddr, PAGE_SIZE) == 0) {
-		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL,
-			 NULL,
-			 "device block #%d data compare ok, hash_data=" UINT128_FMT,
-			 cache_block->bcb_block_id,
-			 UINT128_ARG(cache_block->bcb_hash_data));
-	} else {
-		BT_TRACE(BT_LEVEL_TRACE0, bc, NULL, cache_block, NULL,
-			 NULL,
-			 "device block #%d data compare mismatch, hash_data=" UINT128_FMT,
-			 cache_block->bcb_block_id,
-			 UINT128_ARG(cache_block->bcb_hash_data));
-		printk_err("error: block id #%d device block data compare mismatch\n",
-			   block_id);
-		errors++;
-	}
-	cache_bio_request_deinitialize(bc, bc_bio_req);
+	errors += cache_block_verify_data(bc,
+					  block_id,
+					  cache_block,
+					  cache_vaddr);
 
 	/*
 	 * all done, free up resources

@@ -383,13 +383,17 @@ static inline bool bio_is_data_request(struct bio *bio)
 }
 
 /*! do generic_make_request() immediately */
-extern void cache_do_make_request(struct bittern_cache *bc,
-				  struct work_item *wi);
+extern void cached_dev_do_make_request(struct bittern_cache *bc,
+				       struct work_item *wi,
+				       int datadir,
+				       bool set_original_bio);
 /*! defer generic_make_request() to thread (workqueue) */
-extern void cache_make_request_defer(struct bittern_cache *bc,
-				     struct work_item *wi);
+extern void cached_dev_make_request_defer(struct bittern_cache *bc,
+					  struct work_item *wi,
+				          int datadir,
+				          bool set_original_bio);
 
-extern void cache_state_machine_endio(struct bio *cloned_bio, int err);
+extern void cached_dev_state_machine_endio(struct bio *cloned_bio, int err);
 /*! main state machine */
 extern void cache_state_machine(struct bittern_cache *bc,
 				struct work_item *wi,
@@ -441,6 +445,12 @@ extern void sm_read_miss_copy_to_cache_end(struct bittern_cache *bc,
 					   struct work_item *wi,
 					   struct bio *bio);
 
+/*
+ * bgwriter callback, called by state machine
+ */
+extern void cache_bgwriter_io_endio(struct bittern_cache *bc,
+				    struct work_item *wi,
+				    struct cache_block *cache_block);
 /*
  * write path state machine functions
  */
@@ -520,6 +530,12 @@ sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 				 struct work_item *wi,
 				 struct bio *bio);
 
+/*
+ * invalidate callback, called by state machine
+ */
+extern void cache_invalidate_block_io_end(struct bittern_cache *bc,
+					  struct work_item *wi,
+					  struct cache_block *cache_block);
 /*
  * invalidate path
  */

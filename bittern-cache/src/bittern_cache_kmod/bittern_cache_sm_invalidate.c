@@ -102,5 +102,6 @@ void sm_invalidate_end(struct bittern_cache *bc,
 	 */
 	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) != 0);
 	ASSERT(wi->wi_io_endio != NULL);
+	M_ASSERT(wi->wi_io_endio == cache_invalidate_block_io_end);
 	(*wi->wi_io_endio)(bc, wi, cache_block);
 }

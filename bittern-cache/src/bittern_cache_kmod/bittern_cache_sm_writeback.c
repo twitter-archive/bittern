@@ -99,14 +99,6 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 	cache_track_hash_check(bc, cache_block,
 					 cache_block->bcb_hash_data);
 
-	/* set up args for cache_make_request */
-	wi->bi_datadir = WRITE;
-	wi->bi_sector = cache_block->bcb_sector;
-	wi->bi_endio = cache_state_machine_endio;
-	wi->bi_page = cache_page;
-	wi->bi_set_original_bio = true;
-	wi->bi_set_cloned_bio = true;
-
 	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, NULL, NULL,
 		 "writeback-to-device");
 
@@ -135,7 +127,10 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 	/*
 	 * potentially in a softirq
 	 */
-	cache_make_request_defer(bc, wi);
+	cached_dev_make_request_defer(bc,
+				      wi,
+				      WRITE, /* datadir */
+				      true); /* set original bio */
 }
 
 void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,
@@ -239,5 +234,6 @@ void sm_writeback_update_metadata_end(struct bittern_cache *bc,
 	 */
 	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) != 0);
 	ASSERT(wi->wi_io_endio != NULL);
+	M_ASSERT(wi->wi_io_endio == cache_bgwriter_io_endio);
 	(*wi->wi_io_endio)(bc, wi, cache_block);
 }

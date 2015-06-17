@@ -175,8 +175,7 @@ static inline sector_t sector_to_cache_block_sector(sector_t s)
 	sector_to_cache_block_sector((__bio)->bi_iter.bi_sector)
 
 #define WI_MAGIC1 0xf10ca593
-#define WI_MAGIC2 0xf10ca594
-#define WI_MAGIC3 0xf10ca595
+#define WI_MAGIC2 0xf10ca595
 
 /*! @defgroup wi_flags_bitvalues work_item wi_flags bitmask values
  * @{
@@ -289,22 +288,13 @@ struct work_item {
 	uint64_t wi_ts_started;
 	/* keeps track of physical io */
 	uint64_t wi_ts_physio;
-	/* pmem async context for cache operations */
-	int wi_magic2;
+	/*! pmem async context for cache operations */
 	struct async_context wi_async_context;
-	int wi_magic3;
+	int wi_magic2;
 	/*! bi_data_dir used for deferred worker */
 	int bi_datadir;
-	/*! bi_sector used for deferred worker */
-	sector_t bi_sector;
-	/*! bi_endio used for deferred worker */
-	void (*bi_endio)(struct bio *bio, int err);
-	/*! bi_page used for deferred worker */
-	struct page *bi_page;
 	/*! bi_set_original_bio used for deferred worker */
 	bool bi_set_original_bio;
-	/*! bi_set_cloned_bio used for deferred worker */
-	bool bi_set_cloned_bio;
 };
 #define __ASSERT_WORK_ITEM(__wi) ({					\
 	/* make sure it's l-value, compiler will optimize this away */	\
@@ -312,7 +302,6 @@ struct work_item {
 	ASSERT((__wi) != NULL);						\
 	ASSERT((__wi)->wi_magic1 == WI_MAGIC1);				\
 	ASSERT((__wi)->wi_magic2 == WI_MAGIC2);				\
-	ASSERT((__wi)->wi_magic3 == WI_MAGIC3);				\
 	ASSERT(((__wi)->wi_flags & ~WI_FLAG_MASK) == 0);		\
 	ASSERT((__wi)->wi_cache_mode_writeback == 1 ||			\
 	       (__wi)->wi_cache_mode_writeback == 0);			\

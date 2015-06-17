@@ -19,7 +19,7 @@
 #include "bittern_cache.h"
 
 /*! endio function used by state machine */
-void cache_state_machine_endio(struct bio *cloned_bio, int err)
+void cached_dev_state_machine_endio(struct bio *cloned_bio, int err)
 {
 	struct bittern_cache *bc;
 	struct cache_block *cache_block;
@@ -164,7 +164,7 @@ void cache_state_machine_endio(struct bio *cloned_bio, int err)
  * handle completions which do not go thru the cache state machine
  * in this case we do not have a cache block
  */
-void cache_bio_endio(struct bio *cloned_bio, int err)
+void cached_dev_bypass_endio(struct bio *cloned_bio, int err)
 {
 	struct bittern_cache *bc;
 	struct bio *original_bio;
@@ -1817,7 +1817,7 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 	cloned_bio = bio_clone(bio, GFP_NOIO);
 	M_ASSERT_FIXME(cloned_bio != NULL);
 	cloned_bio->bi_bdev = bc->bc_dev->bdev;
-	cloned_bio->bi_end_io = cache_bio_endio;
+	cloned_bio->bi_end_io = cached_dev_bypass_endio;
 	cloned_bio->bi_private = wi;
 	wi->wi_cloned_bio = cloned_bio;
 	if (bio_data_dir(bio) == READ) {

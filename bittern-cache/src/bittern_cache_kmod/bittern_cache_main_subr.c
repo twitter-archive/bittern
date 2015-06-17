@@ -850,11 +850,11 @@ struct work_item *work_item_allocate(struct bittern_cache *bc,
 	ASSERT((wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 
 	wi = kmem_zalloc(sizeof(struct work_item), GFP_NOIO);
-	M_ASSERT_FIXME(wi != NULL);
+	if (wi == NULL)
+		return NULL;
 
 	wi->wi_magic1 = WI_MAGIC1;
 	wi->wi_magic2 = WI_MAGIC2;
-	wi->wi_magic3 = WI_MAGIC3;
 	wi->wi_cache_block = cache_block;
 	wi->wi_original_cache_block = NULL;
 	wi->wi_original_bio = bio;
@@ -1056,8 +1056,13 @@ void __cache_verify_hash_data_buffer(struct bittern_cache *bc,
 	M_ASSERT(uint128_eq(hash_data, cache_block->bcb_hash_data));
 }
 
-/*! allocate bio and make the request */
-void cache_do_make_request(struct bittern_cache *bc, struct work_item *wi)
+/*!
+ * Allocate bio and make the request to cached device.
+ */
+void cached_dev_do_make_request(struct bittern_cache *bc,
+				struct work_item *wi,
+				int datadir,
+				bool set_original_bio)
 {
 	struct bio *bio;
 	struct cache_block *cache_block;
@@ -1066,47 +1071,51 @@ void cache_do_make_request(struct bittern_cache *bc, struct work_item *wi)
 	ASSERT_WORK_ITEM(wi, bc);
 
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-		     "in_irq=%lu, in_softirq=%lu, bc=%p, wi=%p",
+		     "in_irq=%lu, in_softirq=%lu, wi=%p, datadir=%d, set_original_bio=%d",
 		     in_irq(),
 		     in_softirq(),
-		     bc,
-		     wi);
+		     wi,
+		     datadir,
+		     set_original_bio);
 
 	M_ASSERT(!in_irq());
 	M_ASSERT(!in_softirq());
 
 	cache_block = wi->wi_cache_block;
 	ASSERT_CACHE_BLOCK(cache_block, bc);
-
-	bio = bio_alloc(GFP_NOIO, 1);
-	M_ASSERT_FIXME(bio != NULL);
-
-	if (wi->bi_datadir == WRITE)
-		bio_set_data_dir_write(bio);
-	else
-		bio_set_data_dir_read(bio);
-	M_ASSERT(cache_block->bcb_sector == wi->bi_sector);
-	bio->bi_iter.bi_sector = cache_block->bcb_sector;
-	bio->bi_iter.bi_size = PAGE_SIZE;
-	bio->bi_bdev = bc->bc_dev->bdev;
-	bio->bi_end_io = wi->bi_endio;
-	bio->bi_private = wi;
-	bio->bi_vcnt = 1;
-	bio->bi_io_vec[0].bv_page = wi->bi_page;
-	M_ASSERT(pmem_context_data_page(&wi->wi_pmem_ctx) == wi->bi_page);
-	bio->bi_io_vec[0].bv_len = PAGE_SIZE;
-	bio->bi_io_vec[0].bv_offset = 0;
-	ASSERT(cache_block->bcb_sector ==
-	       bio_sector_to_cache_block_sector(bio));
-	if (wi->bi_set_original_bio)
-		wi->wi_original_bio = bio;
-	if (wi->bi_set_cloned_bio)
-		wi->wi_cloned_bio = bio;
 	ASSERT(wi->wi_cache == bc);
 	ASSERT(wi->wi_cache_block == cache_block);
 
-	cache_timer_add(&bc->bc_make_request_wq_timer,
-			wi->wi_ts_workqueue);
+	bio = bio_alloc(GFP_NOIO, 1);
+	if (bio == NULL) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, cache_block, NULL, NULL,
+			     "cannot allocate bio, wi=%p",
+			     wi);
+		printk_err("%s: cannot allocate bio\n", bc->bc_name);
+		/*
+		 * Allocation failed, bubble up the error.
+		 */
+		M_ASSERT_FIXME(bio != NULL);
+	}
+
+	if (datadir == WRITE)
+		bio_set_data_dir_write(bio);
+	else
+		bio_set_data_dir_read(bio);
+	bio->bi_iter.bi_sector = cache_block->bcb_sector;
+	bio->bi_iter.bi_size = PAGE_SIZE;
+	bio->bi_bdev = bc->bc_dev->bdev;
+	bio->bi_end_io = cached_dev_state_machine_endio;
+	bio->bi_private = wi;
+	bio->bi_vcnt = 1;
+	bio->bi_io_vec[0].bv_page = pmem_context_data_page(&wi->wi_pmem_ctx);
+	bio->bi_io_vec[0].bv_len = PAGE_SIZE;
+	bio->bi_io_vec[0].bv_offset = 0;
+	if (set_original_bio) {
+		ASSERT(wi->wi_original_bio == NULL);
+		wi->wi_original_bio = bio;
+	}
+	wi->wi_cloned_bio = bio;
 
 	atomic_inc(&bc->bc_make_request_count);
 
@@ -1114,7 +1123,7 @@ void cache_do_make_request(struct bittern_cache *bc, struct work_item *wi)
 	generic_make_request(bio);
 }
 
-void cache_make_request_worker(struct work_struct *work)
+static void cached_dev_make_request_worker(struct work_struct *work)
 {
 	struct work_item *wi;
 	struct bittern_cache *bc;
@@ -1138,7 +1147,10 @@ void cache_make_request_worker(struct work_struct *work)
 
 	cache_timer_add(&bc->bc_make_request_wq_timer, wi->wi_ts_workqueue);
 
-	cache_do_make_request(bc, wi);
+	cached_dev_do_make_request(bc,
+				   wi,
+				   wi->bi_datadir,
+				   wi->bi_set_original_bio);
 }
 
 /*!
@@ -1146,25 +1158,34 @@ void cache_make_request_worker(struct work_struct *work)
  * generic_make_request() cannot be done in softirq, we defer it to a
  * work_queue in such case.
  */
-void cache_make_request_defer(struct bittern_cache *bc, struct work_item *wi)
+void cached_dev_make_request_defer(struct bittern_cache *bc,
+				   struct work_item *wi,
+				   int datadir,
+				   bool set_original_bio)
 {
 	int ret;
 
 	ASSERT_BITTERN_CACHE(bc);
 
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-		     "in_irq=%lu, in_softirq=%lu, bc=%p, wi=%p, work=%p",
+		     "in_irq=%lu, in_softirq=%lu, bc=%p, wi=%p, work=%p, datadir=%d, set_original_bio=%d",
 		     in_irq(),
 		     in_softirq(),
 		     bc,
 		     wi,
-		     &wi->wi_work);
+		     &wi->wi_work,
+		     datadir,
+		     set_original_bio);
 
 	atomic_inc(&bc->bc_make_request_wq_count);
 	wi->wi_ts_workqueue = current_kernel_time_nsec();
 
+        /* set up args for cache_make_request */
+        wi->bi_datadir = datadir;
+        wi->bi_set_original_bio = set_original_bio;
+
 	/* defer to worker thread, which will start io */
-	INIT_WORK(&wi->wi_work, cache_make_request_worker);
+	INIT_WORK(&wi->wi_work, cached_dev_make_request_worker);
 	ret = queue_work(bc->bc_make_request_wq, &wi->wi_work);
 	ASSERT(ret == 1);
 }

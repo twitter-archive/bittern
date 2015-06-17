@@ -299,16 +299,6 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 	 */
 	cache_track_hash_set(bc, cache_block, cache_block->bcb_hash_data);
 
-	/* set up args for cache_make_request_block */
-	wi->bi_datadir = WRITE;
-	wi->bi_sector = cache_block->bcb_sector;
-	ASSERT(cache_block->bcb_sector ==
-	       bio_sector_to_cache_block_sector(bio));
-	wi->bi_endio = cache_state_machine_endio;
-	wi->bi_page = cache_page;
-	wi->bi_set_original_bio = false;
-	wi->bi_set_cloned_bio = true;
-
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "copy-to-device");
 
@@ -335,7 +325,10 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 		 */
 		M_ASSERT(!in_irq() && !in_softirq());
 		wi->wi_ts_workqueue = current_kernel_time_nsec();
-		cache_do_make_request(bc, wi);
+		cached_dev_do_make_request(bc,
+					   wi,
+					   WRITE, /* datadir */
+					   false); /* do not set original bio */
 	} else if (cache_block->bcb_state ==
 		   S_CLEAN_WRITE_HIT_CPT_DEVICE_START) {
 		cache_state_transition3(bc,
@@ -348,7 +341,10 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 		 */
 		M_ASSERT(!in_irq() && !in_softirq());
 		wi->wi_ts_workqueue = current_kernel_time_nsec();
-		cache_do_make_request(bc, wi);
+		cached_dev_do_make_request(bc,
+					   wi,
+					   WRITE, /* datadir */
+					   false); /* do not set original bio */
 	} else {
 		ASSERT(cache_block->bcb_state ==
 		       S_CLEAN_P_WRITE_HIT_CPT_DEVICE_START);
@@ -360,7 +356,10 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 		/*
 		 * can be in softirq
 		 */
-		cache_make_request_defer(bc, wi);
+		cached_dev_make_request_defer(bc,
+					      wi,
+					      WRITE, /* datadir */
+					      false); /* do not set orig bio */
 	}
 }
 

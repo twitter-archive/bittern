@@ -51,16 +51,6 @@ void sm_pwrite_miss_copy_from_device_startio(struct bittern_cache *bc,
 
 	cache_page = pmem_context_data_page(&wi->wi_pmem_ctx);
 
-	/* set up args for cache_make_request */
-	wi->bi_datadir = READ;
-	wi->bi_sector = cache_block->bcb_sector;
-	ASSERT(cache_block->bcb_sector ==
-	       bio_sector_to_cache_block_sector(bio));
-	wi->bi_endio = cache_state_machine_endio;
-	wi->bi_page = cache_page;
-	wi->bi_set_original_bio = false;
-	wi->bi_set_cloned_bio = true;
-
 	atomic_inc(&bc->bc_read_cached_device_requests);
 	val = atomic_inc_return(&bc->bc_pending_cached_device_requests);
 	atomic_set_if_higher(&bc->bc_highest_pending_cached_device_requests,
@@ -92,7 +82,10 @@ void sm_pwrite_miss_copy_from_device_startio(struct bittern_cache *bc,
 	 */
 	M_ASSERT(!in_irq() && !in_softirq());
 	wi->wi_ts_workqueue = current_kernel_time_nsec();
-	cache_do_make_request(bc, wi);
+	cached_dev_do_make_request(bc,
+				   wi,
+				   READ, /* datadir */
+				   false); /* do not set original bio */
 }
 
 void sm_pwrite_miss_copy_from_device_endio(struct bittern_cache *bc,
@@ -155,16 +148,6 @@ void sm_pwrite_miss_copy_from_device_endio(struct bittern_cache *bc,
 	    S_CLEAN_P_WRITE_MISS_CPF_DEVICE_END) {
 		int val;
 
-		/* set up args for cache_make_request */
-		wi->bi_datadir = WRITE;
-		wi->bi_sector = cache_block->bcb_sector;
-		ASSERT(cache_block->bcb_sector ==
-		       bio_sector_to_cache_block_sector(bio));
-		wi->bi_endio = cache_state_machine_endio;
-		wi->bi_page = cache_page;
-		wi->bi_set_original_bio = false;
-		wi->bi_set_cloned_bio = true;
-
 		BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio,
 			 wi->wi_cloned_bio, "copy-to-device");
 
@@ -189,7 +172,10 @@ void sm_pwrite_miss_copy_from_device_endio(struct bittern_cache *bc,
 		 */
 		M_ASSERT(!in_irq() && !in_softirq());
 		wi->wi_ts_workqueue = current_kernel_time_nsec();
-		cache_do_make_request(bc, wi);
+		cached_dev_do_make_request(bc,
+					   wi,
+					   WRITE, /* datadir */
+					   false); /* do not set original bio */
 
 	} else {
 

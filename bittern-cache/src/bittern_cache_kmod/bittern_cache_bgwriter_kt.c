@@ -282,7 +282,7 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 					 cache_block->bcb_sector,
 					 WRITE);
 	ASSERT(wi->wi_cache_block == cache_block);
-	cache_state_machine(bc, wi, NULL);
+	cache_state_machine(bc, wi, 0);
 
 	return 1;
 }

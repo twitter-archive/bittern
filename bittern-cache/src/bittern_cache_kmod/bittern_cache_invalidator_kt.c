@@ -136,7 +136,7 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 				 cache_block->bcb_sector,
 				 WRITE);
 	ASSERT(wi->wi_cache_block == cache_block);
-	cache_state_machine(bc, wi, NULL);
+	cache_state_machine(bc, wi, 0);
 }
 
 /*!

@@ -539,7 +539,7 @@ void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 				 original_cache_block->bcb_sector,
 				 WRITE);
 	ASSERT(wi->wi_cache_block == original_cache_block);
-	cache_state_machine(bc, wi, NULL);
+	cache_state_machine(bc, wi, 0);
 }
 
 void
@@ -883,5 +883,5 @@ void sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 				 original_cache_block->bcb_sector,
 				 WRITE);
 	ASSERT(wi->wi_cache_block == original_cache_block);
-	cache_state_machine(bc, wi, NULL);
+	cache_state_machine(bc, wi, 0);
 }

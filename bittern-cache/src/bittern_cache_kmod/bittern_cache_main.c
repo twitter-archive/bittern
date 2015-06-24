@@ -18,129 +18,6 @@
 
 #include "bittern_cache.h"
 
-/*! endio function used by state machine */
-void cached_dev_state_machine_endio(struct bio *bio, int err)
-{
-	struct bittern_cache *bc;
-	struct cache_block *cache_block;
-	struct bio *original_bio;
-	struct work_item *wi;
-	int bio_dir;
-
-	ASSERT(bio != NULL);
-	wi = bio->bi_private;
-
-	ASSERT(wi != NULL);
-
-	bc = wi->wi_cache;
-	cache_block = wi->wi_cache_block;
-	original_bio = wi->wi_original_bio;
-
-	if (err != 0) {
-		BT_TRACE(BT_LEVEL_ERROR,
-			 bc, wi, cache_block, original_bio, NULL,
-			 "err=%d, wi=%p, bc=%p, cache_block=%p (bio=original_bio)",
-			 err, wi, bc, cache_block);
-		BT_TRACE(BT_LEVEL_ERROR,
-			 bc, wi, cache_block, bio, NULL,
-			 "err=%d, wi=%p, bc=%p, cache_block=%p (bio=cloned_bio)",
-			 err, wi, bc, cache_block);
-	}
-	M_ASSERT_FIXME(err == 0);
-
-	ASSERT_WORK_ITEM(wi, bc);
-	ASSERT_BITTERN_CACHE(bc);
-	ASSERT_CACHE_BLOCK(cache_block, bc);
-	ASSERT(cache_block->bcb_xid != 0);
-	ASSERT(cache_block->bcb_xid == wi->wi_io_xid);
-	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
-	ASSERT(original_bio == wi->wi_original_bio);
-
-	M_ASSERT(bio == wi->wi_cloned_bio);
-
-	ASSERT(bio_data_dir(bio) == READ || bio_data_dir(bio) == WRITE);
-	if (wi->wi_original_bio == wi->wi_cloned_bio) {
-		M_ASSERT(bio == wi->wi_original_bio);
-		ASSERT((wi->wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
-		/*
-		 * bio has not been cloned, we are using the original one
-		 * (this happens on bittern-initiated io requests like dirty
-		 * writebacks)
-		 */
-		BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, original_bio,
-			 bio, "endio-not-cloned");
-		ASSERT(bio_data_dir(original_bio) == READ ||
-		       bio_data_dir(original_bio) == WRITE);
-	} else {
-		M_ASSERT(bio != wi->wi_original_bio);
-		ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
-		ASSERT(bio_is_request_single_cache_block(original_bio));
-		ASSERT(bio_data_dir(bio) == READ ||
-		       bio_data_dir(bio) == WRITE);
-		ASSERT(cache_block->bcb_sector ==
-		       bio_sector_to_cache_block_sector(original_bio));
-		BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, original_bio,
-			 bio, "endio-cloned");
-	}
-	if (bio_data_dir(bio) == READ) {
-		bio_dir = READ;
-		cache_timer_add(&bc->bc_timer_cached_device_reads,
-				wi->wi_ts_physio);
-	} else {
-		bio_dir = WRITE;
-		cache_timer_add(&bc->bc_timer_cached_device_writes,
-				wi->wi_ts_physio);
-	}
-
-	M_ASSERT(wi->wi_original_bio != NULL);
-	if (bio == original_bio) {
-		M_ASSERT(wi->wi_cloned_bio != NULL);
-		/*
-		 * bio has not been cloned, we are using the original one
-		 * (this happens on bittern-initiated io requests like dirty
-		 * writebacks)
-		 */
-		M_ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) == 0);
-		M_ASSERT((wi->wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
-
-		/*
-		 * release original bio
-		 */
-		bio_put(bio);
-		wi->wi_original_bio = NULL;
-		wi->wi_cloned_bio = NULL;
-		bio = NULL;
-		original_bio = NULL;
-	} else {
-		M_ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
-		M_ASSERT((wi->wi_flags & WI_FLAG_BIO_NOT_CLONED) == 0);
-
-		/*
-		 * release cloned bio
-		 */
-		bio_put(bio);
-		wi->wi_cloned_bio = NULL;
-		bio = NULL;
-	}
-
-	ASSERT_BITTERN_CACHE(bc);
-	ASSERT_CACHE_BLOCK(cache_block, bc);
-
-	ASSERT(wi != NULL);
-	ASSERT_WORK_ITEM(wi, bc);
-	ASSERT_BITTERN_CACHE(bc);
-	ASSERT_CACHE_BLOCK(cache_block, bc);
-	ASSERT(cache_block->bcb_xid != 0);
-	ASSERT(cache_block->bcb_xid == wi->wi_io_xid);
-
-	ASSERT_CACHE_STATE(cache_block);
-	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
-
-	cache_state_machine(bc, wi, original_bio);
-
-	ASSERT_BITTERN_CACHE(bc);
-}
-
 /*!
  * handle completions which do not go thru the cache state machine
  * in this case we do not have a cache block
@@ -432,19 +309,23 @@ void cache_get_page_read_callback(struct bittern_cache *bc,
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(pmem_ctx == &wi->wi_pmem_ctx);
 	bio = wi->wi_original_bio;
-	M_ASSERT_FIXME(err == 0);
 	ASSERT(wi->wi_cache_block != NULL);
 	ASSERT_CACHE_BLOCK(wi->wi_cache_block, bc);
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 		 "err=%d, wi=%p, bc=%p, cache_block=%p, wi_original_cache_block=%p, wi_cache_block=%p, bio=%p",
-		 err, wi, bc, cache_block, wi->wi_original_cache_block,
-		 wi->wi_cache_block, bio);
+		 err,
+		 wi,
+		 bc,
+		 cache_block,
+		 wi->wi_original_cache_block,
+		 wi->wi_cache_block,
+		 bio);
 
 	/*
 	 * cache_block arg could be wi_original_cache_block, but we always
 	 * pass wi_cache_block to the state machine
 	 */
-	cache_state_machine(bc, wi, bio);
+	cache_state_machine(bc, wi, err);
 }
 
 void cache_put_page_write_callback(struct bittern_cache *bc,
@@ -464,7 +345,6 @@ void cache_put_page_write_callback(struct bittern_cache *bc,
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(pmem_ctx == &wi->wi_pmem_ctx);
 	bio = wi->wi_original_bio;
-	M_ASSERT_FIXME(err == 0);
 	ASSERT(wi->wi_cache_block != NULL);
 	ASSERT_CACHE_BLOCK(wi->wi_cache_block, bc);
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
@@ -476,7 +356,7 @@ void cache_put_page_write_callback(struct bittern_cache *bc,
 	 * cache_block arg could be wi_original_cache_block, but we always
 	 * pass wi_cache_block to the state machine
 	 */
-	cache_state_machine(bc, wi, bio);
+	cache_state_machine(bc, wi, err);
 }
 
 void cache_metadata_write_callback(struct bittern_cache *bc,
@@ -496,7 +376,6 @@ void cache_metadata_write_callback(struct bittern_cache *bc,
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(pmem_ctx == &wi->wi_pmem_ctx);
 	bio = wi->wi_original_bio;
-	M_ASSERT_FIXME(err == 0);
 	ASSERT(wi->wi_cache_block != NULL);
 	ASSERT_CACHE_BLOCK(wi->wi_cache_block, bc);
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
@@ -508,7 +387,7 @@ void cache_metadata_write_callback(struct bittern_cache *bc,
 	 * cache_block arg could be wi_original_cache_block, but we always
 	 * pass wi_cache_block to the state machine
 	 */
-	cache_state_machine(bc, wi, bio);
+	cache_state_machine(bc, wi, err);
 }
 
 /*!
@@ -519,10 +398,12 @@ void cache_metadata_write_callback(struct bittern_cache *bc,
  * each of the state transition paths is in a process context.
  * Only in these state transition the code is allowed to sleep. All
  * other code should assume a softirq context.
+ *
+ * Note "err" is always zero for the initial state.
  */
 void cache_state_machine(struct bittern_cache *bc,
 			 struct work_item *wi,
-			 struct bio *bio)
+			 int err)
 {
 	struct cache_block *cache_block = wi->wi_cache_block;
 
@@ -537,8 +418,10 @@ void cache_state_machine(struct bittern_cache *bc,
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 
 	BT_TRACE(BT_LEVEL_TRACE2,
-		 bc, wi, cache_block, bio, wi->wi_cloned_bio,
-		 "enter");
+		 bc, wi, cache_block, wi->wi_original_bio, wi->wi_cloned_bio,
+		 "enter, err=%d",
+		 err);
+	M_ASSERT_FIXME(err == 0);
 
 	switch (cache_block->bcb_state) {
 		/*
@@ -571,12 +454,13 @@ void cache_state_machine(struct bittern_cache *bc,
 		 */
 	case S_CLEAN_READ_HIT_CPF_CACHE_START:
 	case S_DIRTY_READ_HIT_CPF_CACHE_START:
-		sm_read_hit_copy_from_cache_start(bc, wi, bio);
+		M_ASSERT(err == 0); /* initial state, no err condition */
+		sm_read_hit_copy_from_cache_start(bc, wi, wi->wi_original_bio);
 		break;
 
 	case S_CLEAN_READ_HIT_CPF_CACHE_END:
 	case S_DIRTY_READ_HIT_CPF_CACHE_END:
-		sm_read_hit_copy_from_cache_end(bc, wi, bio);
+		sm_read_hit_copy_from_cache_end(bc, wi, wi->wi_original_bio);
 		break;
 
 		/*
@@ -609,15 +493,20 @@ void cache_state_machine(struct bittern_cache *bc,
 		 *      sm_read_miss_copy_to_cache_end().
 		 */
 	case S_CLEAN_READ_MISS_CPF_DEVICE_START:
-		sm_read_miss_copy_from_device_startio(bc, wi, bio);
+		M_ASSERT(err == 0); /* initial state, no err condition */
+		sm_read_miss_copy_from_device_startio(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 	case S_CLEAN_READ_MISS_CPF_DEVICE_END:
-		sm_read_miss_copy_from_device_endio(bc, wi, bio);
+		sm_read_miss_copy_from_device_endio(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 	case S_CLEAN_READ_MISS_CPT_CACHE_END:
-		sm_read_miss_copy_to_cache_end(bc, wi, bio);
+		sm_read_miss_copy_to_cache_end(bc, wi, wi->wi_original_bio);
 		break;
 
 		/*
@@ -647,11 +536,16 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * VALID_DIRTY
 		 */
 	case S_DIRTY_WRITE_MISS_CPT_CACHE_START:
-		sm_dirty_write_miss_copy_to_cache_start(bc, wi, bio);
+		M_ASSERT(err == 0); /* initial state, no err condition */
+		sm_dirty_write_miss_copy_to_cache_start(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 	case S_DIRTY_WRITE_MISS_CPT_CACHE_END:
-		sm_dirty_write_miss_copy_to_cache_end(bc, wi, bio);
+		sm_dirty_write_miss_copy_to_cache_end(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 		/*
@@ -687,17 +581,24 @@ void cache_state_machine(struct bittern_cache *bc,
 		 */
 	case S_CLEAN_WRITE_MISS_CPT_DEVICE_START:
 	case S_CLEAN_WRITE_HIT_CPT_DEVICE_START:
-		sm_clean_write_miss_copy_to_device_startio(bc, wi, bio);
+		M_ASSERT(err == 0); /* initial state, no err condition */
+		sm_clean_write_miss_copy_to_device_startio(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 	case S_CLEAN_WRITE_MISS_CPT_DEVICE_END:
 	case S_CLEAN_WRITE_HIT_CPT_DEVICE_END:
-		sm_clean_write_miss_copy_to_device_endio(bc, wi, bio);
+		sm_clean_write_miss_copy_to_device_endio(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 	case S_CLEAN_WRITE_MISS_CPT_CACHE_END:
 	case S_CLEAN_WRITE_HIT_CPT_CACHE_END:
-		sm_clean_write_miss_copy_to_cache_end(bc, wi, bio);
+		sm_clean_write_miss_copy_to_cache_end(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 		/*
@@ -717,19 +618,29 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * [ write miss (wb) ].
 		 */
 	case S_CLEAN_P_WRITE_HIT_CPF_O_CACHE_START:
-		sm_clean_pwrite_hit_copy_from_cache_start(bc, wi, bio);
+		M_ASSERT(err == 0); /* initial state, no err condition */
+		sm_clean_pwrite_hit_copy_from_cache_start(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 	case S_CLEAN_P_WRITE_HIT_CPT_DEVICE_START:
-		sm_clean_write_miss_copy_to_device_startio(bc, wi, bio);
+		M_ASSERT(err == 0); /* initial state, no err condition */
+		sm_clean_write_miss_copy_to_device_startio(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 	case S_CLEAN_P_WRITE_HIT_CPT_DEVICE_END:
-		sm_clean_write_miss_copy_to_device_endio(bc, wi, bio);
+		sm_clean_write_miss_copy_to_device_endio(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 	case S_CLEAN_P_WRITE_HIT_CPT_CACHE_END:
-		sm_clean_write_miss_copy_to_cache_end(bc, wi, bio);
+		sm_clean_write_miss_copy_to_cache_end(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 		/*
@@ -783,21 +694,29 @@ void cache_state_machine(struct bittern_cache *bc,
 		 */
 	case S_C2_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START:
 	case S_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START:
-		sm_dirty_pwrite_hit_copy_from_cache_start(bc, wi, bio);
+		M_ASSERT(err == 0); /* initial state, no err condition */
+		sm_dirty_pwrite_hit_copy_from_cache_start(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 	case S_DIRTY_WRITE_HIT_CPT_CACHE_START:
 	case S_C2_DIRTY_WRITE_HIT_CPT_CACHE_START:
-	case S_DIRTY_P_WRITE_HIT_CPT_CACHE_START:
-	case S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_START:
-		sm_dirty_write_hit_copy_to_cache_start(bc, wi, bio);
+		M_ASSERT(err == 0); /* initial state, no err condition */
+	case S_DIRTY_P_WRITE_HIT_CPT_CACHE_START: /* not an initial state */
+	case S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_START: /* not an initial state */
+		sm_dirty_write_hit_copy_to_cache_start(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 	case S_DIRTY_WRITE_HIT_CPT_CACHE_END:
 	case S_C2_DIRTY_WRITE_HIT_CPT_CACHE_END:
 	case S_DIRTY_P_WRITE_HIT_CPT_CACHE_END:
 	case S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_END:
-		sm_dirty_write_hit_copy_to_cache_end(bc, wi, bio);
+		sm_dirty_write_hit_copy_to_cache_end(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 		/*
@@ -838,21 +757,28 @@ void cache_state_machine(struct bittern_cache *bc,
 		 */
 	case S_CLEAN_P_WRITE_MISS_CPF_DEVICE_START:
 	case S_DIRTY_P_WRITE_MISS_CPF_DEVICE_START:
-		sm_pwrite_miss_copy_from_device_startio(bc, wi, bio);
+		M_ASSERT(err == 0); /* initial state, no err condition */
+		sm_pwrite_miss_copy_from_device_startio(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 	case S_CLEAN_P_WRITE_MISS_CPF_DEVICE_END:
 	case S_DIRTY_P_WRITE_MISS_CPF_DEVICE_END:
-		sm_pwrite_miss_copy_from_device_endio(bc, wi, bio);
+		sm_pwrite_miss_copy_from_device_endio(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 	case S_CLEAN_P_WRITE_MISS_CPT_DEVICE_END:
-		sm_pwrite_miss_copy_to_device_endio(bc, wi, bio);
+		sm_pwrite_miss_copy_to_device_endio(bc,
+						wi,
+						wi->wi_original_bio);
 		break;
 
 	case S_CLEAN_P_WRITE_MISS_CPT_CACHE_END:
 	case S_DIRTY_P_WRITE_MISS_CPT_CACHE_END:
-		sm_pwrite_miss_copy_to_cache_end(bc, wi, bio);
+		sm_pwrite_miss_copy_to_cache_end(bc, wi, wi->wi_original_bio);
 		break;
 
 		/*
@@ -900,22 +826,23 @@ void cache_state_machine(struct bittern_cache *bc,
 		 */
 	case S_DIRTY_WRITEBACK_CPF_CACHE_START:
 	case S_DIRTY_WRITEBACK_INV_CPF_CACHE_START:
-		sm_writeback_copy_from_cache_start(bc, wi, bio);
+		M_ASSERT(err == 0); /* initial state, no err condition */
+		sm_writeback_copy_from_cache_start(bc, wi, wi->wi_original_bio);
 		break;
 
 	case S_DIRTY_WRITEBACK_CPF_CACHE_END:
 	case S_DIRTY_WRITEBACK_INV_CPF_CACHE_END:
-		sm_writeback_copy_from_cache_end(bc, wi, bio);
+		sm_writeback_copy_from_cache_end(bc, wi, wi->wi_original_bio);
 		break;
 
 	case S_DIRTY_WRITEBACK_CPT_DEVICE_END:
 	case S_DIRTY_WRITEBACK_INV_CPT_DEVICE_END:
-		sm_writeback_copy_to_device_endio(bc, wi, bio);
+		sm_writeback_copy_to_device_endio(bc, wi, wi->wi_original_bio);
 		break;
 
 	case S_DIRTY_WRITEBACK_UPD_METADATA_END:
 	case S_DIRTY_WRITEBACK_INV_UPD_METADATA_END:
-		sm_writeback_update_metadata_end(bc, wi, bio);
+		sm_writeback_update_metadata_end(bc, wi, wi->wi_original_bio);
 		break;
 
 		/*
@@ -941,12 +868,13 @@ void cache_state_machine(struct bittern_cache *bc,
 		 */
 	case S_CLEAN_INVALIDATE_START:
 	case S_DIRTY_INVALIDATE_START:
-		sm_invalidate_start(bc, wi, bio);
+		M_ASSERT(err == 0); /* initial state, no err condition */
+		sm_invalidate_start(bc, wi, wi->wi_original_bio);
 		break;
 
 	case S_CLEAN_INVALIDATE_END:
 	case S_DIRTY_INVALIDATE_END:
-		sm_invalidate_end(bc, wi, bio);
+		sm_invalidate_end(bc, wi, wi->wi_original_bio);
 		break;
 
 	case S_INVALID:
@@ -957,10 +885,11 @@ void cache_state_machine(struct bittern_cache *bc,
 	case S_CLEAN_VERIFY:
 	default:
 		printk_err("unknown_cache_state: bc=%p, wi=%p, bio=0x%llx, cache_block=%p\n",
-			   bc, wi, (long long)bio, cache_block);
-		if (bio != NULL)
+			   bc, wi, (long long)wi->wi_original_bio, cache_block);
+		if (wi->wi_original_bio != NULL)
 			printk_err("unknown_cache_state: bio_data_dir=0x%lx, bio_bi_sector=%lu\n",
-				   bio_data_dir(bio), bio->bi_iter.bi_sector);
+				   bio_data_dir(wi->wi_original_bio),
+				   wi->wi_original_bio->bi_iter.bi_sector);
 		printk_err("unknown_cache_state: wi_op_type=%s, wi_op_sector=%lu, wi_op_rw=0x%lx\n",
 			   wi->wi_op_type, wi->wi_op_sector, wi->wi_op_rw);
 		printk_err("unknown_cache_state: bcb_sector=%lu, cb_state=%d(%s)\n",
@@ -1064,7 +993,7 @@ void cache_handle_read_hit(struct bittern_cache *bc,
 		 "handle-cache-hit");
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	cache_state_machine(bc, wi, bio);
+	cache_state_machine(bc, wi, 0);
 }
 
 void cache_handle_write_hit_wt(struct bittern_cache *bc,
@@ -1211,7 +1140,7 @@ void cache_handle_write_hit_wt(struct bittern_cache *bc,
 		 "handle-cache-write-hit-wt-cloned");
 	ASSERT(cloned_cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	cache_state_machine(bc, wi, bio);
+	cache_state_machine(bc, wi, 0);
 }
 
 void cache_handle_write_hit_wb(struct bittern_cache *bc,
@@ -1407,7 +1336,7 @@ void cache_handle_write_hit_wb(struct bittern_cache *bc,
 	       bio_sector_to_cache_block_sector(bio));
 
 	ASSERT(wi->wi_cache_block == cloned_cache_block);
-	cache_state_machine(bc, wi, bio);
+	cache_state_machine(bc, wi, 0);
 }
 
 void cache_handle_read_miss(struct bittern_cache *bc,
@@ -1488,7 +1417,7 @@ void cache_handle_read_miss(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(wi->wi_cache_block == cache_block);
-	cache_state_machine(bc, wi, bio);
+	cache_state_machine(bc, wi, 0);
 }
 
 void cache_handle_write_miss_wb(struct bittern_cache *bc,
@@ -1595,7 +1524,7 @@ void cache_handle_write_miss_wb(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(wi->wi_cache_block == cache_block);
-	cache_state_machine(bc, wi, bio);
+	cache_state_machine(bc, wi, 0);
 }
 
 void cache_handle_write_miss_wt(struct bittern_cache *bc,
@@ -1707,7 +1636,7 @@ void cache_handle_write_miss_wt(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(wi->wi_cache_block == cache_block);
-	cache_state_machine(bc, wi, bio);
+	cache_state_machine(bc, wi, 0);
 }
 
 static inline void cache_update_pending(struct bittern_cache *bc,

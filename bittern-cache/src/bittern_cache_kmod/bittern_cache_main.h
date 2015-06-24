@@ -388,11 +388,11 @@ extern void cached_dev_make_request_defer(struct bittern_cache *bc,
 				          int datadir,
 				          bool set_original_bio);
 
-extern void cached_dev_state_machine_endio(struct bio *cloned_bio, int err);
 /*! main state machine */
 extern void cache_state_machine(struct bittern_cache *bc,
 				struct work_item *wi,
-				struct bio *bio);
+				int err);
+
 /*! copy from cache to bio, aka userland reads */
 extern void __bio_copy_from_cache(struct work_item *wi,
 				  struct bio *bio,
@@ -405,6 +405,7 @@ extern void __bio_copy_from_cache(struct work_item *wi,
 extern void bio_copy_to_cache(struct work_item *wi,
 			      struct bio *bio,
 			      uint128_t *hash_data);
+
 extern void cache_get_page_read_callback(struct bittern_cache *bc,
 					 struct cache_block *cache_block,
 					 struct pmem_context *pmem_ctx,

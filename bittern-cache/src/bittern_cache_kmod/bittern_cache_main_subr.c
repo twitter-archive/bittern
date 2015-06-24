@@ -1024,6 +1024,91 @@ void __cache_verify_hash_data_buffer(struct bittern_cache *bc,
 	M_ASSERT(uint128_eq(hash_data, cache_block->bcb_hash_data));
 }
 
+/*! endio function used by @ref cached_dev_do_make_request */
+static void cached_dev_make_request_endio(struct bio *bio, int err)
+{
+	struct bittern_cache *bc;
+	struct cache_block *cache_block;
+	struct work_item *wi;
+	struct bio *original_bio;
+	bool is_original_bio;
+
+	ASSERT(bio != NULL);
+	wi = bio->bi_private;
+	ASSERT(wi != NULL);
+
+	bc = wi->wi_cache;
+	ASSERT_BITTERN_CACHE(bc);
+
+	cache_block = wi->wi_cache_block;
+	ASSERT_WORK_ITEM(wi, bc);
+	ASSERT_CACHE_BLOCK(cache_block, bc);
+	ASSERT(cache_block->bcb_xid != 0);
+	ASSERT(cache_block->bcb_xid == wi->wi_io_xid);
+	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
+	M_ASSERT(bio == wi->wi_cloned_bio);
+	ASSERT(bio_data_dir(bio) == READ ||
+	       bio_data_dir(bio) == WRITE);
+	ASSERT(cache_block->bcb_xid != 0);
+	ASSERT(cache_block->bcb_xid == wi->wi_io_xid);
+	ASSERT_CACHE_STATE(cache_block);
+	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
+
+	is_original_bio = (bio == wi->wi_original_bio);
+	original_bio = wi->wi_original_bio;
+	M_ASSERT(wi->wi_original_bio != NULL);
+	ASSERT(original_bio == wi->wi_original_bio);
+
+	if (bio_data_dir(bio) == READ)
+		cache_timer_add(&bc->bc_timer_cached_device_reads,
+				wi->wi_ts_physio);
+	else
+		cache_timer_add(&bc->bc_timer_cached_device_writes,
+				wi->wi_ts_physio);
+	if (is_original_bio) {
+		M_ASSERT(wi->wi_cloned_bio != NULL);
+		M_ASSERT(wi->wi_original_bio == wi->wi_cloned_bio);
+		M_ASSERT(bio == wi->wi_original_bio);
+		M_ASSERT((wi->wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
+		M_ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) == 0);
+		/*
+		 * bio has not been cloned, we are using the original one
+		 * (this happens on bittern-initiated io requests like dirty
+		 * writebacks)
+		 */
+		BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, original_bio,
+			 bio, "endio-not-cloned");
+		ASSERT(bio_data_dir(original_bio) == READ ||
+		       bio_data_dir(original_bio) == WRITE);
+		/*
+		 * bio has not been cloned, we are using the original one
+		 * (this happens on bittern-initiated io requests like dirty
+		 * writebacks)
+		 */
+		bio_put(bio);
+		wi->wi_original_bio = NULL;
+		wi->wi_cloned_bio = NULL;
+	} else {
+		M_ASSERT(bio != wi->wi_original_bio);
+		ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
+		ASSERT(bio_is_request_single_cache_block(original_bio));
+		ASSERT(cache_block->bcb_sector ==
+		       bio_sector_to_cache_block_sector(original_bio));
+		BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, original_bio,
+			 bio, "endio-cloned");
+		M_ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
+		M_ASSERT((wi->wi_flags & WI_FLAG_BIO_NOT_CLONED) == 0);
+
+		/*
+		 * release cloned bio
+		 */
+		bio_put(bio);
+		wi->wi_cloned_bio = NULL;
+	}
+
+	cache_state_machine(bc, wi, err);
+}
+
 /*!
  * Allocate bio and make the request to cached device.
  */
@@ -1055,15 +1140,17 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 	ASSERT(wi->wi_cache_block == cache_block);
 
 	bio = bio_alloc(GFP_NOIO, 1);
+	/*TODO_ADD_ERROR_INJECTION*/
 	if (bio == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, cache_block, NULL, NULL,
 			     "cannot allocate bio, wi=%p",
 			     wi);
 		printk_err("%s: cannot allocate bio\n", bc->bc_name);
 		/*
-		 * Allocation failed, bubble up the error.
+		 * Allocation failed, bubble up error to state machine.
 		 */
-		M_ASSERT_FIXME(bio != NULL);
+		cache_state_machine(bc, wi, -ENOMEM);
+		return;
 	}
 
 	if (datadir == WRITE)
@@ -1073,7 +1160,7 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 	bio->bi_iter.bi_sector = cache_block->bcb_sector;
 	bio->bi_iter.bi_size = PAGE_SIZE;
 	bio->bi_bdev = bc->bc_dev->bdev;
-	bio->bi_end_io = cached_dev_state_machine_endio;
+	bio->bi_end_io = cached_dev_make_request_endio;
 	bio->bi_private = wi;
 	bio->bi_vcnt = 1;
 	bio->bi_io_vec[0].bv_page = pmem_context_data_page(&wi->wi_pmem_ctx);

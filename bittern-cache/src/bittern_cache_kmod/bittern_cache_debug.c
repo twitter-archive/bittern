@@ -160,7 +160,7 @@ void cache_dump_pending(struct bittern_cache *bc,
 			continue;
 		if (cache_block != NULL)
 			printk(KERN_DEBUG
-			       "%s[%u]: op=%c, dir=%s, s=%lu %c%c%c: %d:%lu: %d(%s)\n",
+			       "%s[%u]: op=%s, dir=%s, s=%lu %c%c%c: %d:%lu: %d(%s)\n",
 			       "pending",
 			       curr_offset,
 			       wi->wi_op_type,
@@ -175,7 +175,7 @@ void cache_dump_pending(struct bittern_cache *bc,
 			       cache_state_to_str(cache_block->bcb_state));
 		else
 			printk(KERN_DEBUG
-			       "%s[%u]: op=%c, dir=%s, s=%lu %c%c%c\n",
+			       "%s[%u]: op=%s, dir=%s, s=%lu %c%c%c\n",
 			       "pending",
 			       curr_offset,
 			       wi->wi_op_type,

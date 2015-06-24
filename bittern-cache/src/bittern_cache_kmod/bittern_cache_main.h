@@ -290,32 +290,24 @@ extern int __cache_validate_state_transition(struct bittern_cache *bc,
 extern struct work_item *work_item_allocate(struct bittern_cache *bc,
 					    struct cache_block *cache_block,
 					    struct bio *bio,
-					    int wi_flags,
-					    wi_io_endio_f wi_io_endio);
+					    int wi_flags);
 extern void work_item_reallocate(struct bittern_cache *bc,
 				 struct cache_block *cache_block,
 				 struct work_item *wi,
 				 struct bio *bio,
-				 int wi_flags,
-				 wi_io_endio_f wi_io_endio);
+				 int wi_flags);
 extern void work_item_free(struct bittern_cache *bc,
 			   struct work_item *wi);
 
 /*!
- * op_type has the following values:
- * 'W': writeback invalidate
- * 'F': writeback flush
- * 'I': invalidate
- * 'M': read or write miss
- * 'L': invalidate original block of a write clone
- * 'B': read or write bypass
- * 'H': write hit write clone
- * 'I': write hit no clone
+ * Adds work_item to list of pending IOs.
+ * op_type is assumed to be a valid pointer to a constant string
+ * which can be used across time.
  */
 static inline void
 work_item_add_pending_io(struct bittern_cache *bc,
 			 struct work_item *wi,
-			 char op_type,
+			 const char *op_type,
 			 sector_t op_sector,
 			 unsigned long op_rw)
 {
@@ -329,6 +321,9 @@ work_item_add_pending_io(struct bittern_cache *bc,
 	spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
 }
 
+/*!
+ * Deletes work_item from list of pending IOs.
+ */
 static inline void
 work_item_del_pending_io(struct bittern_cache *bc,
 			 struct work_item *wi)

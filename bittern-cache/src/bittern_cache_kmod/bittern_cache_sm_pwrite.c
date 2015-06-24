@@ -27,9 +27,6 @@ void sm_pwrite_miss_copy_from_device_startio(struct bittern_cache *bc,
 	struct page *cache_page;
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
-	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) == 0);
-	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
-	ASSERT(wi->wi_io_endio == NULL);
 	ASSERT(wi->wi_original_bio != NULL);
 	cache_block = wi->wi_cache_block;
 
@@ -39,10 +36,9 @@ void sm_pwrite_miss_copy_from_device_startio(struct bittern_cache *bc,
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(cache_block->bcb_state ==
-	       S_CLEAN_P_WRITE_MISS_CPF_DEVICE_START
-	       || cache_block->bcb_state ==
+	       S_CLEAN_P_WRITE_MISS_CPF_DEVICE_START ||
+	       cache_block->bcb_state ==
 	       S_DIRTY_P_WRITE_MISS_CPF_DEVICE_START);
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
 	pmem_data_get_page_write(bc,
@@ -98,9 +94,6 @@ void sm_pwrite_miss_copy_from_device_endio(struct bittern_cache *bc,
 	struct page *cache_page;
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
-	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) == 0);
-	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
-	ASSERT(wi->wi_io_endio == NULL);
 	ASSERT(wi->wi_original_bio != NULL);
 	cache_block = wi->wi_cache_block;
 
@@ -110,10 +103,9 @@ void sm_pwrite_miss_copy_from_device_endio(struct bittern_cache *bc,
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(cache_block->bcb_state ==
-	       S_CLEAN_P_WRITE_MISS_CPF_DEVICE_END
-	       || cache_block->bcb_state ==
+	       S_CLEAN_P_WRITE_MISS_CPF_DEVICE_END ||
+	       cache_block->bcb_state ==
 	       S_DIRTY_P_WRITE_MISS_CPF_DEVICE_END);
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL, "endio");
@@ -141,7 +133,6 @@ void sm_pwrite_miss_copy_from_device_endio(struct bittern_cache *bc,
 	 */
 	cache_track_hash_set(bc, cache_block, cache_block->bcb_hash_data);
 
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
 	if (cache_block->bcb_state ==
@@ -206,10 +197,6 @@ void sm_pwrite_miss_copy_to_device_endio(struct bittern_cache *bc,
 {
 	struct cache_block *cache_block;
 
-	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
-	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) == 0);
-	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
-	ASSERT(wi->wi_io_endio == NULL);
 	ASSERT(wi->wi_original_bio != NULL);
 	cache_block = wi->wi_cache_block;
 
@@ -220,9 +207,6 @@ void sm_pwrite_miss_copy_to_device_endio(struct bittern_cache *bc,
 	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(cache_block->bcb_state ==
 	       S_CLEAN_P_WRITE_MISS_CPT_DEVICE_END);
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
-	ASSERT(wi->wi_original_cache_block == NULL);
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
@@ -256,9 +240,6 @@ void sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 	struct cache_block *cache_block;
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
-	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) == 0);
-	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
-	ASSERT(wi->wi_io_endio == NULL);
 	ASSERT(wi->wi_original_bio != NULL);
 	cache_block = wi->wi_cache_block;
 	original_state = cache_block->bcb_state;
@@ -269,21 +250,17 @@ void sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(cache_block->bcb_state ==
-	       S_CLEAN_P_WRITE_MISS_CPT_CACHE_END
-	       || cache_block->bcb_state ==
+	       S_CLEAN_P_WRITE_MISS_CPT_CACHE_END ||
+	       cache_block->bcb_state ==
 	       S_DIRTY_P_WRITE_MISS_CPT_CACHE_END);
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 		 "copy-to-cache-end");
 
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
 	ASSERT_CACHE_STATE(cache_block);
-	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
-	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 
 	if (cache_block->bcb_state == S_CLEAN_P_WRITE_MISS_CPT_CACHE_END) {

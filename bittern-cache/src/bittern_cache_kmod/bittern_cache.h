@@ -180,18 +180,6 @@ static inline sector_t sector_to_cache_block_sector(sector_t s)
 /*! @defgroup wi_flags_bitvalues work_item wi_flags bitmask values
  * @{
  */
-/*! @ref wi_flags : io initiated by @ref cache_map map (block i/o request) */
-#define WI_FLAG_MAP_IO 0x0001
-/*! @ref wi_flags : io initiated by @ref cache_bgwriter_kthread bgwriter kthread */
-#define WI_FLAG_WRITEBACK_IO 0x0002
-/*! @ref wi_flags : io initiated by @ref cache_invalidator_kthread invalidator kthread */
-#define WI_FLAG_INVALIDATE_IO 0x0004
-/*!
- * @ref wi_flags : if set, bio struct has been cloned -- obsolete value
- * WI_FLAG_BIO_NOT_CLONED was set if this was not set.
- */
-/*! @ref wi_flags : indicates write cloning */
-#define WI_FLAG_WRITE_CLONING 0x0010
 /*! @ref wi_flags : indicates request bio has been cloned */
 #define WI_FLAG_BIO_CLONED 0x0020
 /*!
@@ -203,24 +191,19 @@ static inline sector_t sector_to_cache_block_sector(sector_t s)
 #define WI_FLAG_XID_NEW 0x0100
 /*! @ref wi_flags : if set, use the XID from the cache_block */
 #define WI_FLAG_XID_USE_CACHE_BLOCK 0x0200
-/*! @ref wi_flags : if set, call endio function instead of the main state machine */
-#define WI_FLAG_HAS_END 0x1000
 /*! @ref wi_flags : mask of all possible legal values for wi_flag */
-#define WI_FLAG_MASK (WI_FLAG_MAP_IO |        \
-		WI_FLAG_WRITEBACK_IO |        \
-		WI_FLAG_INVALIDATE_IO |       \
-		WI_FLAG_WRITE_CLONING |       \
-		WI_FLAG_BIO_CLONED |          \
+#define WI_FLAG_MASK (WI_FLAG_BIO_CLONED |    \
 		WI_FLAG_BIO_NOT_CLONED |      \
 		WI_FLAG_XID_NEW |             \
-		WI_FLAG_XID_USE_CACHE_BLOCK | \
-		WI_FLAG_HAS_END)
+		WI_FLAG_XID_USE_CACHE_BLOCK)
 /*! @} */
 
-/*forward*/ struct work_item;
-typedef void (*wi_io_endio_f)(struct bittern_cache *,
-			      struct work_item *,
-			      struct cache_block *);
+/*!
+ * work_item structure.
+ * This contains all the information and resources which are needed to perform
+ * any given state transition, either user-initiated (via map callback) or
+ * bittern initiated (invalidation and writeback).
+ */
 struct work_item {
 	int wi_magic1;
 	/*! @ref wi_flags_bitvalues */
@@ -259,26 +242,10 @@ struct work_item {
 	struct pmem_context wi_pmem_ctx;
 	/* transaction id */
 	uint64_t wi_io_xid;
-	/*
-	 * if NULL, I/O will be completed by calling bio_endio and counters
-	 * won't be affected.
-	 */
-	wi_io_endio_f wi_io_endio;
 	/* bypass cache for this workitem */
 	int wi_bypass;
-	/*!
-	 * keep track here of the request type and block information.  we mainly
-	 * use this for tracking pending operations and it's on purpose
-	 * kept completely separate from everything else for debugging
-	 * reasons
-	 *
-	 * wi_op_type == 'm': _map() request
-	 * wi_op_type == 'w': writeback request
-	 * wi_op_type == 'b': bypass request
-	 *
-	 * \todo convert this to a 4 char string to give a bit more info
-	 */
-	char wi_op_type;
+	/*! keep track here of the request type and block information */
+	const char *wi_op_type;
 	sector_t wi_op_sector;
 	/* bio rw flags */
 	unsigned long wi_op_rw;

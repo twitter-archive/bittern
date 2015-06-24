@@ -29,8 +29,6 @@ void sm_invalidate_start(struct bittern_cache *bc,
 	ASSERT(bio == NULL);
 	ASSERT(wi->wi_original_bio == NULL);
 	ASSERT(wi->wi_cloned_bio == NULL);
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
-	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) != 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 	cache_block = wi->wi_cache_block;
 
@@ -82,26 +80,17 @@ void sm_invalidate_end(struct bittern_cache *bc,
 	ASSERT(bio == NULL);
 	ASSERT(wi->wi_original_bio == NULL);
 	ASSERT(wi->wi_cloned_bio == NULL);
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
-	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) != 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 	cache_block = wi->wi_cache_block;
 
 	ASSERT(cache_block->bcb_state == S_CLEAN_INVALIDATE_END ||
 	       cache_block->bcb_state == S_DIRTY_INVALIDATE_END);
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
-		 "invalidate-end: %p", wi->wi_io_endio);
+		 "invalidate-end");
 
 	/*
-	 * the endio function is responsible for deallocating the work_item
+	 * The invalidator's endio function is responsible for
+	 * deallocating the work_item.
 	 */
-
-	/*
-	 * given this is an externally initiated request, we expect callback
-	 * to be valid
-	 */
-	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) != 0);
-	ASSERT(wi->wi_io_endio != NULL);
-	M_ASSERT(wi->wi_io_endio == cache_invalidate_block_io_end);
-	(*wi->wi_io_endio)(bc, wi, cache_block);
+	cache_invalidate_block_io_end(bc, wi, cache_block);
 }

@@ -34,13 +34,8 @@ void cache_invalidate_block_io_end(struct bittern_cache *bc,
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, NULL, NULL,
 		 "invalidate done");
-	ASSERT(cache_block->bcb_state ==
-	       S_CLEAN_INVALIDATE_END
-	       || cache_block->bcb_state ==
-	       S_DIRTY_INVALIDATE_END);
-
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
-	ASSERT((wi->wi_flags & WI_FLAG_HAS_END) != 0);
+	ASSERT(cache_block->bcb_state == S_CLEAN_INVALIDATE_END ||
+	       cache_block->bcb_state == S_DIRTY_INVALIDATE_END);
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 
 	if (cache_block->bcb_state == S_DIRTY_INVALIDATE_END)
@@ -109,11 +104,8 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 	wi = work_item_allocate(bc,
 				cache_block,
 				NULL,
-				(WI_FLAG_INVALIDATE_IO |
-				 WI_FLAG_BIO_NOT_CLONED |
-				 WI_FLAG_XID_USE_CACHE_BLOCK |
-				 WI_FLAG_HAS_END),
-				cache_invalidate_block_io_end);
+				(WI_FLAG_BIO_NOT_CLONED |
+				 WI_FLAG_XID_USE_CACHE_BLOCK));
 	M_ASSERT_FIXME(wi != NULL);
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_io_xid != 0);
@@ -140,7 +132,7 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 	 */
 	work_item_add_pending_io(bc,
 				 wi,
-				 'I',
+				 "invalidate",
 				 cache_block->bcb_sector,
 				 WRITE);
 	ASSERT(wi->wi_cache_block == cache_block);

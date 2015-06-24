@@ -19,16 +19,16 @@
 #include "bittern_cache.h"
 
 /*! endio function used by state machine */
-void cached_dev_state_machine_endio(struct bio *cloned_bio, int err)
+void cached_dev_state_machine_endio(struct bio *bio, int err)
 {
 	struct bittern_cache *bc;
 	struct cache_block *cache_block;
 	struct bio *original_bio;
 	struct work_item *wi;
-	int cloned_bio_dir;
+	int bio_dir;
 
-	ASSERT(cloned_bio != NULL);
-	wi = cloned_bio->bi_private;
+	ASSERT(bio != NULL);
+	wi = bio->bi_private;
 
 	ASSERT(wi != NULL);
 
@@ -42,7 +42,7 @@ void cached_dev_state_machine_endio(struct bio *cloned_bio, int err)
 			 "err=%d, wi=%p, bc=%p, cache_block=%p (bio=original_bio)",
 			 err, wi, bc, cache_block);
 		BT_TRACE(BT_LEVEL_ERROR,
-			 bc, wi, cache_block, cloned_bio, NULL,
+			 bc, wi, cache_block, bio, NULL,
 			 "err=%d, wi=%p, bc=%p, cache_block=%p (bio=cloned_bio)",
 			 err, wi, bc, cache_block);
 	}
@@ -54,12 +54,13 @@ void cached_dev_state_machine_endio(struct bio *cloned_bio, int err)
 	ASSERT(cache_block->bcb_xid != 0);
 	ASSERT(cache_block->bcb_xid == wi->wi_io_xid);
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
-	ASSERT(cloned_bio == wi->wi_cloned_bio);
 	ASSERT(original_bio == wi->wi_original_bio);
 
-	ASSERT(bio_data_dir(cloned_bio) == READ
-	       || bio_data_dir(cloned_bio) == WRITE);
+	M_ASSERT(bio == wi->wi_cloned_bio);
+
+	ASSERT(bio_data_dir(bio) == READ || bio_data_dir(bio) == WRITE);
 	if (wi->wi_original_bio == wi->wi_cloned_bio) {
+		M_ASSERT(bio == wi->wi_original_bio);
 		ASSERT((wi->wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
 		/*
 		 * bio has not been cloned, we are using the original one
@@ -67,54 +68,59 @@ void cached_dev_state_machine_endio(struct bio *cloned_bio, int err)
 		 * writebacks)
 		 */
 		BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, original_bio,
-			 cloned_bio, "endio-not-cloned");
-		ASSERT(bio_data_dir(original_bio) == READ
-		       || bio_data_dir(original_bio) == WRITE);
+			 bio, "endio-not-cloned");
+		ASSERT(bio_data_dir(original_bio) == READ ||
+		       bio_data_dir(original_bio) == WRITE);
 	} else {
+		M_ASSERT(bio != wi->wi_original_bio);
 		ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 		ASSERT(bio_is_request_single_cache_block(original_bio));
-		ASSERT(bio_data_dir(cloned_bio) == READ
-		       || bio_data_dir(cloned_bio) == WRITE);
+		ASSERT(bio_data_dir(bio) == READ ||
+		       bio_data_dir(bio) == WRITE);
 		ASSERT(cache_block->bcb_sector ==
 		       bio_sector_to_cache_block_sector(original_bio));
 		BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, original_bio,
-			 cloned_bio, "endio-cloned");
+			 bio, "endio-cloned");
 	}
-	if (bio_data_dir(cloned_bio) == READ) {
-		cloned_bio_dir = READ;
+	if (bio_data_dir(bio) == READ) {
+		bio_dir = READ;
 		cache_timer_add(&bc->bc_timer_cached_device_reads,
 				wi->wi_ts_physio);
 	} else {
-		cloned_bio_dir = WRITE;
+		bio_dir = WRITE;
 		cache_timer_add(&bc->bc_timer_cached_device_writes,
 				wi->wi_ts_physio);
 	}
 
-	if (cloned_bio == original_bio) {
+	M_ASSERT(wi->wi_original_bio != NULL);
+	if (bio == original_bio) {
+		M_ASSERT(wi->wi_cloned_bio != NULL);
 		/*
 		 * bio has not been cloned, we are using the original one
 		 * (this happens on bittern-initiated io requests like dirty
 		 * writebacks)
 		 */
-		ASSERT((wi->wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
+		M_ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) == 0);
+		M_ASSERT((wi->wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
 
 		/*
 		 * release original bio
 		 */
-		bio_put(cloned_bio);
+		bio_put(bio);
 		wi->wi_original_bio = NULL;
 		wi->wi_cloned_bio = NULL;
-		cloned_bio = NULL;
+		bio = NULL;
 		original_bio = NULL;
 	} else {
-		ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
+		M_ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
+		M_ASSERT((wi->wi_flags & WI_FLAG_BIO_NOT_CLONED) == 0);
 
 		/*
 		 * release cloned bio
 		 */
-		bio_put(cloned_bio);
+		bio_put(bio);
 		wi->wi_cloned_bio = NULL;
-		cloned_bio = NULL;
+		bio = NULL;
 	}
 
 	ASSERT_BITTERN_CACHE(bc);
@@ -129,31 +135,6 @@ void cached_dev_state_machine_endio(struct bio *cloned_bio, int err)
 
 	ASSERT_CACHE_STATE(cache_block);
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
-
-	/*
-	 * FIXME: should split treatement of WI_FLAG_MAP_IO vs
-	 * WI_FLAG_BIO_CLONED
-	 */
-	if (wi->wi_io_endio != NULL) {
-		ASSERT((wi->wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
-		ASSERT((wi->wi_flags & WI_FLAG_HAS_END) != 0);
-		ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) == 0);
-		ASSERT(wi->wi_io_endio != NULL);
-		ASSERT(original_bio == NULL);
-		ASSERT(wi->wi_original_bio == NULL);
-		ASSERT(wi->wi_cloned_bio == NULL);
-		BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, NULL, NULL,
-			 "wi_io_endio=%p", wi->wi_io_endio);
-	} else {
-		ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
-		ASSERT((wi->wi_flags & WI_FLAG_HAS_END) == 0);
-		ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
-		ASSERT(wi->wi_io_endio == NULL);
-		ASSERT(original_bio != NULL);
-		ASSERT(wi->wi_original_bio != NULL);
-		ASSERT(cache_block->bcb_sector ==
-		       bio_sector_to_cache_block_sector(original_bio));
-	}
 
 	cache_state_machine(bc, wi, original_bio);
 
@@ -199,7 +180,6 @@ void cached_dev_bypass_endio(struct bio *cloned_bio, int err)
 	ASSERT(wi->wi_bypass == 1);
 	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, original_bio, NULL,
 		 "request_bypass complete");
-	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_cloned_bio == NULL);
 	ASSERT(wi->wi_original_bio == original_bio);
@@ -981,7 +961,7 @@ void cache_state_machine(struct bittern_cache *bc,
 		if (bio != NULL)
 			printk_err("unknown_cache_state: bio_data_dir=0x%lx, bio_bi_sector=%lu\n",
 				   bio_data_dir(bio), bio->bi_iter.bi_sector);
-		printk_err("unknown_cache_state: wi_op_type=%c, wi_op_sector=%lu, wi_op_rw=0x%lx\n",
+		printk_err("unknown_cache_state: wi_op_type=%s, wi_op_sector=%lu, wi_op_rw=0x%lx\n",
 			   wi->wi_op_type, wi->wi_op_sector, wi->wi_op_rw);
 		printk_err("unknown_cache_state: bcb_sector=%lu, cb_state=%d(%s)\n",
 			   cache_block->bcb_sector,
@@ -1036,7 +1016,6 @@ void cache_handle_read_hit(struct bittern_cache *bc,
 	ASSERT(bio_data_dir(bio) == READ);
 
 	atomic_inc(&bc->bc_total_read_hits);
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 	if (wi->wi_bypass)
 		atomic_inc(&bc->bc_seq_read.bypass_hit);
@@ -1139,7 +1118,6 @@ void cache_handle_write_hit_wt(struct bittern_cache *bc,
 	/* set transaction xid */
 	cloned_cache_block->bcb_xid = wi->wi_io_xid;
 
-	wi->wi_flags |= WI_FLAG_WRITE_CLONING;
 	wi->wi_original_cache_block = original_cache_block;
 	wi->wi_cache_block = cloned_cache_block;
 
@@ -1281,7 +1259,6 @@ void cache_handle_write_hit_wb(struct bittern_cache *bc,
 	/* set transaction xid */
 	cloned_cache_block->bcb_xid = wi->wi_io_xid;
 
-	wi->wi_flags |= WI_FLAG_WRITE_CLONING;
 	wi->wi_original_cache_block = original_cache_block;
 	wi->wi_cache_block = cloned_cache_block;
 
@@ -1470,7 +1447,6 @@ void cache_handle_read_miss(struct bittern_cache *bc,
 	       cache_block->bcb_state == S_DIRTY_NO_DATA);
 	ASSERT(cache_block->bcb_cache_transition == TS_NONE);
 
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 	ASSERT(bio_data_dir(bio) == READ);
 
@@ -1555,7 +1531,6 @@ void cache_handle_write_miss_wb(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_cache_transition == TS_NONE);
 	ASSERT(is_work_item_mode_writeback(wi));
 
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 	ASSERT(bio_data_dir(bio) == WRITE);
 
@@ -1663,7 +1638,6 @@ void cache_handle_write_miss_wt(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_cache_transition == TS_NONE);
 	ASSERT(!is_work_item_mode_writeback(wi));
 
-	ASSERT((wi->wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 	ASSERT(wi->wi_original_cache_block == NULL);
 	ASSERT(bio_data_dir(bio) == WRITE);
 
@@ -1785,10 +1759,8 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 	wi = work_item_allocate(bc,
 				NULL,
 				bio,
-				(WI_FLAG_MAP_IO |
-				 WI_FLAG_BIO_CLONED |
-				 WI_FLAG_XID_NEW),
-				NULL);
+				(WI_FLAG_BIO_CLONED |
+				 WI_FLAG_XID_NEW));
 	M_ASSERT_FIXME(wi != NULL);
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_io_xid != 0);
@@ -1796,7 +1768,6 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 	ASSERT(wi->wi_cache == bc);
 	ASSERT(wi->wi_cloned_bio == NULL);
 	ASSERT(wi->wi_original_bio == bio);
-	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	wi->wi_bypass = 1;
 	wi->wi_ts_started = tstamp;
@@ -1805,7 +1776,7 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 	cache_update_pending(bc, bio, true);
 	work_item_add_pending_io(bc,
 				 wi,
-				 'B',
+				 "bypass",
 				 bio->bi_iter.bi_sector,
 				 bio->bi_rw);
 
@@ -1919,10 +1890,8 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 	wi = work_item_allocate(bc,
 				cache_block,
 				bio,
-				(WI_FLAG_MAP_IO |
-				 WI_FLAG_BIO_CLONED |
-				 WI_FLAG_XID_NEW),
-				NULL);
+				(WI_FLAG_BIO_CLONED |
+				 WI_FLAG_XID_NEW));
 	M_ASSERT_FIXME(wi != NULL);
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_io_xid != 0);
@@ -1930,7 +1899,6 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 	ASSERT(wi->wi_cache == bc);
 	ASSERT(wi->wi_cloned_bio == NULL);
 	ASSERT(wi->wi_original_bio == bio);
-	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_cache_block == cache_block);
 	ASSERT(wi->wi_bypass == 0);
@@ -1963,7 +1931,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 		 */
 		work_item_add_pending_io(bc,
 					 wi,
-					 'J',
+					 "read-hit",
 					 cache_block->bcb_sector,
 					 bio->bi_rw);
 		cache_handle_read_hit(bc, wi, cache_block, bio);
@@ -1980,7 +1948,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 		 */
 		work_item_add_pending_io(bc,
 					 wi,
-					 'H',
+					 "write-hit-wb",
 					 cache_block->bcb_sector,
 					 bio->bi_rw);
 		cache_handle_write_hit_wb(bc,
@@ -2001,7 +1969,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 		 */
 		work_item_add_pending_io(bc,
 					 wi,
-					 'I',
+					 "write-hit-wt",
 					 cache_block->bcb_sector,
 					 bio->bi_rw);
 		cache_handle_write_hit_wt(bc,
@@ -2073,10 +2041,8 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 	wi = work_item_allocate(bc,
 				cache_block,
 				bio,
-				(WI_FLAG_MAP_IO |
-				 WI_FLAG_BIO_CLONED |
-				 WI_FLAG_XID_NEW),
-				NULL);
+				(WI_FLAG_BIO_CLONED |
+				 WI_FLAG_XID_NEW));
 	M_ASSERT_FIXME(wi != NULL);
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_io_xid != 0);
@@ -2084,7 +2050,6 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 	ASSERT(wi->wi_cache == bc);
 	ASSERT(wi->wi_cloned_bio == NULL);
 	ASSERT(wi->wi_original_bio == bio);
-	ASSERT((wi->wi_flags & WI_FLAG_MAP_IO) != 0);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_cache_block == cache_block);
 	ASSERT(wi->wi_bypass == 0);
@@ -2116,21 +2081,29 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 	 * inc pending counters
 	 */
 	cache_update_pending(bc, bio, false);
-	/*
-	 * add to pending list and start state machine
-	 */
-	work_item_add_pending_io(bc,
-				 wi,
-				 'N',
-				 cache_block->bcb_sector,
-				 bio->bi_rw);
 
 	if (bio_data_dir(bio) == WRITE) {
+		/*
+		 * add to pending list and start state machine
+		 */
+		work_item_add_pending_io(bc,
+					 wi,
+					 "write-miss",
+					 cache_block->bcb_sector,
+					 bio->bi_rw);
 		if (is_work_item_mode_writeback(wi))
 			cache_handle_write_miss_wb(bc, wi, bio, cache_block);
 		else
 			cache_handle_write_miss_wt(bc, wi, bio, cache_block);
 	} else {
+		/*
+		 * add to pending list and start state machine
+		 */
+		work_item_add_pending_io(bc,
+					 wi,
+					 "read-miss",
+					 cache_block->bcb_sector,
+					 bio->bi_rw);
 		cache_handle_read_miss(bc, wi, bio, cache_block);
 	}
 }

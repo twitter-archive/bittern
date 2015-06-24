@@ -823,8 +823,7 @@ int __cache_validate_state_transition(struct bittern_cache *bc,
 struct work_item *work_item_allocate(struct bittern_cache *bc,
 				     struct cache_block *cache_block,
 				     struct bio *bio,
-				     int wi_flags,
-				     wi_io_endio_f wi_io_endio)
+				     int wi_flags)
 {
 	struct work_item *wi;
 
@@ -832,22 +831,14 @@ struct work_item *work_item_allocate(struct bittern_cache *bc,
 	if (cache_block != NULL)
 		ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT((wi_flags & ~WI_FLAG_MASK) == 0);
-	ASSERT((wi_flags & WI_FLAG_BIO_CLONED) != 0
-	       || (wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
+	ASSERT((wi_flags & WI_FLAG_BIO_CLONED) != 0 ||
+	       (wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
 	ASSERT((wi_flags & (WI_FLAG_BIO_CLONED | WI_FLAG_BIO_NOT_CLONED)) !=
 	       (WI_FLAG_BIO_CLONED | WI_FLAG_BIO_NOT_CLONED));
-	ASSERT((wi_flags & WI_FLAG_MAP_IO) != 0
-	       || (wi_flags & WI_FLAG_WRITEBACK_IO) != 0
-	       || (wi_flags & WI_FLAG_INVALIDATE_IO) != 0);
-	ASSERT((wi_flags &
-		(WI_FLAG_MAP_IO | WI_FLAG_WRITEBACK_IO | WI_FLAG_INVALIDATE_IO))
-	       !=
-	       (WI_FLAG_MAP_IO | WI_FLAG_WRITEBACK_IO | WI_FLAG_INVALIDATE_IO));
-	ASSERT((wi_flags & WI_FLAG_XID_NEW) != 0
-	       || (wi_flags & WI_FLAG_XID_USE_CACHE_BLOCK) != 0);
+	ASSERT((wi_flags & WI_FLAG_XID_NEW) != 0 ||
+	       (wi_flags & WI_FLAG_XID_USE_CACHE_BLOCK) != 0);
 	ASSERT((wi_flags & (WI_FLAG_XID_NEW | WI_FLAG_XID_USE_CACHE_BLOCK)) !=
 	       (WI_FLAG_XID_NEW | WI_FLAG_XID_USE_CACHE_BLOCK));
-	ASSERT((wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 
 	wi = kmem_zalloc(sizeof(struct work_item), GFP_NOIO);
 	if (wi == NULL)
@@ -873,13 +864,6 @@ struct work_item *work_item_allocate(struct bittern_cache *bc,
 		wi->wi_io_xid = cache_block->bcb_xid;
 	}
 	ASSERT(wi->wi_io_xid != 0);
-	if ((wi_flags & WI_FLAG_HAS_END) != 0) {
-		ASSERT(wi_io_endio != NULL);
-		wi->wi_io_endio = wi_io_endio;
-	} else {
-		ASSERT(wi_io_endio == NULL);
-		wi->wi_io_endio = NULL;
-	}
 	wi->wi_cache = bc;
 	INIT_LIST_HEAD(&wi->wi_pending_io_list);
 
@@ -897,29 +881,20 @@ void work_item_reallocate(struct bittern_cache *bc,
 			  struct cache_block *cache_block,
 			  struct work_item *wi,
 			  struct bio *bio,
-			  int wi_flags,
-			  wi_io_endio_f wi_io_endio)
+			  int wi_flags)
 {
 	ASSERT_BITTERN_CACHE(bc);
 	if (cache_block != NULL)
 		ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT((wi_flags & ~WI_FLAG_MASK) == 0);
-	ASSERT((wi_flags & WI_FLAG_BIO_CLONED) != 0
-	       || (wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
+	ASSERT((wi_flags & WI_FLAG_BIO_CLONED) != 0 ||
+	       (wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
 	ASSERT((wi_flags & (WI_FLAG_BIO_CLONED | WI_FLAG_BIO_NOT_CLONED)) !=
 	       (WI_FLAG_BIO_CLONED | WI_FLAG_BIO_NOT_CLONED));
-	ASSERT((wi_flags & WI_FLAG_MAP_IO) != 0
-	       || (wi_flags & WI_FLAG_WRITEBACK_IO) != 0
-	       || (wi_flags & WI_FLAG_INVALIDATE_IO) != 0);
-	ASSERT((wi_flags &
-		(WI_FLAG_MAP_IO | WI_FLAG_WRITEBACK_IO | WI_FLAG_INVALIDATE_IO))
-	       !=
-	       (WI_FLAG_MAP_IO | WI_FLAG_WRITEBACK_IO | WI_FLAG_INVALIDATE_IO));
-	ASSERT((wi_flags & WI_FLAG_XID_NEW) != 0
-	       || (wi_flags & WI_FLAG_XID_USE_CACHE_BLOCK) != 0);
+	ASSERT((wi_flags & WI_FLAG_XID_NEW) != 0 ||
+	       (wi_flags & WI_FLAG_XID_USE_CACHE_BLOCK) != 0);
 	ASSERT((wi_flags & (WI_FLAG_XID_NEW | WI_FLAG_XID_USE_CACHE_BLOCK)) !=
 	       (WI_FLAG_XID_NEW | WI_FLAG_XID_USE_CACHE_BLOCK));
-	ASSERT((wi_flags & WI_FLAG_WRITE_CLONING) == 0);
 
 	ASSERT(wi != NULL);
 	ASSERT_WORK_ITEM(wi, bc);
@@ -945,13 +920,6 @@ void work_item_reallocate(struct bittern_cache *bc,
 		wi->wi_io_xid = cache_block->bcb_xid;
 	}
 	ASSERT(wi->wi_io_xid != 0);
-	if ((wi_flags & WI_FLAG_HAS_END) != 0) {
-		ASSERT(wi_io_endio != NULL);
-		wi->wi_io_endio = wi_io_endio;
-	} else {
-		ASSERT(wi_io_endio == NULL);
-		wi->wi_io_endio = NULL;
-	}
 	wi->wi_cache = bc;
 	ASSERT(list_empty(&wi->wi_pending_io_list));
 	ASSERT_WORK_ITEM(wi, bc);

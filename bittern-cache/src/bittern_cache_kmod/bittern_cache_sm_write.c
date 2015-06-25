@@ -20,22 +20,18 @@
 
 void
 sm_clean_pwrite_hit_copy_from_cache_start(struct bittern_cache *bc,
-					  struct work_item *wi,
-					  struct bio *bio)
+					  struct work_item *wi)
 {
-	struct cache_block *cache_block;
-	struct cache_block *original_cache_block;
+	struct bio *bio = wi->wi_original_bio;
+	struct cache_block *cache_block = wi->wi_cache_block;
+	struct cache_block *original_cache_block = wi->wi_original_cache_block;
 
+	M_ASSERT(bio != NULL);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_original_bio != NULL);
-	cache_block = wi->wi_cache_block;
-	original_cache_block = wi->wi_original_cache_block;
-
-	ASSERT(bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(wi->wi_cache == bc);
 	ASSERT(cache_block->bcb_state == S_CLEAN_P_WRITE_HIT_CPF_O_CACHE_START);
 	ASSERT(original_cache_block->bcb_state == S_CLEAN_INVALIDATE_START);
@@ -60,31 +56,24 @@ sm_clean_pwrite_hit_copy_from_cache_start(struct bittern_cache *bc,
 }
 
 void sm_dirty_write_miss_copy_to_cache_start(struct bittern_cache *bc,
-						   struct work_item *wi,
-						   struct bio *bio)
+					     struct work_item *wi)
 {
+	struct bio *bio = wi->wi_original_bio;
+	struct cache_block *cache_block = wi->wi_cache_block;
 	uint128_t hash_data;
-	struct cache_block *cache_block;
 
-	ASSERT(wi->wi_original_cache_block == NULL);
-	ASSERT(wi->wi_cache == bc);
-	cache_block = wi->wi_cache_block;
+	M_ASSERT(bio != NULL);
+
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 		 "wi=%p, bc=%p, cache_block=%p, bio=%p", wi, bc, cache_block,
 		 bio);
 
-	ASSERT(bio != NULL);
+	ASSERT(wi->wi_original_cache_block == NULL);
+	ASSERT(wi->wi_cache == bc);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(cache_block->bcb_state == S_DIRTY_WRITE_MISS_CPT_CACHE_START);
-
-	ASSERT(bio != NULL);
-	ASSERT(bio_is_request_single_cache_block(bio));
-	ASSERT(cache_block->bcb_sector ==
-	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(bio == wi->wi_original_bio);
 
 	/*
 	 * get page for write
@@ -130,33 +119,28 @@ void sm_dirty_write_miss_copy_to_cache_start(struct bittern_cache *bc,
 }
 
 void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
-						 struct work_item *wi,
-						 struct bio *bio)
+					   struct work_item *wi,
+					   int err)
 {
+	struct bio *bio = wi->wi_original_bio;
+	struct cache_block *cache_block = wi->wi_cache_block;
 	unsigned long cache_flags;
-	struct cache_block *cache_block;
-	enum cache_state original_state;
 
-	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
-	ASSERT(wi->wi_original_bio != NULL);
-	cache_block = wi->wi_cache_block;
-	original_state = cache_block->bcb_state;
+	M_ASSERT_FIXME(err == 0);
+
+	M_ASSERT(bio != NULL);
+
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 		 "wi=%p, bc=%p, cache_block=%p, bio=%p", wi, bc, cache_block,
 		 bio);
 
-	ASSERT(bio != NULL);
+	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
+	ASSERT(wi->wi_original_bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(bio == wi->wi_original_bio);
-
 	ASSERT(cache_block->bcb_state == S_DIRTY_WRITE_MISS_CPT_CACHE_END);
 	ASSERT(wi->wi_original_cache_block == NULL);
-
-	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
-		 "write-{miss}-complete");
-
 	ASSERT_CACHE_STATE(cache_block);
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_WORK_ITEM(wi, bc);
@@ -192,10 +176,10 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	bio_endio(bio, 0);
 }
 
-void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
-						struct work_item *wi,
-						struct bio *bio)
+void sm_clean_write_miss_copy_to_device_start(struct bittern_cache *bc,
+					      struct work_item *wi)
 {
+	struct bio *bio;
 	uint128_t hash_data;
 	struct cache_block *cache_block;
 	struct cache_block *original_cache_block;
@@ -206,6 +190,7 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 	ASSERT(wi->wi_original_bio != NULL);
 	cache_block = wi->wi_cache_block;
 	original_cache_block = wi->wi_original_cache_block;
+	bio = wi->wi_original_bio;
 
 	ASSERT(bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
@@ -344,29 +329,26 @@ void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
 	}
 }
 
-void sm_clean_write_miss_copy_to_device_endio(struct bittern_cache *bc,
-					      struct work_item *wi,
-					      struct bio *bio)
+void sm_clean_write_miss_copy_to_device_end(struct bittern_cache *bc,
+					    struct work_item *wi,
+					    int err)
 {
-	enum cache_state original_state;
-	struct cache_block *cache_block;
+	struct bio *bio = wi->wi_original_bio;
+	struct cache_block *cache_block = wi->wi_cache_block;
+
+	M_ASSERT_FIXME(err == 0);
+
+	M_ASSERT(bio != NULL);
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
-	ASSERT(wi->wi_original_bio != NULL);
-	cache_block = wi->wi_cache_block;
-	original_state = cache_block->bcb_state;
-
-	ASSERT(bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(cache_block->bcb_state == S_CLEAN_WRITE_MISS_CPT_DEVICE_END ||
 	       cache_block->bcb_state == S_CLEAN_WRITE_HIT_CPT_DEVICE_END ||
 	       cache_block->bcb_state == S_CLEAN_P_WRITE_HIT_CPT_DEVICE_END);
-	if (cache_block->bcb_state != S_CLEAN_WRITE_MISS_CPT_DEVICE_END) {
+	if (cache_block->bcb_state != S_CLEAN_WRITE_MISS_CPT_DEVICE_END)
 		ASSERT(wi->wi_original_cache_block != NULL);
-	}
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, bio, NULL,
 		 "copy-to-device-io-done");
@@ -418,31 +400,29 @@ void sm_clean_write_miss_copy_to_device_endio(struct bittern_cache *bc,
 
 void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 					   struct work_item *wi,
-					   struct bio *bio)
+					   int err)
 {
+	struct bio *bio = wi->wi_original_bio;
+	struct cache_block *cache_block = wi->wi_cache_block;
+	enum cache_state original_state = cache_block->bcb_state;
+	struct cache_block *original_cache_block = wi->wi_original_cache_block;
 	unsigned long cache_flags;
-	enum cache_state original_state;
-	struct cache_block *cache_block;
-	struct cache_block *original_cache_block;
 	int val;
+
+	M_ASSERT_FIXME(err == 0);
+
+	M_ASSERT(bio != NULL);
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_original_bio != NULL);
-	cache_block = wi->wi_cache_block;
-	original_cache_block = wi->wi_original_cache_block;
-	original_state = cache_block->bcb_state;
-
-	ASSERT(bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(cache_block->bcb_state == S_CLEAN_WRITE_MISS_CPT_CACHE_END ||
 	       cache_block->bcb_state == S_CLEAN_WRITE_HIT_CPT_CACHE_END ||
 	       cache_block->bcb_state == S_CLEAN_P_WRITE_HIT_CPT_CACHE_END);
-	if (cache_block->bcb_state != S_CLEAN_WRITE_MISS_CPT_CACHE_END) {
+	if (cache_block->bcb_state != S_CLEAN_WRITE_MISS_CPT_CACHE_END)
 		ASSERT(wi->wi_original_cache_block != NULL);
-	}
 
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT_CACHE_BLOCK(original_cache_block, bc);
@@ -531,7 +511,7 @@ void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 
 	/*
 	 * kick off state machine to write this out.
-	 * cache_bgwriter_io_endio() will be called on completion.
+	 * cache_bgwriter_io_end() will be called on completion.
 	 */
 	work_item_add_pending_io(bc,
 				 wi,
@@ -544,11 +524,13 @@ void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 
 void
 sm_dirty_pwrite_hit_copy_from_cache_start(struct bittern_cache *bc,
-					  struct work_item *wi,
-					  struct bio *bio)
+					  struct work_item *wi)
 {
-	struct cache_block *cache_block;
-	struct cache_block *original_cache_block;
+	struct bio *bio = wi->wi_original_bio;
+	struct cache_block *cache_block = wi->wi_cache_block;
+	struct cache_block *original_cache_block = wi->wi_original_cache_block;
+
+	M_ASSERT(bio != NULL);
 
 	ASSERT(wi->wi_original_cache_block != NULL);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
@@ -560,16 +542,12 @@ sm_dirty_pwrite_hit_copy_from_cache_start(struct bittern_cache *bc,
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(wi->wi_cache == bc);
 	ASSERT(cache_block->bcb_state ==
 	       S_C2_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START ||
 	       cache_block->bcb_state ==
 	       S_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START);
-
 	ASSERT_CACHE_BLOCK(cache_block, bc);
-	ASSERT(cache_block == wi->wi_cache_block);
-	ASSERT(original_cache_block == wi->wi_original_cache_block);
 	ASSERT_CACHE_BLOCK(original_cache_block, bc);
 	ASSERT(original_cache_block->bcb_state == S_CLEAN_INVALIDATE_START ||
 	       original_cache_block->bcb_state == S_DIRTY_INVALIDATE_START);
@@ -604,28 +582,31 @@ sm_dirty_pwrite_hit_copy_from_cache_start(struct bittern_cache *bc,
 void
 sm_dirty_write_hit_copy_to_cache_start(struct bittern_cache *bc,
 				       struct work_item *wi,
-				       struct bio *bio)
+				       int err)
 {
+	struct bio *bio = wi->wi_original_bio;
+	struct cache_block *cache_block = wi->wi_cache_block;
+	struct cache_block *original_cache_block = wi->wi_original_cache_block;
 	uint128_t hash_data;
-	struct cache_block *cache_block;
-	struct cache_block *original_cache_block;
-	ASSERT(wi->wi_original_cache_block != NULL);
+
+	if (cache_block->bcb_state == S_DIRTY_WRITE_HIT_CPT_CACHE_START ||
+	    cache_block->bcb_state == S_C2_DIRTY_WRITE_HIT_CPT_CACHE_START) {
+		/* starting state, no err condition */
+		M_ASSERT(err == 0);
+	}
+
+	M_ASSERT_FIXME(err == 0);
+
+	M_ASSERT(bio != NULL);
 
 	/*
 	 * for dirty write hit case, cache_block here is cloned cache block
 	 */
+	ASSERT(wi->wi_original_cache_block != NULL);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
-	ASSERT(wi->wi_original_bio != NULL);
-	cache_block = wi->wi_cache_block;
-	original_cache_block = wi->wi_original_cache_block;
-
-	ASSERT(bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(bio == wi->wi_original_bio);
-	ASSERT(wi->wi_original_cache_block != NULL);
-
 	ASSERT(cache_block->bcb_state ==
 	       S_DIRTY_WRITE_HIT_CPT_CACHE_START ||
 	       cache_block->bcb_state ==
@@ -634,10 +615,7 @@ sm_dirty_write_hit_copy_to_cache_start(struct bittern_cache *bc,
 	       S_DIRTY_P_WRITE_HIT_CPT_CACHE_START ||
 	       cache_block->bcb_state ==
 	       S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_START);
-
 	ASSERT_CACHE_BLOCK(cache_block, bc);
-	ASSERT(cache_block == wi->wi_cache_block);
-	ASSERT(original_cache_block == wi->wi_original_cache_block);
 	ASSERT_CACHE_BLOCK(original_cache_block, bc);
 	ASSERT(original_cache_block->bcb_state == S_DIRTY_INVALIDATE_START ||
 	       original_cache_block->bcb_state == S_CLEAN_INVALIDATE_START);
@@ -763,30 +741,31 @@ sm_dirty_write_hit_copy_to_cache_start(struct bittern_cache *bc,
 
 void sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 					  struct work_item *wi,
-					  struct bio *bio)
+					  int err)
 {
+	struct bio *bio = wi->wi_original_bio;
+	struct cache_block *cache_block = wi->wi_cache_block;
+	struct cache_block *original_cache_block = wi->wi_original_cache_block;
 	unsigned long cache_flags;
-	struct cache_block *cache_block;
-	struct cache_block *original_cache_block;
 	int val;
+
+	M_ASSERT_FIXME(err == 0);
+
+	M_ASSERT(bio != NULL);
 
 	/*
 	 * for dirty write hit case, cache_block here is cloned cache block
 	 */
 
-	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
-	ASSERT(wi->wi_original_bio != NULL);
-	ASSERT(wi->wi_original_cache_block != NULL);
-	cache_block = wi->wi_cache_block;
-	original_cache_block = wi->wi_original_cache_block;
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 		 "copy_to_cache_end");
 
-	ASSERT(bio != NULL);
+	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
+	ASSERT(wi->wi_original_bio != NULL);
+	ASSERT(wi->wi_original_cache_block != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(bio == wi->wi_original_bio);
 	ASSERT(cache_block->bcb_state ==
 	       S_DIRTY_WRITE_HIT_CPT_CACHE_END ||
 	       cache_block->bcb_state ==
@@ -795,11 +774,8 @@ void sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 	       S_DIRTY_P_WRITE_HIT_CPT_CACHE_END ||
 	       cache_block->bcb_state ==
 	       S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_END);
-
 	ASSERT(wi->wi_original_cache_block != NULL);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
-	ASSERT(cache_block == wi->wi_cache_block);
-	ASSERT(original_cache_block == wi->wi_original_cache_block);
 	ASSERT_CACHE_BLOCK(original_cache_block, bc);
 	ASSERT(original_cache_block->bcb_state ==
 	       S_DIRTY_INVALIDATE_START ||
@@ -875,7 +851,7 @@ void sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 
 	/*
 	 * kick off state machine to write this out.
-	 * cache_bgwriter_io_endio() will be called on completion.
+	 * cache_bgwriter_io_end() will be called on completion.
 	 */
 	work_item_add_pending_io(bc,
 				 wi,

@@ -19,21 +19,15 @@
 #include "bittern_cache.h"
 
 void sm_writeback_copy_from_cache_start(struct bittern_cache *bc,
-					      struct work_item *wi,
-					      struct bio *bio)
+					struct work_item *wi)
 {
-	/*
-	 * there is no bio in this case.
-	 * clone bio, start i/o to write data to device.
-	 */
-	struct cache_block *cache_block;
+	struct cache_block *cache_block = wi->wi_cache_block;
 
-	ASSERT(wi->wi_original_bio == NULL);
-	ASSERT(wi->wi_cloned_bio == NULL);
-	ASSERT(wi->wi_original_cache_block == NULL);
-	cache_block = wi->wi_cache_block;
+	M_ASSERT(wi->wi_original_bio == NULL);
+	M_ASSERT(wi->wi_cloned_bio == NULL);
+	M_ASSERT(wi->wi_original_cache_block == NULL);
 
-	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
+	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, NULL, NULL,
 		 "writeback-copy-from-cache-start");
 
 	ASSERT(cache_block->bcb_state == S_DIRTY_WRITEBACK_CPF_CACHE_START ||
@@ -59,22 +53,18 @@ void sm_writeback_copy_from_cache_start(struct bittern_cache *bc,
 }
 
 void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
-					    struct work_item *wi,
-					    struct bio *bio)
+				      struct work_item *wi,
+				      int err)
 {
-	/*
-	 * there is no bio in this case.
-	 * clone bio, start i/o to write data to device.
-	 */
-	struct cache_block *cache_block;
+	struct cache_block *cache_block = wi->wi_cache_block;
 	struct page *cache_page;
 	int val;
 
-	ASSERT(bio == NULL);
-	ASSERT(wi->wi_original_bio == NULL);
-	ASSERT(wi->wi_cloned_bio == NULL);
-	ASSERT(wi->wi_original_cache_block == NULL);
-	cache_block = wi->wi_cache_block;
+	M_ASSERT_FIXME(err == 0);
+
+	M_ASSERT(wi->wi_original_bio == NULL);
+	M_ASSERT(wi->wi_cloned_bio == NULL);
+	M_ASSERT(wi->wi_original_cache_block == NULL);
 
 	ASSERT(cache_block->bcb_state == S_DIRTY_WRITEBACK_CPF_CACHE_END ||
 	       cache_block->bcb_state == S_DIRTY_WRITEBACK_INV_CPF_CACHE_END);
@@ -131,22 +121,18 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 				      true); /* set original bio */
 }
 
-void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,
-					     struct work_item *wi,
-					     struct bio *bio)
+void sm_writeback_copy_to_device_end(struct bittern_cache *bc,
+				     struct work_item *wi,
+				     int err)
 {
-	/*
-	 * there is no bio in this case.
-	 * clone bio, start i/o to write data to device.
-	 */
+	struct cache_block *cache_block = wi->wi_cache_block;
 	enum cache_state metadata_state;
-	struct cache_block *cache_block;
 
-	ASSERT(bio == NULL);
-	ASSERT(wi->wi_original_bio == NULL);
-	ASSERT(wi->wi_cloned_bio == NULL);
-	ASSERT(wi->wi_original_cache_block == NULL);
-	cache_block = wi->wi_cache_block;
+	M_ASSERT_FIXME(err == 0);
+
+	M_ASSERT(wi->wi_original_bio == NULL);
+	M_ASSERT(wi->wi_cloned_bio == NULL);
+	M_ASSERT(wi->wi_original_cache_block == NULL);
 
 	atomic_dec(&bc->bc_pending_cached_device_requests);
 
@@ -154,7 +140,7 @@ void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,
 	       cache_block->bcb_state ==
 	       S_DIRTY_WRITEBACK_INV_CPT_DEVICE_END);
 
-	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
+	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, NULL, NULL,
 		 "writeback-copy-to-device-endio");
 
 	/*
@@ -198,19 +184,17 @@ void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,
 }
 
 void sm_writeback_update_metadata_end(struct bittern_cache *bc,
-					    struct work_item *wi,
-					    struct bio *bio)
+				      struct work_item *wi,
+				      int err)
 {
-	struct cache_block *cache_block;
-	/*
-	 * there is no bio in this case.
-	 * clone bio, start i/o to write data to device.
-	 */
-	ASSERT(bio == NULL);
-	ASSERT(wi->wi_original_bio == NULL);
-	ASSERT(wi->wi_cloned_bio == NULL);
-	ASSERT(wi->wi_original_cache_block == NULL);
-	cache_block = wi->wi_cache_block;
+	struct bio *bio = wi->wi_original_bio;
+	struct cache_block *cache_block = wi->wi_cache_block;
+
+	M_ASSERT_FIXME(err == 0);
+
+	M_ASSERT(wi->wi_original_bio == NULL);
+	M_ASSERT(wi->wi_cloned_bio == NULL);
+	M_ASSERT(wi->wi_original_cache_block == NULL);
 
 	ASSERT(cache_block->bcb_state ==
 	       S_DIRTY_WRITEBACK_UPD_METADATA_END ||
@@ -223,5 +207,5 @@ void sm_writeback_update_metadata_end(struct bittern_cache *bc,
 	 * The bgwriter's endio function is responsible for
 	 * deallocating the work_item.
 	 */
-	cache_bgwriter_io_endio(bc, wi, cache_block);
+	cache_bgwriter_io_end(bc, wi, cache_block);
 }

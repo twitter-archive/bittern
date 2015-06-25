@@ -426,105 +426,97 @@ extern void cache_metadata_write_callback(struct bittern_cache *bc,
  * read path state machine functions
  */
 extern void sm_read_hit_copy_from_cache_start(struct bittern_cache *bc,
-					      struct work_item *wi,
-					      struct bio *bio);
+					      struct work_item *wi);
 extern void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
 					    struct work_item *wi,
-					    struct bio *bio);
-extern void sm_read_miss_copy_from_device_startio(struct bittern_cache *bc,
-						  struct work_item *wi,
-						  struct bio *bio);
-extern void sm_read_miss_copy_from_device_endio(struct bittern_cache *bc,
-						struct work_item *wi,
-						struct bio *bio);
+					    int err);
+extern void sm_read_miss_copy_from_device_start(struct bittern_cache *bc,
+						struct work_item *wi);
+extern void sm_read_miss_copy_from_device_end(struct bittern_cache *bc,
+					      struct work_item *wi,
+					      int err);
 extern void sm_read_miss_copy_to_cache_end(struct bittern_cache *bc,
 					   struct work_item *wi,
-					   struct bio *bio);
+					   int err);
 
 /*
  * bgwriter callback, called by state machine
  */
-extern void cache_bgwriter_io_endio(struct bittern_cache *bc,
-				    struct work_item *wi,
-				    struct cache_block *cache_block);
+extern void cache_bgwriter_io_end(struct bittern_cache *bc,
+				  struct work_item *wi,
+				  struct cache_block *cache_block);
 /*
  * write path state machine functions
  */
 extern void sm_dirty_write_miss_copy_to_cache_start(struct bittern_cache *bc,
-						    struct work_item *wi,
-						    struct bio *bio);
+						    struct work_item *wi);
 extern void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 						  struct work_item *wi,
-						  struct bio *bio);
-extern void sm_clean_write_miss_copy_to_device_startio(struct bittern_cache *bc,
-						       struct work_item *wi,
-						       struct bio *bio);
-extern void sm_clean_write_miss_copy_to_device_endio(struct bittern_cache *bc,
-						     struct work_item *wi,
-						     struct bio *bio);
+						  int err);
+extern void sm_clean_write_miss_copy_to_device_start(struct bittern_cache *bc,
+						     struct work_item *wi);
+extern void sm_clean_write_miss_copy_to_device_end(struct bittern_cache *bc,
+						   struct work_item *wi,
+						   int err);
 extern void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 						  struct work_item *wi,
-						  struct bio *bio);
+						  int err);
 
 /*
  * writeback path state machine functions
  */
 extern void sm_writeback_copy_from_cache_start(struct bittern_cache *bc,
-					       struct work_item *wi,
-					       struct bio *bio);
+					       struct work_item *wi);
 extern void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 					     struct work_item *wi,
-					     struct bio *bio);
-extern void sm_writeback_copy_to_device_endio(struct bittern_cache *bc,
-					      struct work_item *wi,
-					      struct bio *bio);
+					     int err);
+extern void sm_writeback_copy_to_device_end(struct bittern_cache *bc,
+					    struct work_item *wi,
+					    int err);
 extern void sm_writeback_update_metadata_end(struct bittern_cache *bc,
 					     struct work_item *wi,
-					     struct bio *bio);
+					     int err);
 
 /*
  * write path - partial write hit
  */
 extern void sm_clean_pwrite_hit_copy_from_cache_start(struct bittern_cache *bc,
-						      struct work_item *wi,
-						      struct bio *bio);
+						      struct work_item *wi);
 
 /*
  * write path - dirty write hit state machine functions
  */
 extern void
 sm_dirty_pwrite_hit_copy_from_cache_start(struct bittern_cache *bc,
-					  struct work_item *wi,
-					  struct bio *bio);
+					  struct work_item *wi);
 extern void
 sm_dirty_write_hit_copy_to_cache_start(struct bittern_cache *bc,
 				       struct work_item *wi,
-				       struct bio *bio);
+				       int err);
 
 extern void
 sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 				     struct work_item *wi,
-				     struct bio *bio);
+				     int err);
 
 /*
  * write path - partial write miss
  */
 extern void
-sm_pwrite_miss_copy_from_device_endio(struct bittern_cache *bc,
-				    struct work_item *wi,
-				    struct bio *bio);
+sm_pwrite_miss_copy_from_device_start(struct bittern_cache *bc,
+				      struct work_item *wi);
 extern void
-sm_pwrite_miss_copy_from_device_startio(struct bittern_cache *bc,
-				      struct work_item *wi,
-				      struct bio *bio);
-extern void
-sm_pwrite_miss_copy_to_device_endio(struct bittern_cache *bc,
+sm_pwrite_miss_copy_from_device_end(struct bittern_cache *bc,
 				    struct work_item *wi,
-				    struct bio *bio);
+				    int err);
+extern void
+sm_pwrite_miss_copy_to_device_end(struct bittern_cache *bc,
+				    struct work_item *wi,
+				    int err);
 extern void
 sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 				 struct work_item *wi,
-				 struct bio *bio);
+				 int err);
 
 /*
  * invalidate callback, called by state machine
@@ -537,12 +529,11 @@ extern void cache_invalidate_block_io_end(struct bittern_cache *bc,
  */
 extern void
 sm_invalidate_start(struct bittern_cache *bc,
-		    struct work_item *wi,
-		    struct bio *bio);
+		    struct work_item *wi);
 extern void
 sm_invalidate_end(struct bittern_cache *bc,
 		  struct work_item *wi,
-		  struct bio *bio);
+		  int err);
 
 extern int
 __cache_verify_hash_data_ret(struct bittern_cache *bc,

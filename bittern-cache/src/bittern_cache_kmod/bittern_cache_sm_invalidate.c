@@ -16,27 +16,17 @@
 
 #include "bittern_cache.h"
 
-void sm_invalidate_start(struct bittern_cache *bc,
-			 struct work_item *wi,
-			 struct bio *bio)
+void sm_invalidate_start(struct bittern_cache *bc, struct work_item *wi)
 {
-	struct cache_block *cache_block;
-	/*
-	 * there is no bio in this case.
-	 * clone bio, start i/o to write data to device.
-	 */
+	struct cache_block *cache_block = wi->wi_cache_block;
 
-	ASSERT(bio == NULL);
-	ASSERT(wi->wi_original_bio == NULL);
-	ASSERT(wi->wi_cloned_bio == NULL);
-	ASSERT(wi->wi_original_cache_block == NULL);
-	cache_block = wi->wi_cache_block;
+	M_ASSERT(wi->wi_original_bio == NULL);
+	M_ASSERT(wi->wi_cloned_bio == NULL);
+	M_ASSERT(wi->wi_original_cache_block == NULL);
 
-	ASSERT(cache_block->bcb_state ==
-	       S_CLEAN_INVALIDATE_START
-	       || cache_block->bcb_state ==
-	       S_DIRTY_INVALIDATE_START);
-	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
+	ASSERT(cache_block->bcb_state == S_CLEAN_INVALIDATE_START ||
+	       cache_block->bcb_state == S_DIRTY_INVALIDATE_START);
+	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, NULL, NULL,
 		 "invalidate-startio");
 
 	ASSERT_BITTERN_CACHE(bc);
@@ -70,22 +60,19 @@ void sm_invalidate_start(struct bittern_cache *bc,
 
 void sm_invalidate_end(struct bittern_cache *bc,
 		       struct work_item *wi,
-		       struct bio *bio)
+		       int err)
 {
-	struct cache_block *cache_block;
-	/*
-	 * there is no bio in this case.
-	 * clone bio, start i/o to write data to device.
-	 */
-	ASSERT(bio == NULL);
-	ASSERT(wi->wi_original_bio == NULL);
-	ASSERT(wi->wi_cloned_bio == NULL);
-	ASSERT(wi->wi_original_cache_block == NULL);
-	cache_block = wi->wi_cache_block;
+	struct cache_block *cache_block = wi->wi_cache_block;
+
+	M_ASSERT_FIXME(err == 0);
+
+	M_ASSERT(wi->wi_original_bio == NULL);
+	M_ASSERT(wi->wi_cloned_bio == NULL);
+	M_ASSERT(wi->wi_original_cache_block == NULL);
 
 	ASSERT(cache_block->bcb_state == S_CLEAN_INVALIDATE_END ||
 	       cache_block->bcb_state == S_DIRTY_INVALIDATE_END);
-	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
+	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, NULL, NULL,
 		 "invalidate-end");
 
 	/*

@@ -231,7 +231,7 @@ void bio_copy_to_cache(struct work_item *wi,
 
 		ASSERT(bvec.bv_len > 0);
 		bi_kaddr = kmap_atomic(bvec.bv_page);
-		M_ASSERT_FIXME(bi_kaddr != NULL);
+		M_ASSERT(bi_kaddr != NULL);
 
 		/*
 		 * memcpy(bio_kaddr + bio_vec->bv_offset,
@@ -455,12 +455,12 @@ void cache_state_machine(struct bittern_cache *bc,
 	case S_CLEAN_READ_HIT_CPF_CACHE_START:
 	case S_DIRTY_READ_HIT_CPF_CACHE_START:
 		M_ASSERT(err == 0); /* initial state, no err condition */
-		sm_read_hit_copy_from_cache_start(bc, wi, wi->wi_original_bio);
+		sm_read_hit_copy_from_cache_start(bc, wi);
 		break;
 
 	case S_CLEAN_READ_HIT_CPF_CACHE_END:
 	case S_DIRTY_READ_HIT_CPF_CACHE_END:
-		sm_read_hit_copy_from_cache_end(bc, wi, wi->wi_original_bio);
+		sm_read_hit_copy_from_cache_end(bc, wi, err);
 		break;
 
 		/*
@@ -480,13 +480,13 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * VALID_CLEAN_READ_MISS_CPF_DEVICE_START
 		 *      get_page_write.
 		 *      start async cached device disk read into cache.
-		 *      sm_read_miss_copy_from_device_startio().
+		 *      sm_read_miss_copy_from_device_start().
 		 * VALID_CLEAN_READ_MISS_CPF_DEVICE_END
 		 *      completes disk io.
 		 *      copy data to userland.
 		 *      start async put_page_write to write data to cache and
 		 *      update metadata as well.
-		 *      sm_read_miss_copy_from_device_endio().
+		 *      sm_read_miss_copy_from_device_end().
 		 * VALID_CLEAN_READ_MISS_CPT_CACHE_END
 		 *      terminates async transaction (put_page_write).
 		 *      start async transaction to update metadata.
@@ -494,19 +494,15 @@ void cache_state_machine(struct bittern_cache *bc,
 		 */
 	case S_CLEAN_READ_MISS_CPF_DEVICE_START:
 		M_ASSERT(err == 0); /* initial state, no err condition */
-		sm_read_miss_copy_from_device_startio(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_read_miss_copy_from_device_start(bc, wi);
 		break;
 
 	case S_CLEAN_READ_MISS_CPF_DEVICE_END:
-		sm_read_miss_copy_from_device_endio(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_read_miss_copy_from_device_end(bc, wi, err);
 		break;
 
 	case S_CLEAN_READ_MISS_CPT_CACHE_END:
-		sm_read_miss_copy_to_cache_end(bc, wi, wi->wi_original_bio);
+		sm_read_miss_copy_to_cache_end(bc, wi, err);
 		break;
 
 		/*
@@ -537,15 +533,11 @@ void cache_state_machine(struct bittern_cache *bc,
 		 */
 	case S_DIRTY_WRITE_MISS_CPT_CACHE_START:
 		M_ASSERT(err == 0); /* initial state, no err condition */
-		sm_dirty_write_miss_copy_to_cache_start(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_dirty_write_miss_copy_to_cache_start(bc, wi);
 		break;
 
 	case S_DIRTY_WRITE_MISS_CPT_CACHE_END:
-		sm_dirty_write_miss_copy_to_cache_end(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_dirty_write_miss_copy_to_cache_end(bc, wi, err);
 		break;
 
 		/*
@@ -557,12 +549,12 @@ void cache_state_machine(struct bittern_cache *bc,
 		 *      get_page_write.
 		 *      copy data from userland.
 		 *      start async write to cached device.
-		 *      sm_clean_write_miss_copy_to_device_startio().
+		 *      sm_clean_write_miss_copy_to_device_start().
 		 * VALID_CLEAN_WRITE_MISS_CPT_DEVICE_END
 		 *      completes i/o to cached device.
 		 *      start async put_page_write to write data to cache and
 		 *      update metadata as well.
-		 *      sm_clean_write_miss_copy_to_device_endio().
+		 *      sm_clean_write_miss_copy_to_device_end().
 		 * VALID_CLEAN_WRITE_MISS_CPT_CACHE_END
 		 *      terminates async transaction (put_page_write).
 		 *      sm_clean_write_miss_copy_to_cache_end().
@@ -582,23 +574,17 @@ void cache_state_machine(struct bittern_cache *bc,
 	case S_CLEAN_WRITE_MISS_CPT_DEVICE_START:
 	case S_CLEAN_WRITE_HIT_CPT_DEVICE_START:
 		M_ASSERT(err == 0); /* initial state, no err condition */
-		sm_clean_write_miss_copy_to_device_startio(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_clean_write_miss_copy_to_device_start(bc, wi);
 		break;
 
 	case S_CLEAN_WRITE_MISS_CPT_DEVICE_END:
 	case S_CLEAN_WRITE_HIT_CPT_DEVICE_END:
-		sm_clean_write_miss_copy_to_device_endio(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_clean_write_miss_copy_to_device_end(bc, wi, err);
 		break;
 
 	case S_CLEAN_WRITE_MISS_CPT_CACHE_END:
 	case S_CLEAN_WRITE_HIT_CPT_CACHE_END:
-		sm_clean_write_miss_copy_to_cache_end(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_clean_write_miss_copy_to_cache_end(bc, wi, err);
 		break;
 
 		/*
@@ -619,28 +605,20 @@ void cache_state_machine(struct bittern_cache *bc,
 		 */
 	case S_CLEAN_P_WRITE_HIT_CPF_O_CACHE_START:
 		M_ASSERT(err == 0); /* initial state, no err condition */
-		sm_clean_pwrite_hit_copy_from_cache_start(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_clean_pwrite_hit_copy_from_cache_start(bc, wi);
 		break;
 
 	case S_CLEAN_P_WRITE_HIT_CPT_DEVICE_START:
 		M_ASSERT(err == 0); /* initial state, no err condition */
-		sm_clean_write_miss_copy_to_device_startio(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_clean_write_miss_copy_to_device_start(bc, wi);
 		break;
 
 	case S_CLEAN_P_WRITE_HIT_CPT_DEVICE_END:
-		sm_clean_write_miss_copy_to_device_endio(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_clean_write_miss_copy_to_device_end(bc, wi, err);
 		break;
 
 	case S_CLEAN_P_WRITE_HIT_CPT_CACHE_END:
-		sm_clean_write_miss_copy_to_cache_end(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_clean_write_miss_copy_to_cache_end(bc, wi, err);
 		break;
 
 		/*
@@ -695,9 +673,7 @@ void cache_state_machine(struct bittern_cache *bc,
 	case S_C2_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START:
 	case S_DIRTY_P_WRITE_HIT_CPF_O_CACHE_START:
 		M_ASSERT(err == 0); /* initial state, no err condition */
-		sm_dirty_pwrite_hit_copy_from_cache_start(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_dirty_pwrite_hit_copy_from_cache_start(bc, wi);
 		break;
 
 	case S_DIRTY_WRITE_HIT_CPT_CACHE_START:
@@ -705,18 +681,14 @@ void cache_state_machine(struct bittern_cache *bc,
 		M_ASSERT(err == 0); /* initial state, no err condition */
 	case S_DIRTY_P_WRITE_HIT_CPT_CACHE_START: /* not an initial state */
 	case S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_START: /* not an initial state */
-		sm_dirty_write_hit_copy_to_cache_start(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_dirty_write_hit_copy_to_cache_start(bc, wi, err);
 		break;
 
 	case S_DIRTY_WRITE_HIT_CPT_CACHE_END:
 	case S_C2_DIRTY_WRITE_HIT_CPT_CACHE_END:
 	case S_DIRTY_P_WRITE_HIT_CPT_CACHE_END:
 	case S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_END:
-		sm_dirty_write_hit_copy_to_cache_end(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_dirty_write_hit_copy_to_cache_end(bc, wi, err);
 		break;
 
 		/*
@@ -741,15 +713,15 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * VALID_CLEAN_P_WRITE_MISS_CPF_DEVICE_START -->
 		 *      get_page_read.
 		 *      start async read from cached device.
-		 *      sm_pwrite_miss_copy_from_device_startio().
+		 *      sm_pwrite_miss_copy_from_device_start().
 		 * VALID_CLEAN_P_WRITE_MISS_CPF_DEVICE_END -->
 		 *      copy data from userland to cache.
 		 *      start async write to cached device.
-		 *      sm_pwrite_miss_copy_from_device_startio().
+		 *      sm_pwrite_miss_copy_from_device_start().
 		 * VALID_CLEAN_P_WRITE_MISS_CPT_DEVICE_END -->
 		 *      completes async write to cached device.
 		 *      starts async write of data and metadata to cache.
-		 *      sm_pwrite_miss_copy_to_device_endio().
+		 *      sm_pwrite_miss_copy_to_device_end().
 		 * VALID_CLEAN_P_WRITE_MISS_CPT_CACHE_END -->
 		 *      completes async write of data and metadata to cache.
 		 *      sm_pwrite_miss_copy_to_cache_end().
@@ -758,27 +730,21 @@ void cache_state_machine(struct bittern_cache *bc,
 	case S_CLEAN_P_WRITE_MISS_CPF_DEVICE_START:
 	case S_DIRTY_P_WRITE_MISS_CPF_DEVICE_START:
 		M_ASSERT(err == 0); /* initial state, no err condition */
-		sm_pwrite_miss_copy_from_device_startio(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_pwrite_miss_copy_from_device_start(bc, wi);
 		break;
 
 	case S_CLEAN_P_WRITE_MISS_CPF_DEVICE_END:
 	case S_DIRTY_P_WRITE_MISS_CPF_DEVICE_END:
-		sm_pwrite_miss_copy_from_device_endio(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_pwrite_miss_copy_from_device_end(bc, wi, err);
 		break;
 
 	case S_CLEAN_P_WRITE_MISS_CPT_DEVICE_END:
-		sm_pwrite_miss_copy_to_device_endio(bc,
-						wi,
-						wi->wi_original_bio);
+		sm_pwrite_miss_copy_to_device_end(bc, wi, err);
 		break;
 
 	case S_CLEAN_P_WRITE_MISS_CPT_CACHE_END:
 	case S_DIRTY_P_WRITE_MISS_CPT_CACHE_END:
-		sm_pwrite_miss_copy_to_cache_end(bc, wi, wi->wi_original_bio);
+		sm_pwrite_miss_copy_to_cache_end(bc, wi, err);
 		break;
 
 		/*
@@ -804,7 +770,7 @@ void cache_state_machine(struct bittern_cache *bc,
 		 * VALID_DIRTY_WRITEBACK_CPT_DEVICE_END
 		 *      done io write to cached device.
 		 *      start async metadata update.
-		 *      sm_writeback_copy_to_device_endio().
+		 *      sm_writeback_copy_to_device_end().
 		 * VALID_DIRTY_WRITEBACK_UPD_METADATA_END
 		 *      complete async metadata update.
 		 *      sm_writeback_update_metadata_end().
@@ -827,22 +793,22 @@ void cache_state_machine(struct bittern_cache *bc,
 	case S_DIRTY_WRITEBACK_CPF_CACHE_START:
 	case S_DIRTY_WRITEBACK_INV_CPF_CACHE_START:
 		M_ASSERT(err == 0); /* initial state, no err condition */
-		sm_writeback_copy_from_cache_start(bc, wi, wi->wi_original_bio);
+		sm_writeback_copy_from_cache_start(bc, wi);
 		break;
 
 	case S_DIRTY_WRITEBACK_CPF_CACHE_END:
 	case S_DIRTY_WRITEBACK_INV_CPF_CACHE_END:
-		sm_writeback_copy_from_cache_end(bc, wi, wi->wi_original_bio);
+		sm_writeback_copy_from_cache_end(bc, wi, err);
 		break;
 
 	case S_DIRTY_WRITEBACK_CPT_DEVICE_END:
 	case S_DIRTY_WRITEBACK_INV_CPT_DEVICE_END:
-		sm_writeback_copy_to_device_endio(bc, wi, wi->wi_original_bio);
+		sm_writeback_copy_to_device_end(bc, wi, err);
 		break;
 
 	case S_DIRTY_WRITEBACK_UPD_METADATA_END:
 	case S_DIRTY_WRITEBACK_INV_UPD_METADATA_END:
-		sm_writeback_update_metadata_end(bc, wi, wi->wi_original_bio);
+		sm_writeback_update_metadata_end(bc, wi, err);
 		break;
 
 		/*
@@ -869,12 +835,12 @@ void cache_state_machine(struct bittern_cache *bc,
 	case S_CLEAN_INVALIDATE_START:
 	case S_DIRTY_INVALIDATE_START:
 		M_ASSERT(err == 0); /* initial state, no err condition */
-		sm_invalidate_start(bc, wi, wi->wi_original_bio);
+		sm_invalidate_start(bc, wi);
 		break;
 
 	case S_CLEAN_INVALIDATE_END:
 	case S_DIRTY_INVALIDATE_END:
-		sm_invalidate_end(bc, wi, wi->wi_original_bio);
+		sm_invalidate_end(bc, wi, err);
 		break;
 
 	case S_INVALID:

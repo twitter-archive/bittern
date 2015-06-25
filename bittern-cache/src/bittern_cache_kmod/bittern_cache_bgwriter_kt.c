@@ -18,9 +18,9 @@
 
 #include "bittern_cache.h"
 
-void cache_bgwriter_io_endio(struct bittern_cache *bc,
-			     struct work_item *wi,
-			     struct cache_block *cache_block)
+void cache_bgwriter_io_end(struct bittern_cache *bc,
+			   struct work_item *wi,
+			   struct cache_block *cache_block)
 {
 	ASSERT(cache_block != NULL);
 	ASSERT_BITTERN_CACHE(bc);

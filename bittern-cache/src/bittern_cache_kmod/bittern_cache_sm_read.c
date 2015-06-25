@@ -19,16 +19,14 @@
 #include "bittern_cache.h"
 
 void sm_read_hit_copy_from_cache_start(struct bittern_cache *bc,
-					     struct work_item *wi,
-					     struct bio *bio)
+				       struct work_item *wi)
 {
-	struct cache_block *cache_block;
+	struct bio *bio = wi->wi_original_bio;
+	struct cache_block *cache_block = wi->wi_cache_block;
 
+	M_ASSERT(bio != NULL);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_original_bio != NULL);
-	cache_block = wi->wi_cache_block;
-
-	ASSERT(bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
@@ -65,19 +63,19 @@ void sm_read_hit_copy_from_cache_start(struct bittern_cache *bc,
 }
 
 void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
-					   struct work_item *wi,
-					   struct bio *bio)
+				     struct work_item *wi,
+				     int err)
 {
+	struct bio *bio = wi->wi_original_bio;
+	struct cache_block *cache_block = wi->wi_cache_block;
+	enum cache_state original_state = cache_block->bcb_state;
 	unsigned long cache_flags;
-	struct cache_block *cache_block;
-	enum cache_state original_state;
+
+	M_ASSERT(bio != NULL);
+	M_ASSERT_FIXME(err == 0);
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_original_bio != NULL);
-	cache_block = wi->wi_cache_block;
-	original_state = cache_block->bcb_state;
-
-	ASSERT(bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
@@ -178,19 +176,17 @@ void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 }
 
-void sm_read_miss_copy_from_device_startio(struct bittern_cache *bc,
-						 struct work_item *wi,
-						 struct bio *bio)
+void sm_read_miss_copy_from_device_start(struct bittern_cache *bc,
+					 struct work_item *wi)
 {
-	struct cache_block *cache_block;
+	struct bio *bio = wi->wi_original_bio;
+	struct cache_block *cache_block = wi->wi_cache_block;
 	int val;
 	struct page *cache_page;
 
+	M_ASSERT(bio != NULL);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_original_bio != NULL);
-	cache_block = wi->wi_cache_block;
-
-	ASSERT(bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
@@ -235,18 +231,19 @@ void sm_read_miss_copy_from_device_startio(struct bittern_cache *bc,
 				   false); /* do not set original bio */
 }
 
-void sm_read_miss_copy_from_device_endio(struct bittern_cache *bc,
-					       struct work_item *wi,
-					       struct bio *bio)
+void sm_read_miss_copy_from_device_end(struct bittern_cache *bc,
+				       struct work_item *wi,
+				       int err)
 {
+	struct bio *bio = wi->wi_original_bio;
+	struct cache_block *cache_block = wi->wi_cache_block;
 	uint128_t hash_data;
-	struct cache_block *cache_block;
+
+	M_ASSERT_FIXME(err == 0);
+	M_ASSERT(bio != NULL);
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_original_bio != NULL);
-	cache_block = wi->wi_cache_block;
-
-	ASSERT(bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
@@ -305,17 +302,18 @@ void sm_read_miss_copy_from_device_endio(struct bittern_cache *bc,
 }
 
 void sm_read_miss_copy_to_cache_end(struct bittern_cache *bc,
-					  struct work_item *wi,
-					  struct bio *bio)
+				    struct work_item *wi,
+				    int err)
 {
+	struct bio *bio = wi->wi_original_bio;
+	struct cache_block *cache_block = wi->wi_cache_block;
 	unsigned long cache_flags;
-	struct cache_block *cache_block;
 
+	M_ASSERT_FIXME(err == 0);
+
+	M_ASSERT(bio != NULL);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_original_bio != NULL);
-	cache_block = wi->wi_cache_block;
-
-	ASSERT(bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));

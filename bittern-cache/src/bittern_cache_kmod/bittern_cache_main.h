@@ -491,9 +491,11 @@ sm_dirty_pwrite_hit_copy_from_cache_start(struct bittern_cache *bc,
 					  struct work_item *wi);
 extern void
 sm_dirty_write_hit_copy_to_cache_start(struct bittern_cache *bc,
-				       struct work_item *wi,
-				       int err);
-
+				       struct work_item *wi);
+extern void
+sm_dirty_pwrite_hit_copy_to_cache_start(struct bittern_cache *bc,
+					struct work_item *wi,
+					int err);
 extern void
 sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 				     struct work_item *wi,

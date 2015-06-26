@@ -679,9 +679,12 @@ void cache_state_machine(struct bittern_cache *bc,
 	case S_DIRTY_WRITE_HIT_CPT_CACHE_START:
 	case S_C2_DIRTY_WRITE_HIT_CPT_CACHE_START:
 		M_ASSERT(err == 0); /* initial state, no err condition */
+		sm_dirty_write_hit_copy_to_cache_start(bc, wi);
+		break;
+
 	case S_DIRTY_P_WRITE_HIT_CPT_CACHE_START: /* not an initial state */
 	case S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_START: /* not an initial state */
-		sm_dirty_write_hit_copy_to_cache_start(bc, wi, err);
+		sm_dirty_pwrite_hit_copy_to_cache_start(bc, wi, err);
 		break;
 
 	case S_DIRTY_WRITE_HIT_CPT_CACHE_END:

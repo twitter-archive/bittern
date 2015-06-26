@@ -1165,6 +1165,46 @@ int pmem_header_update(struct bittern_cache *bc, int update_both)
 	return 0;
 }
 
+static void pmem_header_update_worker(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct bittern_cache *bc;
+	int ret;
+
+	bc = container_of(dwork,
+			  struct bittern_cache,
+			  bc_pmem_update_work);
+	ASSERT(bc != NULL);
+	ASSERT_BITTERN_CACHE(bc);
+	M_ASSERT(bc->bc_pmem_update_workqueue != NULL);
+
+	BT_TRACE(BT_LEVEL_TRACE2, bc, NULL, NULL, NULL, NULL, "bc=%p", bc);
+	ret = pmem_header_update(bc, 0);
+	M_ASSERT_FIXME(ret == 0);
+
+	schedule_delayed_work(&bc->bc_pmem_update_work,
+			      msecs_to_jiffies(30000));
+}
+
+void pmem_header_update_start_workqueue(struct bittern_cache *bc)
+{
+	printk_debug("%s: pmem_header_start_workqueue\n", bc->bc_name);
+	M_ASSERT(bc->bc_pmem_update_workqueue != NULL);
+	INIT_DELAYED_WORK(&bc->bc_pmem_update_work, pmem_header_update_worker);
+	schedule_delayed_work(&bc->bc_pmem_update_work,
+			      msecs_to_jiffies(30000));
+}
+
+void pmem_header_update_stop_workqueue(struct bittern_cache *bc)
+{
+	printk_debug("%s: pmem_header_stop_workqueue\n", bc->bc_name);
+	M_ASSERT(bc->bc_pmem_update_workqueue != NULL);
+	printk_debug("%s: cancel_delayed_work\n", bc->bc_name);
+	cancel_delayed_work(&bc->bc_pmem_update_work);
+	printk_debug("%s: flush_workqueue\n", bc->bc_name);
+	flush_workqueue(bc->bc_pmem_update_workqueue);
+}
+
 static inline
 const struct cache_papi_interface *__pmem_api_interface(struct pmem_api *pa)
 {
@@ -1173,9 +1213,7 @@ const struct cache_papi_interface *__pmem_api_interface(struct pmem_api *pa)
 	return pa->papi_interface;
 }
 
-/*
- * pmem allocate/deallocate functions
- */
+/*! allocate PMEM resources */
 int pmem_allocate(struct bittern_cache *bc, struct block_device *blockdev)
 {
 	const struct cache_papi_interface *pp;
@@ -1183,6 +1221,16 @@ int pmem_allocate(struct bittern_cache *bc, struct block_device *blockdev)
 	struct pmem_api *pa = &bc->bc_papi;
 
 	ASSERT(pa->papi_interface == NULL);
+
+	bc->bc_pmem_update_workqueue = alloc_workqueue("b_pu/%s",
+					       WQ_MEM_RECLAIM,
+					       1,
+					       bc->bc_name);
+	if (bc->bc_pmem_update_workqueue == NULL) {
+		printk_err("%s: cannot allocate pmem_update workqueue\n",
+			   bc->bc_name);
+		return -ENOMEM;
+	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
 	/* direct_access() calling convention changed in 4.0 */
@@ -1201,10 +1249,12 @@ int pmem_allocate(struct bittern_cache *bc, struct block_device *blockdev)
 	}
 
 	if (ret != 0) {
+		destroy_workqueue(bc->bc_pmem_update_workqueue);
+		bc->bc_pmem_update_workqueue = NULL;
 		printk_err("%s: %s: allocate_func error: ret=%d\n",
-		    bc->bc_name,
-		    pp->interface_name,
-		    ret);
+			   bc->bc_name,
+			   pp->interface_name,
+			   ret);
 		return ret;
 	}
 
@@ -1220,13 +1270,20 @@ int pmem_allocate(struct bittern_cache *bc, struct block_device *blockdev)
 	return 0;
 }
 
+/*! deallocate PMEM resources */
 void pmem_deallocate(struct bittern_cache *bc)
 {
 	struct pmem_api *pa = &bc->bc_papi;
 	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
 
+	printk_debug("%s: deallocate\n", bc->bc_name);
+
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
+	ASSERT(bc->bc_pmem_update_workqueue != NULL);
+
+	destroy_workqueue(bc->bc_pmem_update_workqueue);
+	bc->bc_pmem_update_workqueue = NULL;
 
 	printk_info("%s: deallocate_func\n", pp->interface_name);
 	(*pp->deallocate_func)(bc);

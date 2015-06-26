@@ -66,7 +66,7 @@
  * Release codenames are National Wildlife Refuges wetlands where the Bittern
  * can be found.
  */
-#define BITTERN_CACHE_VERSION "0.26.18"
+#define BITTERN_CACHE_VERSION "0.26.19"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -640,10 +640,14 @@ struct bittern_cache {
 	struct delayed_work bc_seq_work;
 
 	int bc_magic2;
-	/*
-	 * PMEM state
-	 */
+
+	/*! PMEM state */
 	struct pmem_api bc_papi;
+
+	/*! PMEM header update workqueue */
+	struct workqueue_struct *bc_pmem_update_workqueue;
+	/*! delayed work struct for pmem header update workqueue */
+	struct delayed_work bc_pmem_update_work;
 
 	/*! runtime configurable option (enables extra hash checking) */
 	int bc_enable_extra_checksum_check;
@@ -849,14 +853,6 @@ struct bittern_cache {
 	 */
 	volatile unsigned int bc_invalidator_conf_min_invalid_count;
 
-	/*
-	 * kernel thread to handle miscellaenous periodic tasks
-	 */
-	struct task_struct *bc_daemon_task;
-	wait_queue_head_t bc_daemon_wait;
-	unsigned int bc_daemon_no_work_count;
-	unsigned int bc_daemon_work_count;
-
 	/*! array of in-memory cache block metadata */
 	struct cache_block *bc_cache_blocks;
 
@@ -1047,7 +1043,6 @@ extern struct cache_block *cache_rb_last(struct bittern_cache *bc);
 
 extern int cache_deferred_busy_kthread(void *__bc);
 extern int cache_deferred_page_kthread(void *__bc);
-extern int cache_daemon_kthread(void *__bc);
 extern int cache_bgwriter_kthread(void *__bc);
 extern int cache_invalidator_kthread(void *__bc);
 extern int cache_invalidator_has_work_schmitt(struct bittern_cache *bc);

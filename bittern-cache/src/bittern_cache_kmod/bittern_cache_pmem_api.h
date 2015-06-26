@@ -27,13 +27,20 @@
 #include "bittern_cache_pmem_header.h"
 #include "bittern_cache_states.h"
 
+/*! allocate PMEM resources */
 extern int pmem_allocate(struct bittern_cache *bc,
 			 struct block_device *blockdev);
+
+/* deallocate PMEM resources */
 extern void pmem_deallocate(struct bittern_cache *bc);
 
-/*!
- * returns pmem_api name
- */
+/*! start workqueue for periodic update of pmem header */
+extern void pmem_header_update_start_workqueue(struct bittern_cache *bc);
+
+/*! stop workqueue for periodic update of pmem header */
+extern void pmem_header_update_stop_workqueue(struct bittern_cache *bc);
+
+/*! returns pmem_api name */
 extern const char *pmem_api_name(struct bittern_cache *bc);
 
 /*!

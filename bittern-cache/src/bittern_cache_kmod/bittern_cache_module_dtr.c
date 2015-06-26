@@ -65,12 +65,6 @@ void cache_dtr_pre(struct dm_target *ti)
 	printk_info("stopped bgwriter task (task=%p): ret=%d\n",
 		    bc->bc_bgwriter_task, ret);
 
-	printk_info("stopping daemon task (task=%p)\n", bc->bc_daemon_task);
-	ret = kthread_stop(bc->bc_daemon_task);
-	M_ASSERT(bc->bc_daemon_task == NULL);
-	printk_info("stopped daemon task (task=%p): ret=%d\n",
-		    bc->bc_daemon_task, ret);
-
 	printk_info("stopping bc_deferred_wait_page.bc_defer_task (task=%p)\n",
 		    bc->bc_deferred_wait_page.bc_defer_task);
 	ret = kthread_stop(bc->bc_deferred_wait_page.bc_defer_task);
@@ -83,9 +77,9 @@ void cache_dtr_pre(struct dm_target *ti)
 		    bc->bc_deferred_wait_busy.bc_defer_task);
 	ret = kthread_stop(bc->bc_deferred_wait_busy.bc_defer_task);
 	M_ASSERT(bc->bc_deferred_wait_busy.bc_defer_task == NULL);
-	printk_info
-	    ("stopped bc_deferred_wait_busy.bc_defer_task (task=%p): %d\n",
-	     bc->bc_deferred_wait_busy.bc_defer_task, ret);
+	printk_info("stopped bc_deferred_wait_busy.bc_defer_task (task=%p): %d\n",
+		    bc->bc_deferred_wait_busy.bc_defer_task,
+		    ret);
 
 	printk_info("deferred_queues(%u/%u)\n",
 		    bc->bc_deferred_wait_busy.bc_defer_curr_count,
@@ -110,6 +104,7 @@ void cache_dtr_pre(struct dm_target *ti)
 		    ret);
 
 	/* stop workqueues */
+	pmem_header_update_stop_workqueue(bc);
 	seq_bypass_stop_workqueue(bc);
 
 	printk_info("pending_read_requests=%u\n",
@@ -161,8 +156,7 @@ void cache_dtr(struct dm_target *ti)
 	unsigned int entries_invalid = 0;
 	unsigned int entries_valid_clean = 0, entries_valid_dirty = 0;
 	unsigned int entries = 0, bc_total_entries = 0;
-	unsigned char *entries_state_map =
-	    vmalloc(atomic_read(&bc->bc_total_entries) + 1);
+	unsigned char *entries_state_map;
 	int orphan_count;
 
 	printk_info("enter\n");
@@ -177,6 +171,8 @@ void cache_dtr(struct dm_target *ti)
 
 	M_ASSERT(bc->bc_papi.papi_hdr.lm_cache_blocks ==
 		 atomic_read(&bc->bc_total_entries));
+
+	entries_state_map = vmalloc(atomic_read(&bc->bc_total_entries) + 1);
 	M_ASSERT_FIXME(entries_state_map != NULL);
 	memset(entries_state_map, 0xff, atomic_read(&bc->bc_total_entries) + 1);
 
@@ -186,15 +182,14 @@ void cache_dtr(struct dm_target *ti)
 	bc_total_entries = atomic_read(&bc->bc_total_entries);
 
 	printk_info("deallocating cache entries\n");
-	while (list_non_empty(&bc->bc_invalid_entries_list)
-	       || list_non_empty(&bc->bc_valid_entries_list)) {
+	while (list_non_empty(&bc->bc_invalid_entries_list) ||
+	       list_non_empty(&bc->bc_valid_entries_list)) {
 		struct cache_block *bcb = NULL;
 
 		if (list_non_empty(&bc->bc_invalid_entries_list)) {
-			bcb =
-			    list_first_entry(&bc->bc_invalid_entries_list,
-					     struct cache_block,
-					     bcb_entry);
+			bcb = list_first_entry(&bc->bc_invalid_entries_list,
+					       struct cache_block,
+					       bcb_entry);
 			M_ASSERT(bcb->bcb_state == S_INVALID);
 			M_ASSERT(is_sector_number_invalid(bcb->bcb_sector));
 		}
@@ -210,8 +205,7 @@ void cache_dtr(struct dm_target *ti)
 		M_ASSERT(bcb->bcb_state == S_INVALID ||
 			 bcb->bcb_state == S_CLEAN ||
 			 bcb->bcb_state == S_DIRTY);
-		M_ASSERT(bcb->bcb_cache_transition ==
-			 TS_NONE);
+		M_ASSERT(bcb->bcb_cache_transition == TS_NONE);
 		M_ASSERT(bcb->bcb_block_id >= 1);
 		M_ASSERT(bcb->bcb_block_id <=
 			 bc->bc_papi.papi_hdr.lm_cache_blocks);
@@ -292,19 +286,21 @@ void cache_dtr(struct dm_target *ti)
 		    entries_invalid,
 		    (entries_valid_clean + entries_valid_dirty),
 		    entries_valid_clean, entries_valid_dirty, entries);
-	printk_info
-	    ("done '%s': invalid_entries=%u, valid_entries=%u (valid_entries_dirty=%u + valid_entries_clean=%u), total_entries=%u/%u\n",
-	     bc->bc_name, entries_invalid,
-	     (entries_valid_clean + entries_valid_dirty), entries_valid_dirty,
-	     entries_valid_clean, entries, bc_total_entries);
+	printk_info("done '%s': invalid_entries=%u, valid_entries=%u (valid_entries_dirty=%u + valid_entries_clean=%u), total_entries=%u/%u\n",
+		    bc->bc_name,
+		    entries_invalid,
+		    (entries_valid_clean + entries_valid_dirty),
+		    entries_valid_dirty,
+		    entries_valid_clean,
+		    entries,
+		    bc_total_entries);
 
 	printk_info("bc_empty_root=%d\n", RB_EMPTY_ROOT(&bc->bc_rb_root));
-	printk_info
-	    ("list_empty(invalid_entries)=%d, list_empty(valid_entries)=%d, list_empty(valid_entries_clean)=%d, list_empty(valid_entries_dirty)=%d\n",
-	     list_empty(&bc->bc_invalid_entries_list),
-	     list_empty(&bc->bc_valid_entries_list),
-	     list_empty(&bc->bc_valid_entries_clean_list),
-	     list_empty(&bc->bc_valid_entries_dirty_list));
+	printk_info("list_empty(invalid_entries)=%d, list_empty(valid_entries)=%d, list_empty(valid_entries_clean)=%d, list_empty(valid_entries_dirty)=%d\n",
+		    list_empty(&bc->bc_invalid_entries_list),
+		    list_empty(&bc->bc_valid_entries_list),
+		    list_empty(&bc->bc_valid_entries_clean_list),
+		    list_empty(&bc->bc_valid_entries_dirty_list));
 	printk_info("list_empty(pending_requests)=%d\n",
 		    list_empty(&bc->bc_pending_requests_list));
 
@@ -360,12 +356,7 @@ void cache_dtr(struct dm_target *ti)
 	/* deinitialize seq_bypass */
 	seq_bypass_deinitialize(bc);
 
-	/*
-	 * deallocate and deinitialize pmem resources.
-	 */
-	printk_info("deallocating %llu cache entries (%llu bytes)\n",
-		    bc->bc_papi.papi_hdr.lm_cache_blocks,
-		    bc->bc_papi.papi_hdr.lm_cache_blocks * PAGE_SIZE);
+	printk_info("pmem_deallocate\n");
 	pmem_deallocate(bc);
 	printk_info("mem_info_deinitialize()\n");
 	pmem_info_deinitialize(bc);

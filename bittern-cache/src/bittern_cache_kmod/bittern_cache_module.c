@@ -1222,13 +1222,6 @@ ssize_t cache_op_show_kthreads(struct bittern_cache *bc, char *result)
 	       bc->bc_name,
 	       KT_FMT_ARGS(bc, "bgwriter_task", bc_bgwriter_task),
 	       bc->bc_bgwriter_no_work_count, bc->bc_bgwriter_work_count);
-	DMEMIT("%s: kthreads: " KT_FMT_STRING ": "
-	       "daemon_task_no_work_count=%u "
-	       "daemon_task_work_count=%u "
-	       "\n",
-	       bc->bc_name,
-	       KT_FMT_ARGS(bc, "daemon_task", bc_daemon_task),
-	       bc->bc_daemon_no_work_count, bc->bc_daemon_work_count);
 	DMEMIT("%s: kthreads: "
 	       KT_FMT_STRING
 	       ": invalidator_no_work_count=%u invalidator_work_count=%u\n",

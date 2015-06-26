@@ -768,7 +768,10 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		return -EINVAL;
 	}
 
-	bc = vmalloc(sizeof(struct bittern_cache));
+	/*
+	 * The initialization code assumes a zeroed bittern_cache structure.
+	 */
+	bc = vzalloc(sizeof(struct bittern_cache));
 	if (bc == NULL) {
 		ti->error = "cannot allocate context";
 		printk_err("error : %s\n", ti->error);
@@ -777,7 +780,6 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	printk_info("vmalloc: bc = %p (sizeof = %lu)\n",
 		    bc,
 		    (unsigned long)sizeof(struct bittern_cache));
-	memset(bc, 0, sizeof(struct bittern_cache));
 
 	bc->bc_magic1 = BC_MAGIC1;
 	bc->bc_magic2 = BC_MAGIC2;
@@ -1128,8 +1130,6 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	 * deferred io variables have been initialized earlier
 	 */
 
-	init_waitqueue_head(&bc->bc_daemon_wait);
-
 #if 1
 	printk_info("TEMPORARY -- REMOVE ME -- setting flush_on_exit\n");
 	bc->bc_bgwriter_conf_flush_on_exit = 1;
@@ -1272,6 +1272,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	 * start workqueues
 	 */
 	seq_bypass_start_workqueue(bc);
+	pmem_header_update_start_workqueue(bc);
 
 	/*
 	 * now start off the kernel threads
@@ -1305,14 +1306,6 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	printk_info("bc_deferred_wait_page.bc_defer_task task=%p\n",
 		    bc->bc_deferred_wait_page.bc_defer_task);
 	wake_up_process(bc->bc_deferred_wait_page.bc_defer_task);
-
-	bc->bc_daemon_task = kthread_create(cache_daemon_kthread,
-					    bc,
-					    "b_dmn/%s",
-					    bc->bc_name);
-	M_ASSERT_FIXME(bc->bc_daemon_task != NULL);
-	printk_info("daemon instantiated, task=%p\n", bc->bc_daemon_task);
-	wake_up_process(bc->bc_daemon_task);
 
 	bc->bc_bgwriter_task = kthread_create(cache_bgwriter_kthread,
 					      bc,

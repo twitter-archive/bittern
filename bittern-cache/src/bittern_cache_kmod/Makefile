@@ -45,7 +45,6 @@ M_SOURCE_FILES = bittern_cache_module.c \
 			bittern_cache_invalidator_kt.c \
 			bittern_cache_pmem_api.c \
 			bittern_cache_pmem_api_block.c \
-			bittern_cache_daemon_kt.c \
 			bittern_cache_verifier_kt.c \
 			bittern_cache_sequential.c \
 			bittern_cache_redblack.c \
@@ -79,7 +78,6 @@ bittern_cache-objs := bittern_cache_module.o \
 			bittern_cache_pmem_api_block.o \
 			bittern_cache_sequential.o \
 			bittern_cache_redblack.o \
-			bittern_cache_daemon_kt.o \
 			bittern_cache_verifier_kt.o \
 			bittern_cache_subr.o \
 			bittern_cache_debug.o \

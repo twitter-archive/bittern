@@ -1111,6 +1111,9 @@ static void cached_dev_make_request_endio(struct bio *bio, int err)
 
 /*!
  * Allocate bio and make the request to cached device.
+ * Note that datadir and set_original_bio must be set from the
+ * function arguments, as this function can be called directly
+ * by the state machine.
  */
 void cached_dev_do_make_request(struct bittern_cache *bc,
 				struct work_item *wi,
@@ -1138,6 +1141,7 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT(wi->wi_cache == bc);
 	ASSERT(wi->wi_cache_block == cache_block);
+	ASSERT(datadir == READ || datadir == WRITE);
 
 	bio = bio_alloc(GFP_NOIO, 1);
 	/*TODO_ADD_ERROR_INJECTION*/
@@ -1153,10 +1157,18 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 		return;
 	}
 
-	if (datadir == WRITE)
+	if (datadir == WRITE) {
+		/*
+		 * Always set REQ_FUA for all writes, writeback, invalidation
+		 * and write-through operations.
+		 * This is required in order to maintain cache coherency.
+		 */
+		bio->bi_rw |= REQ_FUA;
 		bio_set_data_dir_write(bio);
-	else
+	} else {
 		bio_set_data_dir_read(bio);
+	}
+
 	bio->bi_iter.bi_sector = cache_block->bcb_sector;
 	bio->bi_iter.bi_size = PAGE_SIZE;
 	bio->bi_bdev = bc->bc_dev->bdev;

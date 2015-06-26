@@ -1694,6 +1694,14 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 		atomic_inc(&bc->bc_pending_read_bypass_requests);
 		cache_timer_add(&bc->bc_timer_resource_alloc_reads, tstamp);
 	} else {
+		/*
+		 * Always set REQ_FUA.
+		 * Bittern gives the same guarantees that HW RAID does, every
+		 * committed write is on stable storage. Sequential access
+		 * bypass is transparent to the caller, so REQ_FUA must be
+		 * set here as well.
+		 */
+		cloned_bio->bi_rw |= REQ_FUA;
 		atomic_inc(&bc->bc_seq_write.bypass_count);
 		atomic_inc(&bc->bc_pending_write_bypass_requests);
 		cache_timer_add(&bc->bc_timer_resource_alloc_writes, tstamp);

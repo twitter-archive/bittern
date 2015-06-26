@@ -28,18 +28,10 @@ void cache_task_pmem_header_update_timeout(struct bittern_cache *bc)
 	M_ASSERT_FIXME(ret == 0);
 }
 
-void cache_task_sequential_timeout(struct bittern_cache *bc)
-{
-	ASSERT_BITTERN_CACHE(bc);
-	BT_TRACE(BT_LEVEL_TRACE3, bc, NULL, NULL, NULL, NULL, "bc=%p", bc);
-	seq_bypass_timeout(bc);
-}
-
 struct cache_tasks {
 	void (*function)(struct bittern_cache *bc);
 	unsigned long interval_ms;
 } cache_tasks[] = {
-	{ cache_task_sequential_timeout, 500, },
 	{ cache_task_pmem_header_update_timeout, (30 * 1000), },
 };
 

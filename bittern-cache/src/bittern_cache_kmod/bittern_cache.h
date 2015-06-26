@@ -66,7 +66,7 @@
  * Release codenames are National Wildlife Refuges wetlands where the Bittern
  * can be found.
  */
-#define BITTERN_CACHE_VERSION "0.26.17"
+#define BITTERN_CACHE_VERSION "0.26.18"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -630,10 +630,14 @@ struct bittern_cache {
 	/*! resource allocation write timer */
 	struct cache_timer bc_timer_resource_alloc_writes;
 
-	/* requential access tracker for reads */
+	/*! sequential access tracker for reads */
 	struct seq_io_bypass bc_seq_read;
-	/* requential access tracker for writes */
+	/*! sequential access tracker for writes */
 	struct seq_io_bypass bc_seq_write;
+	/*! bypass timeout handler workqueue */
+	struct workqueue_struct *bc_seq_workqueue;
+	/*! delayed work struct for seq_io bypass */
+	struct delayed_work bc_seq_work;
 
 	int bc_magic2;
 	/*
@@ -983,7 +987,10 @@ static inline const char *cache_mode_to_str(struct bittern_cache *bc)
 	ASSERT(atomic_read(&(__bc)->bc_total_entries) == (__bc)->bc_papi.papi_hdr.lm_cache_blocks); \
 })
 
-extern void seq_bypass_initialize(struct bittern_cache *bc);
+extern int seq_bypass_initialize(struct bittern_cache *bc);
+extern void seq_bypass_deinitialize(struct bittern_cache *bc);
+extern void seq_bypass_start_workqueue(struct bittern_cache *bc);
+extern void seq_bypass_stop_workqueue(struct bittern_cache *bc);
 extern int seq_bypass_is_sequential(struct bittern_cache *bc, struct bio *bio);
 extern int seq_bypass_stats(struct bittern_cache *bc,
 			    char *result,
@@ -1076,9 +1083,6 @@ extern int cache_dump_blocks(struct bittern_cache *bc,
 			     const char *dump_op,
 			     unsigned int dump_offset);
 extern void cache_walk(struct bittern_cache *bc);
-
-/* called by task timeout handler */
-extern void seq_bypass_timeout(struct bittern_cache *bc);
 
 #ifdef ENABLE_KMALLOC_DEBUG
 extern void *kmem_allocate(size_t size, int flags, int zero);

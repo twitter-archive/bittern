@@ -53,7 +53,7 @@ static void __seq_bypass_initialize(struct seq_io_bypass *bsi,
 	}
 }
 
-void seq_bypass_initialize(struct bittern_cache *bc)
+int seq_bypass_initialize(struct bittern_cache *bc)
 {
 	M_ASSERT(bc != NULL);
 	M_ASSERT(bc->bc_magic1 == BC_MAGIC1);
@@ -63,6 +63,28 @@ void seq_bypass_initialize(struct bittern_cache *bc)
 				SEQ_IO_THRESHOLD_COUNT_READ_DEFAULT);
 	__seq_bypass_initialize(&bc->bc_seq_write,
 				SEQ_IO_THRESHOLD_COUNT_WRITE_DEFAULT);
+	bc->bc_seq_workqueue = alloc_workqueue("b_ws/%s",
+					       WQ_MEM_RECLAIM,
+					       1,
+					       bc->bc_name);
+	if (bc->bc_seq_workqueue == NULL) {
+		printk_err("%s: cannot allocate seq_io workqueue\n",
+			   bc->bc_name);
+		return -ENOMEM;
+	}
+
+	printk_debug("%s: seq_bypass_initialize done\n", bc->bc_name);
+
+	return 0;
+}
+
+void seq_bypass_deinitialize(struct bittern_cache *bc)
+{
+	printk_debug("%s: seq_bypass_deinitialize\n", bc->bc_name);
+	if (bc->bc_seq_workqueue != NULL) {
+		printk_info("destroying seq_io workqueue\n");
+		destroy_workqueue(bc->bc_seq_workqueue);
+	}
 }
 
 int set_read_bypass_enabled(struct bittern_cache *bc, int value)
@@ -207,11 +229,35 @@ static void __seq_bypass_timeout(struct bittern_cache *bc,
 	spin_unlock_irqrestore(&bsi->seq_lock, flags);
 }
 
-void seq_bypass_timeout(struct bittern_cache *bc)
+static void seq_bypass_worker(struct work_struct *work)
 {
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct bittern_cache *bc;
+
+	bc = container_of(dwork, struct bittern_cache, bc_seq_work);
+	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
 	__seq_bypass_timeout(bc, &bc->bc_seq_write);
 	__seq_bypass_timeout(bc, &bc->bc_seq_read);
+	schedule_delayed_work(&bc->bc_seq_work, msecs_to_jiffies(5000));
+}
+
+void seq_bypass_start_workqueue(struct bittern_cache *bc)
+{
+	printk_debug("%s: seq_bypass_start_workqueue\n", bc->bc_name);
+	M_ASSERT(bc->bc_seq_workqueue != NULL);
+	INIT_DELAYED_WORK(&bc->bc_seq_work, seq_bypass_worker);
+	schedule_delayed_work(&bc->bc_seq_work, msecs_to_jiffies(5000));
+}
+
+void seq_bypass_stop_workqueue(struct bittern_cache *bc)
+{
+	printk_debug("%s: seq_bypass_stop_workqueue\n", bc->bc_name);
+	M_ASSERT(bc->bc_seq_workqueue != NULL);
+	printk_debug("%s: cancel_delayed_work\n", bc->bc_name);
+	cancel_delayed_work(&bc->bc_seq_work);
+	printk_debug("%s: flush_workqueue\n", bc->bc_name);
+	flush_workqueue(bc->bc_seq_workqueue);
 }
 
 static int seq_bypass_stream_hit(struct bittern_cache *bc,

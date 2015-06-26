@@ -926,14 +926,18 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	cache_timer_init(&bc->bc_deferred_wait_busy.bc_defer_timer);
 	cache_timer_init(&bc->bc_deferred_wait_page.bc_defer_timer);
 
-	seq_bypass_initialize(bc);
-
 	pmem_info_initialize(bc);
 
 	ret = pmem_allocate(bc, bc->bc_cache_dev->bdev);
 	if (ret != 0) {
 		ti->error = "cannot allocate pmem resource";
 		goto bad_0;
+	}
+
+	ret = seq_bypass_initialize(bc);
+	if (ret != 0) {
+		ti->error = "cannot allocate seq_bypass resources";
+		goto bad_1;
 	}
 
 	ret = dm_get_device(ti,
@@ -1265,6 +1269,11 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ti->private = bc;
 
 	/*
+	 * start workqueues
+	 */
+	seq_bypass_start_workqueue(bc);
+
+	/*
 	 * now start off the kernel threads
 	 */
 	printk_info("starting off kernel threads\n");
@@ -1347,6 +1356,8 @@ bad_1:
 	printk_info("mem_info_deinitialize()\n");
 	pmem_info_deinitialize(bc);
 	printk_info("done mem_info_deinitialize()\n");
+
+	seq_bypass_deinitialize(bc);
 
 bad_0:
 	printk_err("error: %s\n", ti->error);

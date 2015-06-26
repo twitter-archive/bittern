@@ -75,9 +75,9 @@ void cache_dtr_pre(struct dm_target *ti)
 		    bc->bc_deferred_wait_page.bc_defer_task);
 	ret = kthread_stop(bc->bc_deferred_wait_page.bc_defer_task);
 	M_ASSERT(bc->bc_deferred_wait_page.bc_defer_task == NULL);
-	printk_info
-	    ("stopped bc_deferred_wait_page.bc_defer_task (task=%p): %d\n",
-	     bc->bc_deferred_wait_page.bc_defer_task, ret);
+	printk_info("stopped bc_deferred_wait_page.bc_defer_task (task=%p): %d\n",
+		    bc->bc_deferred_wait_page.bc_defer_task,
+		    ret);
 
 	printk_info("stopping bc_deferred_wait_busy.bc_defer_task (task=%p)\n",
 		    bc->bc_deferred_wait_busy.bc_defer_task);
@@ -108,6 +108,9 @@ void cache_dtr_pre(struct dm_target *ti)
 		    bc->bc_verifier_running,
 		    bc->bc_verifier_task,
 		    ret);
+
+	/* stop workqueues */
+	seq_bypass_stop_workqueue(bc);
 
 	printk_info("pending_read_requests=%u\n",
 		    atomic_read(&bc->bc_pending_read_requests));
@@ -353,6 +356,9 @@ void cache_dtr(struct dm_target *ti)
 	M_ASSERT(list_empty(&bc->bc_valid_entries_clean_list));
 	M_ASSERT(list_empty(&bc->bc_valid_entries_dirty_list));
 	M_ASSERT(list_empty(&bc->bc_pending_requests_list));
+
+	/* deinitialize seq_bypass */
+	seq_bypass_deinitialize(bc);
 
 	/*
 	 * deallocate and deinitialize pmem resources.

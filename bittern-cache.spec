@@ -8,9 +8,9 @@
 %endif
 
 Name: AmericanBittern
-Version: 0.24.13
+Version: 0.27.1
 Release: t2%{?dist}
-Summary: Bittern Cache uses nvdimm to speed up block io operations.
+Summary: Bittern Cache uses Persistent Memory to speed up block IO operations.
 
 Group: Core
 License: GPL
@@ -61,6 +61,12 @@ make install DESTDIR=%{buildroot} KERNEL_SOURCE_VERSION=%{ModDir} KERNEL_TREE=/u
 /sbin/bittern_cache/scripts/*
 
 %changelog
+* Mon June 29 2015 Fio Cattaneo <fio@twitter.com> 0.27.1-t2
+- More cleanup and code refactoring.
+- State machine now correctly uses dirty-write-cloning for all write hits.
+- REQ_FLUSH is now issued to the cached device.
+- Other miscellaneous changes.
+
 * Wed Apr 15 2015 Matt Mullins <mmullins@twitter.com> 0.24.13-t2
 - pmem_provider.ko and pmem_ram.ko are no longer built.
 

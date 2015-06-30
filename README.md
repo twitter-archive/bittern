@@ -1,5 +1,5 @@
-Bittern Beta Release 0.25.10 "Bosque del Apache" Release Notes
---------------------------------------------------------------
+Bittern Beta Release 0.27.1 Release Notes
+-----------------------------------------
 
 To get started with Bittern, you will need the following:
 
@@ -37,5 +37,5 @@ At this point you will have all the binaries built and doxygen documentation
 available.
 
 The doxygen documentation contains both Release Notes as well as the
-Getting Started guide.
-
+Getting Started guide. The use of doxygen 1.8.9.1 or later is required
+in order to generate documentation correctly.

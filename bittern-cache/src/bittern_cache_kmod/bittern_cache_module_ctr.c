@@ -814,6 +814,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	bc->bc_replacement_mode = CACHE_REPLACEMENT_MODE_DEFAULT;
 	bc->bc_cache_mode_writeback = 1; /* we now default to writeback */
+	bc->bc_enable_req_fua = true;
 
 	cache_xid_set(bc, 1);
 

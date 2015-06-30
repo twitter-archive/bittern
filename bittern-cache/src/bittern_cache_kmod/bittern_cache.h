@@ -50,23 +50,7 @@
 
 #include "bittern_cache_linux.h"
 
-/*!
- * Release string format is "major.minor.sub-minor"
- * major = major number
- * minor = minor number
- * codename = release codename.
- *
- * 0.20 version = Grays Harbor release
- * 0.22 version = Ridgefield release
- * 0.23 version = Julia Butlen Hansen (JBH) release
- * 0.24 version = Julia Butlen Hansen (JBH) release (Coldvirus Series)
- * 0.25 version = Bosque Del Apache release (DAX, LVM)
- * 0.26 version = Klamath release
- *
- * Release codenames are National Wildlife Refuges wetlands where the Bittern
- * can be found.
- */
-#define BITTERN_CACHE_VERSION "0.27.1"
+#define BITTERN_CACHE_VERSION "0.27.2"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -468,6 +452,14 @@ struct bittern_cache {
 
 	/*! cache mode: writeback == 1, writethru == 0 */
 	volatile int bc_cache_mode_writeback;
+
+	/*!
+	 * Enable issuing of req_flush to the cached device.
+	 * This option can be only be disable if the device writeback cache
+	 * is disabled. Incorrectly setting this option without doing so
+	 * will lead to data corruption.
+	 */
+	bool bc_enable_req_fua;
 
 	/* total deferred requests - sum of queue lens in deferred thread */
 	atomic_t bc_total_deferred_requests;
@@ -963,19 +955,21 @@ static inline const char *cache_mode_to_str(struct bittern_cache *bc)
 	ASSERT((__bcb) != NULL);                                                              \
 })
 
-#define __ASSERT_BITTERN_CACHE(__bc) ({                                                       \
-	/* this makes sure __bc is an l-value -- compiler will optimize this out */           \
-	__bc = (__bc);                                                                        \
-	ASSERT((__bc) != NULL);                                                               \
-	ASSERT((__bc)->bc_magic1 == BC_MAGIC1);                                               \
-	ASSERT((__bc)->bc_magic2 == BC_MAGIC2);                                               \
-	ASSERT((__bc)->bc_magic3 == BC_MAGIC3);                                               \
-	ASSERT((__bc)->bc_magic4 == BC_MAGIC4);                                               \
-	ASSERT((__bc)->bc_ti != NULL);                                                        \
-	ASSERT((__bc)->bc_dev != NULL);                                                       \
-	ASSERT_CACHE_REPLACEMENT_MODE((__bc)->bc_replacement_mode);                   \
-	ASSERT((__bc)->bc_cache_blocks != NULL);                                              \
-	ASSERT((__bc)->bc_cache_mode_writeback == 0 || (__bc)->bc_cache_mode_writeback == 1); \
+#define __ASSERT_BITTERN_CACHE(__bc) ({					\
+	__bc = (__bc);							\
+	ASSERT((__bc) != NULL);						\
+	ASSERT((__bc)->bc_magic1 == BC_MAGIC1);				\
+	ASSERT((__bc)->bc_magic2 == BC_MAGIC2);				\
+	ASSERT((__bc)->bc_magic3 == BC_MAGIC3);				\
+	ASSERT((__bc)->bc_magic4 == BC_MAGIC4);				\
+	ASSERT((__bc)->bc_ti != NULL);					\
+	ASSERT((__bc)->bc_dev != NULL);					\
+	ASSERT_CACHE_REPLACEMENT_MODE((__bc)->bc_replacement_mode);	\
+	ASSERT((__bc)->bc_cache_blocks != NULL);			\
+	ASSERT((__bc)->bc_cache_mode_writeback == 0 ||			\
+	       (__bc)->bc_cache_mode_writeback == 1);			\
+	ASSERT((__bc)->bc_enable_req_fua == false ||			\
+	       (__bc)->bc_enable_req_fua == true);			\
 })
 
 #define ASSERT_BITTERN_CACHE(__bc) ({                                                               \

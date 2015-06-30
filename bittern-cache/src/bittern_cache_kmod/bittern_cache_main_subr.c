@@ -1161,9 +1161,6 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 		/*
 		 * Always set REQ_FUA unless disabled for all writes,
 		 * writeback, invalidation and write-through operations.
-		 *
-		 * Bittern gives the same guarantees that HW RAID does, every
-		 * committed write is on stable storage.
 		 */
 		M_ASSERT(bc->bc_enable_req_fua == false ||
 			 bc->bc_enable_req_fua == true);

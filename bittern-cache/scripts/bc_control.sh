@@ -139,6 +139,18 @@ $0: --set max_pending_requests --value [50 .. 500] (default 400)
         The ideal value for max_pending requets is of course 42 and is
         unattainable.
 
+$0: --set enable_req_fua (default)
+$0: --set disable_req_fua
+	Enable or disable issuing of REQ_FUA on all write requests to the cached
+	device. Correct cache operation requires that the writeback cache on the
+	cached device hardware to be disabled at all times.
+	Disabling REQ_FUA can only be done if the cached device has the
+	writeback cache turned off or if it guarantees power failure safety.
+	Please note that Bittern has no way to know whether this is the case. As
+	such the responsability for setting this option correctly is left to the
+	user.
+	Do not change the default if you are in doubt at what should be done.
+
 $0 --set flush
         Set cache operating mode to writethrough and wait until all dirty blocks
         have been flushed out. The original cache mode is then restored.
@@ -199,8 +211,9 @@ VALUE_OPTION=""
 LIST_OPTION=""
 CACHE_NAME=""
 SYSFS_PATH=""
-ARGS_O="hgs:v:l"
-ARGS_L="help,get,set:,value:,list"
+FORCE=""
+ARGS_O="hgs:v:lf"
+ARGS_L="help,get,set:,value:,list,force"
 ARGS=$(getopt -o $ARGS_O -l $ARGS_L -n "bc_control.sh" -- "$@");
 __status=$?
 if [ $__status -ne 0 ]
@@ -215,6 +228,10 @@ do
                 shift
                 do_help
                 exit 0
+                ;;
+	-f|--force)
+                shift
+                FORCE="yes"
                 ;;
         -l|--list)
                 shift
@@ -368,6 +385,7 @@ do_get() {
         echo "         replacement = $(get_replacement replacement)"
 
         echo "cache conf parameters:"
+        echo "         enable_req_fua = $(get_cache_conf enable_req_fua)"
         echo "         max_pending_requests = $(get_cache_conf max_pending_requests)"
         echo "         bgwriter_conf_flush_on_exit = $(get_cache_conf bgwriter_conf_flush_on_exit)"
         echo "         bgwriter_conf_greedyness = $(get_cache_conf bgwriter_conf_greedyness)"
@@ -523,6 +541,30 @@ do_set() {
         "flush")
                 echo $0: $CACHE_NAME: flushing dirty blocks
                 do_flush
+                ;;
+	"enable_req_fua")
+                echo $0: $CACHE_NAME: setting enable_req_fua
+		set_cache_conf enable_req_fua 1
+                ;;
+	"disable_req_fua")
+                if [ "$FORCE" == "yes" ]
+		then
+			echo $0: $CACHE_NAME: setting disable_req_fua
+			set_cache_conf enable_req_fua 0
+		else
+cat<<EOF
+
+$0: $CACHE_NAME:
+
+	Disabling the issue of REQ_FUA is **** VERY DANGEROUS ****.
+	It should only be done if you truly understand it. If you are
+	in doubt, please do not do it, as it could lead to data
+	corruption.
+	If you still still want to proceed, use --force
+
+EOF
+			exit 1
+		fi
                 ;;
         "invalidate")
                 set_cache_conf invalidate_cache 0

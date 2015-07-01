@@ -37,6 +37,7 @@
 #include <linux/spinlock.h>
 #include <linux/stringify.h>
 #include <linux/uuid.h>
+#include <linux/vmalloc.h>
 #include <linux/workqueue.h>
 #include <linux/interrupt.h>
 

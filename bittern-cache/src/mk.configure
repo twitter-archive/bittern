@@ -32,10 +32,11 @@ BT_LEVEL_DEFAULT_1='#define        BT_LEVEL_DEFAULT     BT_LEVEL_DEFAULT_1'
 BT_LEVEL_DEFAULT_2='#define        BT_LEVEL_DEFAULT     BT_LEVEL_DEFAULT_2'
 BT_LEVEL_DEFAULT_2_1='#define      BT_LEVEL_DEFAULT   BT_LEVEL_DEFAULT_2_1'
 BT_LEVEL_DEFAULT_2_2='#define      BT_LEVEL_DEFAULT   BT_LEVEL_DEFAULT_2_2'
-PRINTK_DEBUG_DEFAULT_0='#define    PRINTK_DEBUG_DEFAULT     KERN_DEBUG'              # by default it is KERN_DEBUG
+# The debug level we'd like to print information in. By default it is KERN_DEBUG
+PRINTK_DEBUG_DEFAULT_0='#define    PRINTK_DEBUG_DEFAULT     KERN_DEBUG'
+# On test builds (i.e. non-prod), we tend to log more.
 PRINTK_DEBUG_DEFAULT_1='#define    PRINTK_DEBUG_DEFAULT     KERN_INFO'
-# always on for now
-PRINTK_DEBUG_DEFAULT=$PRINTK_DEBUG_DEFAULT_1
+PRINTK_DEBUG_DEFAULT=$PRINTK_DEBUG_DEFAULT_0
 #
 # assert
 #

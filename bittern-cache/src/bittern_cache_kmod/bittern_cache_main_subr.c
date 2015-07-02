@@ -1159,11 +1159,13 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 
 	if (datadir == WRITE) {
 		/*
-		 * Always set REQ_FUA for all writes, writeback, invalidation
-		 * and write-through operations.
-		 * This is required in order to maintain cache coherency.
+		 * Always set REQ_FUA unless disabled for all writes,
+		 * writeback, invalidation and write-through operations.
 		 */
-		bio->bi_rw |= REQ_FUA;
+		M_ASSERT(bc->bc_enable_req_fua == false ||
+			 bc->bc_enable_req_fua == true);
+		if (bc->bc_enable_req_fua)
+			bio->bi_rw |= REQ_FUA;
 		bio_set_data_dir_write(bio);
 	} else {
 		bio_set_data_dir_read(bio);

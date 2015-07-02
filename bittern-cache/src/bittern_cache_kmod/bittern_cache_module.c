@@ -272,6 +272,21 @@ static const char *param_show_replacement_mode(struct bittern_cache *bc)
 	return cache_replacement_mode_to_str(bc->bc_replacement_mode);
 }
 
+static int param_set_enable_req_fua(struct bittern_cache *bc, int value)
+{
+	ASSERT(value == false || value == true);
+	bc->bc_enable_req_fua = (bool)value;
+	printk_info("%s: set enable_req_fua=%d\n",
+		    bc->bc_name,
+		    bc->bc_enable_req_fua);
+	return 0;
+}
+
+static int param_get_enable_req_fua(struct bittern_cache *bc)
+{
+	return (int)bc->bc_enable_req_fua;
+}
+
 static int param_set_verifier_running(struct bittern_cache *bc, int value)
 {
 	ASSERT(value == 0 || value == 1);
@@ -542,6 +557,17 @@ struct cache_conf_param_entry cache_conf_param_list[] = {
 		.cache_conf_type = CONF_TYPE_STR,
 		.cache_conf_setup_function_str = param_set_replacement_mode,
 		.cache_conf_show_function_str = param_show_replacement_mode,
+	},
+	/*
+	 * enable_req_fua
+	 */
+	{
+		.cache_conf_name = "enable_req_fua",
+		.cache_conf_type = CONF_TYPE_INT,
+		.cache_conf_min = 0,
+		.cache_conf_max = 1,
+		.cache_conf_setup_function = param_set_enable_req_fua,
+		.cache_conf_show_function = param_get_enable_req_fua,
 	},
 	/*
 	 * verifier params
@@ -1011,6 +1037,9 @@ ssize_t cache_op_show_info(struct bittern_cache *bc, char *result)
 	       bc->bc_name,
 	       cache_replacement_mode_to_str(bc->bc_replacement_mode),
 	       cache_mode_to_str(bc));
+	DMEMIT("%s: info: enable_req_fua=%d\n",
+	       bc->bc_name,
+	       bc->bc_enable_req_fua);
 	DMEMIT("%s: info: handle=0x%llx handle_cache_blocks=0x%llx\n",
 	       bc->bc_name,
 	       (uint64_t)bc,

@@ -26,7 +26,11 @@ extern const char cache_git_status[];
 extern const char cache_git_tag[];
 extern const char cache_git_files[];
 
-extern int cache_sysfs_init(struct bittern_cache *bc);
+/*! init sysfs */
+extern void cache_sysfs_init(struct bittern_cache *bc);
+/*! add bittern entry to sysfs */
+extern int cache_sysfs_add(struct bittern_cache *bc);
+/*! deinit sysfs */
 extern void cache_sysfs_deinit(struct bittern_cache *bc);
 
 extern int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv);

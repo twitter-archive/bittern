@@ -1189,10 +1189,10 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	/*
 	 * now we have initialized everything we can show sysfs.
 	 */
-	ret = cache_sysfs_init(bc);
+	ret = cache_sysfs_add(bc);
 	if (ret < 0) {
-		ti->error = "sysfs_init";
-		printk_err("sysfs_init failed: ret=%d\n", ret);
+		ti->error = "sysfs_add";
+		printk_err("sysfs_add failed: ret=%d\n", ret);
 		goto bad_2;
 	}
 

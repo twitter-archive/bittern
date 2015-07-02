@@ -255,39 +255,12 @@ do
         --)
                 # after this shift we'll have all the arguments (should be one)
                 shift
-                case $# in
-                1)
-			if [ "$COMMAND" == "list" ]
-			then
-				usage
-				exit 10
-			fi
-                        CACHE_NAME="$1"
-                        shift
-                        ;;
-                *)
-			if [ "$COMMAND" != "list" ]
-			then
-				usage
-				exit 10
-			fi
-                        ;;
-                esac
+		CACHE_NAME="$1"
+		shift
                 break
                 ;;
         esac
 done
-
-if [ "$COMMAND" = "" ]
-then
-        usage
-        exit 10
-fi
-if [ \( "$COMMAND" != "list" \) -a \( "$CACHE_NAME" = "" \) ]
-then
-        echo $0: ERROR: internal error, no cache name after argument parsing
-        exit 21
-fi
 
 set_paths() {
 	# for now we only accept the cache external name
@@ -478,10 +451,16 @@ do_verify() {
         #
         # this only really makes sense after setting writethrough mode
         #
+        local __verify_running
+        local __verify_errors
         __verify_running=$(get_cache_verifier running)
         __verify_errors=$(get_cache_verifier errors)
         while [ "$__verify_running" -ne 0 ]
         do
+                local __blocks_verified
+                local __nv_invalid
+                local __nv_dirty
+                local __nv_busy
                 __blocks_verified=$(get_cache_verifier blocks_verified)
                 __nv_invalid=$(get_cache_verifier blocks_not_verified_invalid)
                 __nv_dirty=$(get_cache_verifier blocks_not_verified_dirty)
@@ -526,8 +505,8 @@ do_set_check_value(){
 }
 
 do_set() {
-        set_option=$*
-        case "$set_option" in
+        local __set_option=$*
+        case "$__set_option" in
         "writeback"|"wb")
                 set_cache_conf cache_mode writeback
                 ;;
@@ -547,24 +526,8 @@ do_set() {
 		set_cache_conf enable_req_fua 1
                 ;;
 	"disable_req_fua")
-                if [ "$FORCE" == "yes" ]
-		then
-			echo $0: $CACHE_NAME: setting disable_req_fua
-			set_cache_conf enable_req_fua 0
-		else
-cat<<EOF
-
-$0: $CACHE_NAME:
-
-	Disabling the issue of REQ_FUA is **** VERY DANGEROUS ****.
-	It should only be done if you truly understand it. If you are
-	in doubt, please do not do it, as it could lead to data
-	corruption.
-	If you still still want to proceed, use --force
-
-EOF
-			exit 1
-		fi
+		echo $0: $CACHE_NAME: setting disable_req_fua
+		set_cache_conf enable_req_fua 0
                 ;;
         "invalidate")
                 set_cache_conf invalidate_cache 0
@@ -640,9 +603,38 @@ EOF
 		set_cache_conf trace $VALUE_OPTION
                 ;;
         *)
-                usage
+                echo $0: unrecognized "--set" option
+		exit 1
                 ;;
         esac
+}
+
+#
+# verify that caller has specified --force if required
+#
+check_set_priv() {
+        local __set_option=$*
+        case "$__set_option" in
+	"disable_req_fua")
+                if [ -z "$FORCE" ]
+		then
+cat<<EOF
+
+$0: $CACHE_NAME:
+
+	Disabling the issue of REQ_FUA is **** VERY DANGEROUS ****.
+	It should only be done if you truly understand it. If you are
+	in doubt, please do not do it, as it could lead to data
+	corruption.
+	If you still still want to proceed, use --force
+
+EOF
+			exit 1
+		fi
+		;;
+	*)
+		;;
+	esac
 }
 
 do_list() {
@@ -674,6 +666,11 @@ main() {
 		do_list
 		;;
 	"get")
+		if [ -z "$CACHE_NAME" ]
+		then
+			echo $0: "--get" requires a cache name
+			exit 21
+		fi
 		set_paths
 		if [ ! -d $SYSFS_PATH ]
 		then
@@ -683,6 +680,16 @@ main() {
 		do_get
 		;;
 	"set")
+		if [ -z "$SET_OPTION" ]
+		then
+			echo $0: "--set" requires a value
+			exit 21
+		fi
+		if [ -z "$CACHE_NAME" ]
+		then
+			echo $0: "--set" requires a cache name
+			exit 21
+		fi
 		set_paths
 		if [ ! -d $SYSFS_PATH ]
 		then
@@ -694,6 +701,7 @@ main() {
 			echo $0: you must be root to run this
 			exit 15
 		fi
+		check_set_priv $SET_OPTION
 		do_set $SET_OPTION
 		;;
 	esac

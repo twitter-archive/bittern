@@ -592,7 +592,11 @@ int cache_ctr_restore_or_init_workqueues(struct bittern_cache *bc,
 	tstamp = current_kernel_time_nsec();
 
 	workqueues = kmem_zalloc(RESTORE_WORKQUEUES_SIZE_BYTES, GFP_NOIO);
-	M_ASSERT_FIXME(workqueues != NULL);
+	if (workqueues == NULL) {
+		printk_err("%s: cannot allocate workqueue array\n",
+			   bc->bc_name);
+		return -ENOMEM;
+	}
 
 	/*
 	 * Step #1: start restore on multiple independent workqueues.
@@ -611,7 +615,12 @@ int cache_ctr_restore_or_init_workqueues(struct bittern_cache *bc,
 					(WQ_UNBOUND | WQ_CPU_INTENSIVE),
 					1,
 					bc->bc_name);
-		M_ASSERT_FIXME(r_wq->workqueue != NULL);
+		if (r_wq->workqueue == NULL) {
+			printk_err("%s: cannot allocate workqueue\n",
+				   bc->bc_name);
+			ret = -ENOMEM;
+			break;
+		}
 
 		INIT_WORK(&r_wq->work, cache_ctr_restore_or_init_wq);
 		ret = queue_work(r_wq->workqueue, &r_wq->work);
@@ -626,6 +635,9 @@ int cache_ctr_restore_or_init_workqueues(struct bittern_cache *bc,
 	for (i = 0; i < RESTORE_WORKQUEUES; i++) {
 		struct restore_workqueue *r_wq = &workqueues[i];
 
+		if (r_wq->workqueue == NULL)
+			break;
+
 		M_ASSERT(r_wq->magic == RESTORE_WORKQUEUE_MAGIC);
 		M_ASSERT(r_wq->cache_op == CACHE_DEVICE_OP_CREATE ||
 			 r_wq->cache_op == CACHE_DEVICE_OP_RESTORE);
@@ -639,8 +651,10 @@ int cache_ctr_restore_or_init_workqueues(struct bittern_cache *bc,
 			    r_wq->restored,
 			    r_wq->ret);
 		destroy_workqueue(r_wq->workqueue);
-		if (r_wq->ret != 0)
+		if (r_wq->ret != 0) {
 			ret = r_wq->ret;
+			ASSERT(ret < 0);
+		}
 		total_restored += r_wq->restored;
 	}
 
@@ -684,7 +698,7 @@ int cache_ctr_restore_or_init_workqueues(struct bittern_cache *bc,
 		  atomic_read(&bc->bc_valid_entries_clean) +
 		  atomic_read(&bc->bc_valid_entries_dirty)));
 
-	return ret;
+	return 0;
 }
 
 /*

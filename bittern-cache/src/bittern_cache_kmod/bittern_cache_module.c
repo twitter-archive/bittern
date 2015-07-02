@@ -1807,24 +1807,25 @@ struct kobj_type cache_stats_ktype = {
 
 struct kobject *cache_kobj = NULL;
 
-int cache_sysfs_init(struct bittern_cache *bc)
+void cache_sysfs_init(struct bittern_cache *bc)
+{
+	printk_info("kobject_init\n");
+	kobject_init(&bc->bc_kobj, &cache_stats_ktype);
+}
+
+int cache_sysfs_add(struct bittern_cache *bc)
 {
 	int ret;
 
-	printk_info("bc=%p, bc->bc_kobj=%p\n", bc, &bc->bc_kobj);
-
-	kobject_init(&bc->bc_kobj, &cache_stats_ktype);
 	ret = kobject_add(&bc->bc_kobj, cache_kobj, bc->bc_name);
 	printk_info("kobject_add=%d\n", ret);
-	M_ASSERT_FIXME(ret == 0);
-
-	return 0;
-};
+	return ret;
+}
 
 void cache_sysfs_deinit(struct bittern_cache *bc)
 {
-	printk_info("kobject_put bc->bc_kobj=%p\n", &bc->bc_kobj);
-
+	printk_info("kobject_put\n");
+	/* kobject_init() says we need to call kobject_put regardless */
 	kobject_put(&bc->bc_kobj);
 }
 
@@ -1996,19 +1997,21 @@ int __init dm_cache_init(void)
 {
 	int ret;
 
-	printk_info("enter\n");
-
 	ret = dm_register_target(&cache_target);
 	if (ret < 0) {
 		printk_err("error: register failed %d\n", ret);
-		goto bad_register;
+		return ret;
 	}
 
 	printk_info("register ok\n");
 
 	cache_kobj = kobject_create_and_add("bittern", fs_kobj);
-	M_ASSERT_FIXME(cache_kobj != NULL);
 	printk_info("bcache_kobj=%p\n", cache_kobj);
+	if (cache_kobj == NULL) {
+		printk_err("failed to allocate bittern kobj\n");
+		dm_unregister_target(&cache_target);
+		return -ENOMEM;
+	}
 
 	printk_info("sizeof (struct bittern_cache) = %lu\n",
 		    (unsigned long)sizeof(struct bittern_cache));
@@ -2024,18 +2027,12 @@ int __init dm_cache_init(void)
 	/* we want this struct to be 64 bytes (hardware dependency) */
 	M_ASSERT(sizeof(struct pmem_block_metadata) == 64);
 
-	printk_info("exit\n");
-
 	return 0;
-
-bad_register:
-	return ret;
 }
 
 void __exit dm_cache_exit(void)
 {
-	printk_info("enter\n");
-
+	M_ASSERT(cache_kobj != NULL);
 	printk_info("bcache_kobj=%p\n", cache_kobj);
 	kobject_put(cache_kobj);
 
@@ -2043,8 +2040,6 @@ void __exit dm_cache_exit(void)
 
 	printk_info("kmem_buffers_in_use=%u\n", kmem_buffers_in_use());
 	M_ASSERT(kmem_buffers_in_use() == 0);
-
-	printk_info("exit\n");
 }
 
 /* Module hooks */

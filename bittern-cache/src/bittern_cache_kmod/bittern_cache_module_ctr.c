@@ -800,6 +800,12 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	bc->bc_magic3 = BC_MAGIC3;
 	bc->bc_magic4 = BC_MAGIC4;
 
+	/*
+	 * Need to initialize sysfs before actually trying anything else,
+	 * otherwise deinit call might fail in the error handling path.
+	 */
+	cache_sysfs_init(bc);
+
 	ret = dm_get_device(ti,
 			    cache_device_blockdev_path,
 			    FMODE_READ | FMODE_WRITE | FMODE_EXCL,
@@ -1183,7 +1189,12 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	/*
 	 * now we have initialized everything we can show sysfs.
 	 */
-	cache_sysfs_init(bc);
+	ret = cache_sysfs_init(bc);
+	if (ret < 0) {
+		ti->error = "sysfs_init";
+		printk_err("sysfs_init failed: ret=%d\n", ret);
+		goto bad_2;
+	}
 
 	/*
 	 * now restore or initialize
@@ -1198,7 +1209,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 						   cache_operation);
 	if (ret < 0) {
 		ti->error = "corrupt cache entry or bad data";
-		printk_err("error: cache entry restore failed (corrupt/bad data)\n");
+		printk_err("restore_or_init failed: ret=%d\n", ret);
 		goto bad_2;
 	}
 

@@ -1694,6 +1694,10 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 		atomic_inc(&bc->bc_pending_read_bypass_requests);
 		cache_timer_add(&bc->bc_timer_resource_alloc_reads, tstamp);
 	} else {
+#if 0
+		/*
+		 * Turn off issuing of REQ_FUA until hang problem is fixed.
+		 */
 		/*
 		 * Always set REQ_FUA unless disabled.
 		 *
@@ -1706,6 +1710,7 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 			 bc->bc_enable_req_fua == true);
 		if (bc->bc_enable_req_fua)
 			cloned_bio->bi_rw |= REQ_FUA;
+#endif
 		atomic_inc(&bc->bc_seq_write.bypass_count);
 		atomic_inc(&bc->bc_pending_write_bypass_requests);
 		cache_timer_add(&bc->bc_timer_resource_alloc_writes, tstamp);

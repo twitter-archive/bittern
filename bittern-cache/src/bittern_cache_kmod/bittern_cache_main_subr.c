@@ -1158,6 +1158,10 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 	}
 
 	if (datadir == WRITE) {
+#if 0
+		/*
+		 * Turn off issuing of REQ_FUA until hang problem is fixed.
+		 */
 		/*
 		 * Always set REQ_FUA unless disabled for all writes,
 		 * writeback, invalidation and write-through operations.
@@ -1166,6 +1170,7 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 			 bc->bc_enable_req_fua == true);
 		if (bc->bc_enable_req_fua)
 			bio->bi_rw |= REQ_FUA;
+#endif
 		bio_set_data_dir_write(bio);
 	} else {
 		bio_set_data_dir_read(bio);

@@ -193,7 +193,7 @@ struct work_item {
 	int wi_magic1;
 	/*! @ref wi_flags_bitvalues */
 	int wi_flags;
-	/* access to this member is serialized with global spinlock */
+	/*! access to this member is serialized with global spinlock */
 	struct list_head wi_pending_io_list;
 	/* workstruct and workqueues used when a thread context is required */
 	struct work_struct wi_work;
@@ -247,6 +247,12 @@ struct work_item {
 	int bi_datadir;
 	/*! bi_set_original_bio used for deferred worker */
 	bool bi_set_original_bio;
+	/*! access serialized with @ref bc_dev_spinlock */
+	struct list_head bi_dev_pending_list;
+	/*! access serialized with @ref bc_dev_spinlock */
+	struct list_head bi_dev_flush_pending_list;
+	/*! generation number for this work_item */
+	int64_t bi_gennum;
 };
 #define __ASSERT_WORK_ITEM(__wi) ({					\
 	/* make sure it's l-value, compiler will optimize this away */	\
@@ -702,8 +708,9 @@ struct bittern_cache {
 	/* total # of cache entries */
 	atomic_t bc_total_entries;
 	spinlock_t bc_entries_lock;
-	/*
-	 * pending requests
+	/*!
+	 * pending_requests list. All pending requests, read and writes,
+	 * are in
 	 */
 	struct list_head bc_pending_requests_list;
 
@@ -863,6 +870,32 @@ struct bittern_cache {
 
 	/*! device being cached */
 	struct dm_dev *bc_dev;
+	/*!  serializes access to bio and flush pending lists */
+	spinlock_t bc_dev_spinlock;
+	/*! list of all pending IO requests issed to @ref bc_dev */
+	struct list_head bc_dev_pending_list;
+	/*! counts elements in @ref bc_dev_bio_pending */
+	atomic_t bc_dev_pending_count;
+	/*! list of all pending FLUSH requests issed to @ref bc_dev */
+	struct list_head bc_dev_flush_pending_list;
+	/*! counts elements in @ref bc_dev_flush_pending */
+	atomic_t bc_dev_flush_pending_count;
+	/*!
+	 * Generation number used to associate requests which
+	 * have been issued before a given generation number.
+	 * Say we have these requests issued:
+	 *
+	 * W1         gen=1
+	 * W2         gen=2
+	 * F3         gen=3
+	 * W4         gen=4
+	 *
+	 * When flush request F3 is acknowledged, every previously queued
+	 * request (which has a generation number equal or less than 3)
+	 * can be acknowledged.
+	 */
+	atomic64_t bc_dev_gennum;
+
 	/*! device acting as the cache */
 	struct dm_dev *bc_cache_dev;
 

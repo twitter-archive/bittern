@@ -866,6 +866,8 @@ struct work_item *work_item_allocate(struct bittern_cache *bc,
 	ASSERT(wi->wi_io_xid != 0);
 	wi->wi_cache = bc;
 	INIT_LIST_HEAD(&wi->wi_pending_io_list);
+	INIT_LIST_HEAD(&wi->bi_dev_pending_list);
+	INIT_LIST_HEAD(&wi->bi_dev_flush_pending_list);
 
 	pmem_context_initialize(&wi->wi_pmem_ctx);
 
@@ -1025,46 +1027,24 @@ void __cache_verify_hash_data_buffer(struct bittern_cache *bc,
 }
 
 /*! endio function used by @ref cached_dev_do_make_request */
-static void cached_dev_make_request_endio(struct bio *bio, int err)
+static void cached_dev_make_request_endio(struct work_item *wi,
+					  struct bio *bio,
+					  int err)
 {
 	struct bittern_cache *bc;
 	struct cache_block *cache_block;
-	struct work_item *wi;
 	struct bio *original_bio;
 	bool is_original_bio;
 
-	ASSERT(bio != NULL);
 	wi = bio->bi_private;
-	ASSERT(wi != NULL);
-
 	bc = wi->wi_cache;
-	ASSERT_BITTERN_CACHE(bc);
-
 	cache_block = wi->wi_cache_block;
-	ASSERT_WORK_ITEM(wi, bc);
-	ASSERT_CACHE_BLOCK(cache_block, bc);
-	ASSERT(cache_block->bcb_xid != 0);
-	ASSERT(cache_block->bcb_xid == wi->wi_io_xid);
-	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
-	M_ASSERT(bio == wi->wi_cloned_bio);
-	ASSERT(bio_data_dir(bio) == READ ||
-	       bio_data_dir(bio) == WRITE);
-	ASSERT(cache_block->bcb_xid != 0);
-	ASSERT(cache_block->bcb_xid == wi->wi_io_xid);
-	ASSERT_CACHE_STATE(cache_block);
-	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 
 	is_original_bio = (bio == wi->wi_original_bio);
 	original_bio = wi->wi_original_bio;
 	M_ASSERT(wi->wi_original_bio != NULL);
 	ASSERT(original_bio == wi->wi_original_bio);
 
-	if (bio_data_dir(bio) == READ)
-		cache_timer_add(&bc->bc_timer_cached_device_reads,
-				wi->wi_ts_physio);
-	else
-		cache_timer_add(&bc->bc_timer_cached_device_writes,
-				wi->wi_ts_physio);
 	if (is_original_bio) {
 		M_ASSERT(wi->wi_cloned_bio != NULL);
 		M_ASSERT(wi->wi_original_bio == wi->wi_cloned_bio);
@@ -1109,6 +1089,59 @@ static void cached_dev_make_request_endio(struct bio *bio, int err)
 	cache_state_machine(bc, wi, err);
 }
 
+/*! end_bio function used by @ref cached_dev_do_make_request */
+static void cached_dev_make_request_end_bio(struct bio *bio, int err)
+{
+	struct bittern_cache *bc;
+	struct cache_block *cache_block;
+	struct work_item *wi;
+	struct bio *original_bio;
+	bool is_original_bio;
+	unsigned long flags;
+	int c;
+
+	ASSERT(bio != NULL);
+	wi = bio->bi_private;
+	ASSERT(wi != NULL);
+
+	bc = wi->wi_cache;
+	ASSERT_BITTERN_CACHE(bc);
+
+	cache_block = wi->wi_cache_block;
+	ASSERT_WORK_ITEM(wi, bc);
+	ASSERT_CACHE_BLOCK(cache_block, bc);
+	ASSERT(cache_block->bcb_xid != 0);
+	ASSERT(cache_block->bcb_xid == wi->wi_io_xid);
+	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
+	M_ASSERT(bio == wi->wi_cloned_bio);
+	ASSERT(bio_data_dir(bio) == READ ||
+	       bio_data_dir(bio) == WRITE);
+	ASSERT(cache_block->bcb_xid != 0);
+	ASSERT(cache_block->bcb_xid == wi->wi_io_xid);
+	ASSERT_CACHE_STATE(cache_block);
+	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
+
+	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
+	list_del_init(&wi->bi_dev_pending_list);
+	c = atomic_dec_return(&bc->bc_dev_pending_count);
+	M_ASSERT(c >= 0);
+	if (bio_data_dir(bio) == WRITE) {
+		list_del_init(&wi->bi_dev_flush_pending_list);
+		c = atomic_dec_return(&bc->bc_dev_flush_pending_count);
+		M_ASSERT(c >= 0);
+	}
+	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
+
+	if (bio_data_dir(bio) == READ)
+		cache_timer_add(&bc->bc_timer_cached_device_reads,
+				wi->wi_ts_physio);
+	else
+		cache_timer_add(&bc->bc_timer_cached_device_writes,
+				wi->wi_ts_physio);
+
+	cached_dev_make_request_endio(wi, bio, err);
+}
+
 /*!
  * Allocate bio and make the request to cached device.
  * Note that datadir and set_original_bio must be set from the
@@ -1122,6 +1155,7 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 {
 	struct bio *bio;
 	struct cache_block *cache_block;
+	unsigned long flags;
 
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_WORK_ITEM(wi, bc);
@@ -1179,7 +1213,7 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 	bio->bi_iter.bi_sector = cache_block->bcb_sector;
 	bio->bi_iter.bi_size = PAGE_SIZE;
 	bio->bi_bdev = bc->bc_dev->bdev;
-	bio->bi_end_io = cached_dev_make_request_endio;
+	bio->bi_end_io = cached_dev_make_request_end_bio;
 	bio->bi_private = wi;
 	bio->bi_vcnt = 1;
 	bio->bi_io_vec[0].bv_page = pmem_context_data_page(&wi->wi_pmem_ctx);
@@ -1194,6 +1228,22 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 	atomic_inc(&bc->bc_make_request_count);
 
 	wi->wi_ts_physio = current_kernel_time_nsec();
+
+	/*
+	 * Add to bc_dev_pending_list.
+	 * Also add to bc_dev_flush_pending_list if request is a write.
+	 */
+	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
+	wi->bi_gennum = atomic64_inc_return(&bc->bc_dev_gennum);
+	list_add_tail(&wi->bi_dev_pending_list, &bc->bc_dev_pending_list);
+	atomic_inc(&bc->bc_dev_pending_count);
+	if (datadir == WRITE) {
+		list_add_tail(&wi->bi_dev_flush_pending_list,
+			      &bc->bc_dev_flush_pending_list);
+		atomic_inc(&bc->bc_dev_flush_pending_count);
+	}
+	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
+
 	generic_make_request(bio);
 }
 

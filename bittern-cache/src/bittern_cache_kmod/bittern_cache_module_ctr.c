@@ -949,6 +949,13 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	cache_timer_init(&bc->bc_deferred_wait_busy.bc_defer_timer);
 	cache_timer_init(&bc->bc_deferred_wait_page.bc_defer_timer);
 
+	spin_lock_init(&bc->bc_dev_spinlock);
+	INIT_LIST_HEAD(&bc->bc_dev_pending_list);
+	atomic_set(&bc->bc_dev_pending_count, 0);
+	INIT_LIST_HEAD(&bc->bc_dev_flush_pending_list);
+	atomic_set(&bc->bc_dev_flush_pending_count, 0);
+	atomic64_set(&bc->bc_dev_gennum, 1);
+
 	pmem_info_initialize(bc);
 
 	ret = pmem_allocate(bc, bc->bc_cache_dev->bdev);

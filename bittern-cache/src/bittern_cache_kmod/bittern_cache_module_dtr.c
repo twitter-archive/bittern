@@ -143,6 +143,12 @@ void cache_dtr_pre(struct dm_target *ti)
 	printk_info("done updating pmem headers\n");
 	M_ASSERT(ret == 0);
 
+	printk_info("flushing dev_flush workqueue\n");
+	M_ASSERT(bc->bc_dev_flush_wq != NULL);
+	flush_workqueue(bc->bc_dev_flush_wq);
+	printk_info("destroying dev_flush workqueue\n");
+	destroy_workqueue(bc->bc_dev_flush_wq);
+
 	printk_info("exit\n");
 }
 

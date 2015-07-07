@@ -955,6 +955,18 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	INIT_LIST_HEAD(&bc->bc_dev_flush_pending_list);
 	atomic_set(&bc->bc_dev_flush_pending_count, 0);
 	atomic64_set(&bc->bc_dev_gennum, 1);
+	atomic64_set(&bc->bc_dev_gennum_flush, 1);
+	bc->bc_dev_flush_wq = alloc_workqueue("b_dvf:%s",
+					      WQ_UNBOUND,
+					      1,
+					      bc->bc_name);
+	if (bc->bc_dev_flush_wq == NULL) {
+		printk_err("%s: cannot allocate dev flush workqueue\n",
+			   bc->bc_name);
+		ret = -ENOMEM;
+		ti->error = "cannot allocate dev flush workqueue";
+		goto bad_0;
+	}
 
 	pmem_info_initialize(bc);
 
@@ -1388,7 +1400,12 @@ bad_1:
 bad_0:
 	printk_err("error: %s\n", ti->error);
 	M_ASSERT(ti->error != NULL);
-	printk_err("error: bad\n");
+
+	if (bc->bc_dev_flush_wq != NULL) {
+		flush_workqueue(bc->bc_dev_flush_wq);
+		printk_info("destroying make_request workqueue\n");
+		destroy_workqueue(bc->bc_dev_flush_wq);
+	}
 	if (bc->bc_dev != NULL) {
 		printk_err("dm_put_device\n");
 		dm_put_device(ti, bc->bc_dev);

@@ -51,7 +51,7 @@
 
 #include "bittern_cache_linux.h"
 
-#define BITTERN_CACHE_VERSION "0.27.3"
+#define BITTERN_CACHE_VERSION "0.28.1"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -195,7 +195,7 @@ struct work_item {
 	int wi_flags;
 	/*! access to this member is serialized with global spinlock */
 	struct list_head wi_pending_io_list;
-	/* workstruct and workqueues used when a thread context is required */
+	/*! workstruct used when a thread context is required */
 	struct work_struct wi_work;
 	/* pointer to original bio (if any) */
 	struct bio *wi_original_bio;
@@ -895,6 +895,16 @@ struct bittern_cache {
 	 * can be acknowledged.
 	 */
 	atomic64_t bc_dev_gennum;
+	/*!
+	 * Gennum of last flush which was issued.
+	 * (@ref bc_dev_gennum_flush - ref @bc_dev_gennum) tells
+	 * how many write requests were issued after the last flush
+	 * was issued.
+	 */
+	atomic64_t bc_dev_gennum_flush;
+	/*! workqueue used to issue explicit flushes */
+	struct workqueue_struct *bc_dev_flush_wq;
+
 
 	/*! device acting as the cache */
 	struct dm_dev *bc_cache_dev;

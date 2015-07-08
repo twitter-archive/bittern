@@ -1113,9 +1113,9 @@ static void cached_dev_flush_end_bio(struct bio *bio, int err)
 	struct bittern_cache *bc;
 	uint64_t gennum;
 
-	printk_err("flush_end_bio: bio %p flush done, flush_meta %p\n", bio, flush_meta);
-
 	meta = bio->bi_private;
+	printk_err("flush_end_bio: bio %p flush done, flush_meta %p\n", bio, meta);
+
 	ASSERT(meta->magic == FLUSH_META_MAGIC);
 	bc = meta->bc;
 	gennum = meta->gennum;
@@ -1127,7 +1127,7 @@ static void cached_dev_flush_end_bio(struct bio *bio, int err)
 
 	kmem_free(meta, sizeof(struct flush_meta));
 
-	cached_dev_flush_end_bio_process(bc, wi);
+	cached_dev_flush_end_bio_process(bc, gennum);
 }
 
 static void cached_dev_flush_worker(struct work_struct *work)
@@ -1136,7 +1136,6 @@ static void cached_dev_flush_worker(struct work_struct *work)
 	struct bittern_cache *bc;
 	struct bio *bio;
 	struct flush_meta *meta;
-	unsigned long flags;
 
 	printk_err("dev_flush worker: issue flush\n");
 
@@ -1316,25 +1315,27 @@ void cached_dev_flush_end_bio_process(struct bittern_cache *bc, uint64_t gennum)
 		list_for_each_entry(wi,
 				    &bc->bc_dev_flush_pending_list,
 				    bi_dev_flush_pending_list) {
-			bio = pend_wi->wi_cloned_bio;
-			if (gennum >= wi->bi_gennum) {
+			bio = wi->wi_cloned_bio;
+			if (wi->bi_gennum < gennum) {
 				list_del_init(&wi->bi_dev_flush_pending_list);
 				c = atomic_dec_return(&bc->bc_dev_flush_pending_count);
 				M_ASSERT(c >= 0);
-				printk_debug("end_bio_process: PROCESS bio %p bi_sector=%lu, gennum=%llu, flush wait done\n",
+				printk_debug("end_bio_process: PROCESS bio %p bi_sector=%lu, gennum=%llu/%llu, flush wait done\n",
 					     bio,
 					     bio->bi_iter.bi_sector,
-					     wi->bi_gennum);
+					     wi->bi_gennum,
+					     gennum);
 				spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 				cached_dev_make_request_endio(wi, bio, 0);
 				spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
 				processed = true;
 				break;
 			} else {
-				printk_debug("end_bio_process: do not process bio %p bi_sector=%lu, gennum=%llu, flush still wait\n",
+				printk_debug("end_bio_process: do not process bio %p bi_sector=%lu, gennum=%llu/%llu, flush still wait\n",
 					     bio,
 					     bio->bi_iter.bi_sector,
-					     wi->bi_gennum);
+					     wi->bi_gennum,
+					     gennum);
 			}
 			M_ASSERT(cc++ < 500);
 		}

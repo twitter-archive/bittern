@@ -18,7 +18,7 @@
 
 #include "bittern_cache.h"
 
-static bool __xxxyyy = true;
+static bool __xxxyyy = false;
 
 #define FLUSH_META_MAGIC	0xf10c9a21
 /*! passed as bi_private field to the pure flush bio */
@@ -53,13 +53,14 @@ static void cached_devio_flush_end_bio_process(struct bittern_cache *bc, uint64_
 			ASSERT_WORK_ITEM(wi, bc);
 			bio = wi->wi_cloned_bio;
 			if (wi->bi_gennum <= gennum) {
+				M_ASSERT(!list_empty(&bc->bc_dev_flush_pending_list));
 				list_del_init(&wi->bi_dev_flush_pending_list);
 				c = atomic_dec_return(&bc->bc_dev_flush_pending_count);
 				M_ASSERT(c >= 0);
 				if (c == 0)
-					M_ASSERT(list_empty(&wi->bi_dev_flush_pending_list));
+					M_ASSERT(list_empty(&bc->bc_dev_flush_pending_list));
 				else
-					M_ASSERT(!list_empty(&wi->bi_dev_flush_pending_list));
+					M_ASSERT(!list_empty(&bc->bc_dev_flush_pending_list));
 				if(__xxxyyy)printk_debug("end_bio_process: PROCESS bio %p bi_sector=%lu, gennum=%llu/%llu, flush wait done\n",
 					     bio,
 					     bio->bi_iter.bi_sector,
@@ -198,13 +199,14 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 
 	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
+	M_ASSERT(!list_empty(&bc->bc_dev_pending_list));
 	list_del_init(&wi->bi_dev_pending_list);
 	c = atomic_dec_return(&bc->bc_dev_pending_count);
 	M_ASSERT(c >= 0);
 	if (c == 0)
-		M_ASSERT(list_empty(&wi->bi_dev_pending_list));
+		M_ASSERT(list_empty(&bc->bc_dev_pending_list));
 	else
-		M_ASSERT(!list_empty(&wi->bi_dev_pending_list));
+		M_ASSERT(!list_empty(&bc->bc_dev_pending_list));
 	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 
 	if (bio_data_dir(bio) == READ) {

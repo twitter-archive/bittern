@@ -112,6 +112,8 @@ static void cached_devio_flush_worker(struct work_struct *work)
 	struct bio *bio;
 	struct flush_meta *meta;
 	unsigned long flags;
+	uint64_t gennum;
+	struct work_item *wi;
 
 	ASSERT(!in_irq());
 	ASSERT(!in_softirq());
@@ -130,11 +132,22 @@ static void cached_devio_flush_worker(struct work_struct *work)
 		     meta->gennum);
 
 	/*
-	 * TODO Issue flush up to current highest gennum if flush_pending queue.
+	 * Issue flush up to current highest gennum in flush_pending queue.
 	 */
 	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
-	if (meta->gennum > atomic64_read(&bc->bc_dev_gennum_flush))
+
+	gennum = meta->gennum;
+
+	list_for_each_entry(wi, &bc->bc_dev_flush_pending_list, devio_pending_list) {
+		ASSERT_WORK_ITEM(wi, bc);
+		if (wi->devio_gennum > gennum)
+			gennum = wi->devio_gennum;
+	}
+	if (gennum > atomic64_read(&bc->bc_dev_gennum_flush))
 		atomic64_set(&bc->bc_dev_gennum_flush, meta->gennum);
+	if (gennum > meta->gennum)
+		printk_debug("ISSUE flush highest gennum %llu/%llu [%ld]\n", meta->gennum, gennum, atomic64_read(&bc->bc_dev_gennum_flush));
+
 	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 
 	bio = bio_alloc(GFP_NOIO, 1);

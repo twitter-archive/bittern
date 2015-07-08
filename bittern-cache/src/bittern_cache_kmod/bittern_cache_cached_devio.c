@@ -132,7 +132,7 @@ static void cached_devio_flush_worker(struct work_struct *work)
 	 * Issue flush up to current flush gennum
 	 */
 	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
-	meta->gennum = atomic64_read(&bc->bc_dev_gennum_flush);
+	meta->gennum = atomic64_read(&bc->bc_dev_gennum);
 	atomic64_set(&bc->bc_dev_gennum_flush, meta->gennum);
 	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 

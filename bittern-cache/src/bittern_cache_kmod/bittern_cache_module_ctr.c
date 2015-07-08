@@ -954,6 +954,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	atomic_set(&bc->bc_dev_pending_count, 0);
 	INIT_LIST_HEAD(&bc->bc_dev_flush_pending_list);
 	atomic_set(&bc->bc_dev_flush_pending_count, 0);
+	atomic_set(&bc->bc_dev_pure_flush_pending_count, 0);
 	atomic64_set(&bc->bc_dev_gennum, 1);
 	atomic64_set(&bc->bc_dev_gennum_flush, 1);
 	bc->bc_dev_flush_wq = alloc_workqueue("b_dvf:%s",

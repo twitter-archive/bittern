@@ -18,7 +18,7 @@
 
 #include "bittern_cache.h"
 
-static bool __xxxyyy = true;
+static bool __xxxyyy = false;
 
 #define FLUSH_META_MAGIC	0xf10c9a21
 /*! passed as bi_private field to the pure flush bio */
@@ -97,6 +97,8 @@ static void cached_devio_flush_end_bio(struct bio *bio, int err)
 	gennum = meta->gennum;
 	ASSERT_BITTERN_CACHE(bc);
 
+	atomic_dec(&bc->bc_dev_pure_flush_pending_count);
+
 	if(__xxxyyy)printk_debug("flush_end_bio: need to ack up to gennum = %llu\n", gennum);
 
 	bio_put(bio);
@@ -130,25 +132,6 @@ static void cached_devio_flush_worker(struct work_struct *work)
 		     bc,
 		     &meta->work,
 		     meta->gennum);
-
-	/*
-	 * Issue flush up to current highest gennum in flush_pending queue.
-	 */
-	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
-
-	gennum = meta->gennum;
-
-	list_for_each_entry(wi, &bc->bc_dev_flush_pending_list, devio_pending_list) {
-		ASSERT_WORK_ITEM(wi, bc);
-		if (wi->devio_gennum > gennum)
-			gennum = wi->devio_gennum;
-	}
-	if (gennum > atomic64_read(&bc->bc_dev_gennum_flush))
-		atomic64_set(&bc->bc_dev_gennum_flush, meta->gennum);
-	if (gennum > meta->gennum)
-		printk_debug("ISSUE flush highest gennum %llu/%llu [%ld]\n", meta->gennum, gennum, atomic64_read(&bc->bc_dev_gennum_flush));
-
-	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 
 	bio = bio_alloc(GFP_NOIO, 1);
 #if 0
@@ -278,7 +261,7 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 		if (c == 1) {
 			int ret;
 			struct flush_meta *meta;
-			if(__xxxyyy)printk_debug("end_bio: last request: issue explicit flush at least from gennum=%llu\n", gennum);
+			if(__xxxyyy)printk_debug("end_bio: last request: issue explicit flush up to gennum=%llu\n", gennum);
 
 			/* defer to worker thread, which will start io */
 
@@ -288,6 +271,8 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 			 */
 			meta = kmem_alloc(sizeof (struct flush_meta), GFP_ATOMIC);
 			M_ASSERT(meta != NULL);
+
+			atomic_inc(&bc->bc_dev_pure_flush_pending_count);
 
 			meta->magic = FLUSH_META_MAGIC;
 			meta->bc = bc;

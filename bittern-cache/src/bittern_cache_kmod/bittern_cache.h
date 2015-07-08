@@ -890,6 +890,8 @@ struct bittern_cache {
 	struct list_head bc_dev_flush_pending_list;
 	/*! counts elements in @ref bc_dev_flush_pending */
 	atomic_t bc_dev_flush_pending_count;
+	/*! counts number of pending pure flushes */
+	atomic_t bc_dev_pure_flush_pending_count;
 	/*!
 	 * Generation number used to associate requests which
 	 * have been issued before a given generation number.

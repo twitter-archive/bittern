@@ -248,16 +248,14 @@ struct work_item {
 	/*! bi_set_original_bio used for deferred worker */
 	bool bi_set_original_bio;
 	/*! access serialized with @ref bc_dev_spinlock */
-	struct list_head bi_dev_pending_list;
+	struct list_head devio_pending_list;
 	/*! access serialized with @ref bc_dev_spinlock */
-	struct list_head bi_dev_flush_pending_list;
-	/*! generation number for this work_item */
-	int64_t bi_gennum;
+	int64_t devio_gennum;
 	/*!
 	 * Copy of current bio's flags. Looking at the bio flags
 	 * is not possible, as block IO layer may strip them.
 	 */
-	int bi_flags;
+	int devio_flags;
 };
 #define __ASSERT_WORK_ITEM(__wi) ({					\
 	/* make sure it's l-value, compiler will optimize this away */	\
@@ -877,7 +875,14 @@ struct bittern_cache {
 	struct dm_dev *bc_dev;
 	/*!  serializes access to bio and flush pending lists */
 	spinlock_t bc_dev_spinlock;
-	/*! list of all pending IO requests issed to @ref bc_dev */
+	/*!
+	 * List of all pending requests issed to @ref bc_dev.
+	 * When a read or write request is issued, the work_item is
+	 * inserted into this list.
+	 * When IO completes, the request is either acked immediately
+	 * or moved to the @ref bc_dev_flush_pending_list.
+	 * A request can only be in one of these two queues.
+	 */
 	struct list_head bc_dev_pending_list;
 	/*! counts elements in @ref bc_dev_bio_pending */
 	atomic_t bc_dev_pending_count;

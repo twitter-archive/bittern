@@ -866,8 +866,7 @@ struct work_item *work_item_allocate(struct bittern_cache *bc,
 	ASSERT(wi->wi_io_xid != 0);
 	wi->wi_cache = bc;
 	INIT_LIST_HEAD(&wi->wi_pending_io_list);
-	INIT_LIST_HEAD(&wi->bi_dev_pending_list);
-	INIT_LIST_HEAD(&wi->bi_dev_flush_pending_list);
+	INIT_LIST_HEAD(&wi->devio_pending_list);
 
 	pmem_context_initialize(&wi->wi_pmem_ctx);
 

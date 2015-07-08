@@ -260,38 +260,42 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 
 		M_ASSERT(bc->bc_dev_flush_pending_count >= 1);
 
-		if (wi->devio_gennum > bc->bc_dev_gennum_flush) {
-			int ret;
-			struct flush_meta *meta;
-
-			bc->bc_dev_gennum_flush = wi->devio_gennum;
-			gennum = wi->devio_gennum;
-
-			bc->bc_dev_pure_flush_pending_count++;
-			bc->bc_dev_explicit_flush_total_count++;
-
-			spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
-
-			if(__xxxyyy)printk_debug("end_bio: last request: issue explicit flush up to gennum=%llu\n", gennum);
-
-			/* defer to worker thread, which will start io */
-
-			/*
-			 * Trying to do error handling for such a small struct
-			 * seems overkill.
-			 */
-			meta = kmem_alloc(sizeof (struct flush_meta), GFP_ATOMIC);
-			M_ASSERT(meta != NULL);
-
-			meta->magic = FLUSH_META_MAGIC;
-			meta->bc = bc;
-			INIT_WORK(&meta->work, cached_devio_flush_worker);
-			meta->gennum = gennum;
-			ret = queue_work(bc->bc_dev_flush_wq, &meta->work);
-			ASSERT(ret == 1);
-		} else
-			spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
+		spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 	}
+
+	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
+
+	if (gennum > bc->bc_dev_gennum_flush) {
+		int ret;
+		struct flush_meta *meta;
+
+		bc->bc_dev_gennum_flush = gennum;
+
+		bc->bc_dev_pure_flush_pending_count++;
+		bc->bc_dev_explicit_flush_total_count++;
+
+		spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
+
+		if(__xxxyyy)printk_debug("end_bio: last request: issue explicit flush up to gennum=%llu\n", gennum);
+
+		/* defer to worker thread, which will start io */
+
+		/*
+		 * Trying to do error handling for such a small struct
+		 * seems overkill.
+		 */
+		meta = kmem_alloc(sizeof (struct flush_meta), GFP_ATOMIC);
+		M_ASSERT(meta != NULL);
+
+		meta->magic = FLUSH_META_MAGIC;
+		meta->bc = bc;
+		INIT_WORK(&meta->work, cached_devio_flush_worker);
+		meta->gennum = gennum;
+		ret = queue_work(bc->bc_dev_flush_wq, &meta->work);
+		ASSERT(ret == 1);
+	}
+
+	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 }
 
 void cached_devio_make_request(struct bittern_cache *bc,

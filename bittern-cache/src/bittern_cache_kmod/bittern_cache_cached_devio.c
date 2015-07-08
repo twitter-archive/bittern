@@ -55,9 +55,9 @@ static void cached_devio_flush_end_bio_process(struct bittern_cache *bc, uint64_
 			if (wi->devio_gennum <= gennum) {
 				M_ASSERT(!list_empty(&bc->bc_dev_flush_pending_list));
 				list_del_init(&wi->devio_pending_list);
-				c = atomic_dec_return(&bc->bc_dev_flush_pending_count);
-				M_ASSERT(c >= 0);
-				if (c == 0)
+				bc->bc_dev_flush_pending_count--;
+				M_ASSERT(bc->bc_dev_flush_pending_count >= 0);
+				if (bc->bc_dev_flush_pending_count == 0)
 					M_ASSERT(list_empty(&bc->bc_dev_flush_pending_list));
 				else
 					M_ASSERT(!list_empty(&bc->bc_dev_flush_pending_list));
@@ -90,6 +90,7 @@ static void cached_devio_flush_end_bio(struct bio *bio, int err)
 	struct flush_meta *meta;
 	struct bittern_cache *bc;
 	uint64_t gennum;
+	unsigned long flags;
 
 	meta = bio->bi_private;
 	ASSERT(meta->magic == FLUSH_META_MAGIC);
@@ -97,7 +98,9 @@ static void cached_devio_flush_end_bio(struct bio *bio, int err)
 	gennum = meta->gennum;
 	ASSERT_BITTERN_CACHE(bc);
 
+	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
 	atomic_dec(&bc->bc_dev_pure_flush_pending_count);
+	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 
 	if(__xxxyyy)printk_debug("flush_end_bio: need to ack up to gennum = %llu\n", gennum);
 
@@ -200,9 +203,9 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 
 	M_ASSERT(!list_empty(&bc->bc_dev_pending_list));
 	list_del_init(&wi->devio_pending_list);
-	c = atomic_dec_return(&bc->bc_dev_pending_count);
-	M_ASSERT(c >= 0);
-	if (c == 0)
+	bc->bc_dev_pending_count--;
+	M_ASSERT(bc->bc_dev_pending_count >= 0);
+	if (bc->bc_dev_pending_count == 0)
 		M_ASSERT(list_empty(&bc->bc_dev_pending_list));
 	else
 		M_ASSERT(!list_empty(&bc->bc_dev_pending_list));
@@ -253,16 +256,22 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 			     wi->devio_gennum);
 
 		list_add_tail(&wi->devio_pending_list, &bc->bc_dev_flush_pending_list);
-		atomic_inc(&bc->bc_dev_flush_pending_count);
+		bc->bc_dev_flush_pending_count++;
 
-		c = atomic_read(&bc->bc_dev_flush_pending_count);
-		M_ASSERT(c >= 1);
+		M_ASSERT(bc->bc_dev_flush_pending_count >= 1);
 
-		spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
-
-		if (c == 1) {
+		if (wi->devio_gennum < bc->bc_dev_gennum_flush) {
 			int ret;
 			struct flush_meta *meta;
+
+			bc->bc_dev_gennum_flush = wi->devio_gennum;
+			gennum = wi->devio_gennum;
+
+			bc->bc_dev_pure_flush_pending_count++;
+			bc->bc_dev_explicit_flush_total_count++;
+
+			spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
+
 			if(__xxxyyy)printk_debug("end_bio: last request: issue explicit flush up to gennum=%llu\n", gennum);
 
 			/* defer to worker thread, which will start io */
@@ -274,15 +283,14 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 			meta = kmem_alloc(sizeof (struct flush_meta), GFP_ATOMIC);
 			M_ASSERT(meta != NULL);
 
-			atomic_inc(&bc->bc_dev_pure_flush_pending_count);
-
 			meta->magic = FLUSH_META_MAGIC;
 			meta->bc = bc;
 			INIT_WORK(&meta->work, cached_devio_flush_worker);
 			meta->gennum = gennum;
 			ret = queue_work(bc->bc_dev_flush_wq, &meta->work);
 			ASSERT(ret == 1);
-		}
+		} else
+			spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 	}
 }
 
@@ -303,15 +311,17 @@ void cached_devio_make_request(struct bittern_cache *bc,
 	 * Add to bc_dev_pending_list.
 	 */
 	list_add_tail(&wi->devio_pending_list, &bc->bc_dev_pending_list);
-	atomic_inc(&bc->bc_dev_pending_count);
+	bc->bc_dev_pending_count++;
+
 	if (bio_data_dir_write(bio)) {
-		wi->devio_gennum = atomic64_inc_return(&bc->bc_dev_gennum);
-		if (wi->devio_gennum - atomic64_read(&bc->bc_dev_gennum_flush) > 4) {
+		wi->devio_gennum = ++bc->bc_dev_gennum;
+		if ((wi->devio_gennum - bc->bc_dev_gennum_flush) > 4) {
+			bc->bc_dev_implicit_flush_total_count++;
 			/*
 			 * Issue flush
 			 */
 			bio->bi_rw |= REQ_FLUSH | REQ_FUA;
-			atomic64_set(&bc->bc_dev_gennum_flush, wi->devio_gennum);
+			bc->bc_dev_gennum_flush = wi->devio_gennum;
 			if(__xxxyyy)printk_debug("ISSUE write+flush bio %p bi_sector=%lu, gennum=%llu\n",
 				     bio,
 				     bio->bi_iter.bi_sector,

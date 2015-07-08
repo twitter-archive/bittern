@@ -858,17 +858,23 @@ ssize_t cache_op_show_stats_extra(struct bittern_cache *bc,
 	       atomic_read(&bc->bc_dirty_write_clone_alloc_ok),
 	       atomic_read(&bc->bc_dirty_write_clone_alloc_fail),
 	       list_empty(&bc->bc_pending_requests_list));
-	DMEMIT("%s: stats_extra: bc_make_request_count=%u bc_make_request_wq_count=%u\n",
+	DMEMIT("%s: stats_extra: make_request_count=%u make_request_wq_count=%u\n",
 	       bc->bc_name,
 	       atomic_read(&bc->bc_make_request_wq_count),
 	       atomic_read(&bc->bc_make_request_wq_count));
-	DMEMIT("%s: stats_extra: bc_dev_pending_count=%d bc_dev_flush_pending_count=%d bc_dev_pure_flush_pending_count=%d bc_dev_gennum=%ld bc_dev_gennum_flush=%ld\n",
+	DMEMIT("%s: stats_extra: dev_pending_count=%d dev_flush_pending_count=%d dev_pure_flush_pending_count=%d\n",
 	       bc->bc_name,
-	       atomic_read(&bc->bc_dev_pending_count),
-	       atomic_read(&bc->bc_dev_flush_pending_count),
-	       atomic_read(&bc->bc_dev_pure_flush_pending_count),
-	       atomic64_read(&bc->bc_dev_gennum),
-	       atomic64_read(&bc->bc_dev_gennum_flush));
+	       bc->bc_dev_pending_count,
+	       bc->bc_dev_flush_pending_count,
+	       bc->bc_dev_pure_flush_pending_count);
+	DMEMIT("%s: stats_extra: dev_implicit_flush_total_count=%llu dev_explicit_flush_total_count=%llu\n",
+	       bc->bc_name,
+	       bc->bc_dev_implicit_flush_total_count,
+	       bc->bc_dev_explicit_flush_total_count);
+	DMEMIT("%s: stats_extra: dev_gennum=%llu dev_gennum_flush=%llu\n",
+	       bc->bc_name,
+	       bc->bc_dev_gennum,
+	       bc->bc_dev_gennum_flush);
 	{
 		unsigned long flags;
 		struct work_item *wi;

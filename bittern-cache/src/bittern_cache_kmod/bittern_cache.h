@@ -885,13 +885,17 @@ struct bittern_cache {
 	 */
 	struct list_head bc_dev_pending_list;
 	/*! counts elements in @ref bc_dev_bio_pending */
-	atomic_t bc_dev_pending_count;
+	int bc_dev_pending_count;
 	/*! list of all pending FLUSH requests issed to @ref bc_dev */
 	struct list_head bc_dev_flush_pending_list;
 	/*! counts elements in @ref bc_dev_flush_pending */
-	atomic_t bc_dev_flush_pending_count;
+	int bc_dev_flush_pending_count;
 	/*! counts number of pending pure flushes */
-	atomic_t bc_dev_pure_flush_pending_count;
+	int bc_dev_pure_flush_pending_count;
+	/*! count of implicit flushes */
+	uint64_t bc_dev_implicit_flush_total_count;
+	/*! count of explicit flushes */
+	uint64_t bc_dev_explicit_flush_total_count;
 	/*!
 	 * Generation number used to associate requests which
 	 * have been issued before a given generation number.
@@ -905,15 +909,17 @@ struct bittern_cache {
 	 * When flush request F3 is acknowledged, every previously queued
 	 * request (which has a generation number equal or less than 3)
 	 * can be acknowledged.
+	 * \todo handle rollover
 	 */
-	atomic64_t bc_dev_gennum;
+	uint64_t bc_dev_gennum;
 	/*!
 	 * Gennum of last flush which was issued.
 	 * (@ref bc_dev_gennum_flush - ref @bc_dev_gennum) tells
 	 * how many write requests were issued after the last flush
 	 * was issued.
+	 * \todo handle rollover
 	 */
-	atomic64_t bc_dev_gennum_flush;
+	uint64_t bc_dev_gennum_flush;
 	/*! workqueue used to issue explicit flushes */
 	struct workqueue_struct *bc_dev_flush_wq;
 

@@ -274,8 +274,6 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 		bc->bc_dev_pure_flush_pending_count++;
 		bc->bc_dev_explicit_flush_total_count++;
 
-		spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
-
 		if(__xxxyyy)printk_debug("end_bio: last request: issue explicit flush up to gennum=%llu\n", gennum);
 
 		/* defer to worker thread, which will start io */

@@ -18,7 +18,7 @@
 
 #include "bittern_cache.h"
 
-static bool __xxxyyy = false;
+static bool __xxxyyy = true;
 
 #define FLUSH_META_MAGIC	0xf10c9a21
 /*! passed as bi_private field to the pure flush bio */
@@ -231,7 +231,7 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 		/*
 		 * ack previously pending writes, then ack current work_item.
 		 */
-		if(__xxxyyy)printk_debug("end_bio: bio %p bi_sector=%lu, gennum=%llu, flush done\n",
+		if(__xxxyyy)printk_debug("end_bio: bio %p bi_sector=%lu, gennum=%llu, write+flush done\n",
 			     bio,
 			     bio->bi_iter.bi_sector,
 			     wi->devio_gennum);
@@ -239,6 +239,8 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 		spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 
 		cached_devio_flush_end_bio_process(bc, wi->devio_gennum);
+
+		cached_dev_make_request_endio(wi, bio, err);
 
 	} else {
 		/*

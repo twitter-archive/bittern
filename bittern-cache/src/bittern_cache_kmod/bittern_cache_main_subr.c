@@ -1101,6 +1101,7 @@ static void cached_dev_make_request_endio(struct work_item *wi,
 struct flush_meta {
 	int magic;
 	struct bittern_cache *bc;
+	struct work_struct work;
 	uint64_t gennum;
 };
 
@@ -1114,14 +1115,14 @@ static void cached_dev_flush_end_bio(struct bio *bio, int err)
 	uint64_t gennum;
 
 	meta = bio->bi_private;
-	printk_err("flush_end_bio: bio %p flush done, flush_meta %p\n", bio, meta);
+	printk_debug("flush_end_bio: bio %p flush done, flush_meta %p\n", bio, meta);
 
 	ASSERT(meta->magic == FLUSH_META_MAGIC);
 	bc = meta->bc;
 	gennum = meta->gennum;
 	ASSERT_BITTERN_CACHE(bc);
 
-	printk_err("flush_end_bio: gennum = %llu\n", gennum);
+	printk_debug("flush_end_bio: need to ack up to gennum = %llu\n", gennum);
 
 	bio_put(bio);
 
@@ -1137,30 +1138,21 @@ static void cached_dev_flush_worker(struct work_struct *work)
 	struct bio *bio;
 	struct flush_meta *meta;
 
-	printk_err("dev_flush worker: issue flush\n");
-
 	ASSERT(!in_irq());
 	ASSERT(!in_softirq());
 
-	wi = container_of(work, struct work_item, wi_work);
-	__ASSERT_WORK_ITEM(wi);
-	bc = wi->wi_cache;
+	meta = container_of(work, struct flush_meta, work);
+	ASSERT(meta->magic == FLUSH_META_MAGIC);
+	bc = meta->bc;
 	ASSERT_BITTERN_CACHE(bc);
-	ASSERT_WORK_ITEM(wi, bc);
 
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-		     "in_irq=%lu, in_softirq=%lu, bc=%p, wi=%p, work=%p",
+		     "in_irq=%lu, in_softirq=%lu, bc=%p, work=%p, gennum=%llu",
 		     in_irq(),
 		     in_softirq(),
 		     bc,
-		     wi,
-		     &wi->wi_work);
-
-	meta = kmem_alloc(sizeof (struct flush_meta), GFP_NOIO);
-	M_ASSERT_FIXME(meta != NULL);
-	meta->magic = FLUSH_META_MAGIC;
-	meta->bc = bc;
-	meta->gennum = wi->bi_gennum;
+		     &meta->work,
+		     meta->gennum);
 
 	bio = bio_alloc(GFP_NOIO, 1);
 #if 0
@@ -1188,14 +1180,12 @@ static void cached_dev_flush_worker(struct work_struct *work)
 	bio->bi_private = meta;
 	bio->bi_vcnt = 0;
 
-	wi->bi_flags = bio->bi_rw;
-
 	/*
 	 * work_item is already in the pending_flush queue,
 	 * so don't readd it.
 	 */
 
-	printk_debug("ISSUE pure flush bio %p bi_sector=%lu, gennum=%llu\n",
+	printk_debug("worker: ISSUE pure flush bio %p bi_sector=%lu, gennum=%llu\n",
 		     bio,
 		     bio->bi_iter.bi_sector,
 		     meta->gennum);
@@ -1240,7 +1230,7 @@ static void cached_dev_make_request_end_bio(struct bio *bio, int err)
 	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 
 	if (bio_data_dir(bio) == READ) {
-		printk_err("end_bio: process read bio %p\n", bio);
+		printk_debug("end_bio: process read bio %p\n", bio);
 		/*
 		 * Process READ request acks immediately.
 		 */
@@ -1261,7 +1251,7 @@ static void cached_dev_make_request_end_bio(struct bio *bio, int err)
 		/*
 		 * ack previously pending writes, then ack current work_item.
 		 */
-		printk_err("end_bio: bio %p bi_sector=%lu, gennum=%llu, flush done\n",
+		printk_debug("end_bio: bio %p bi_sector=%lu, gennum=%llu, flush done\n",
 			     bio,
 			     bio->bi_iter.bi_sector,
 			     wi->bi_gennum);
@@ -1272,7 +1262,7 @@ static void cached_dev_make_request_end_bio(struct bio *bio, int err)
 		 * Just wait until a flush is processed. If this is the only
 		 * write request in the queue, issue an explicit flush.
 		 */
-		printk_err("end_bio: add bio %p bi_sector=%lu, gennum=%llu, waiting for flush\n",
+		printk_debug("end_bio: add bio %p bi_sector=%lu, gennum=%llu, waiting for flush\n",
 			     bio,
 			     bio->bi_iter.bi_sector,
 			     wi->bi_gennum);
@@ -1281,13 +1271,23 @@ static void cached_dev_make_request_end_bio(struct bio *bio, int err)
 		M_ASSERT(c >= 1);
 		if (c == 1) {
 			int ret;
-			printk_err("end_bio: bio %p bi_sector=%lu, gennum=%llu: issue explicit flush\n",
-				     bio,
-				     bio->bi_iter.bi_sector,
-				     wi->bi_gennum);
+			struct flush_meta *meta;
+			printk_debug("end_bio: last reuquest: issue explicit flush\n");
+
 			/* defer to worker thread, which will start io */
-			INIT_WORK(&wi->wi_work, cached_dev_flush_worker);
-			ret = queue_work(bc->bc_dev_flush_wq, &wi->wi_work);
+
+			/*
+			 * Trying to do error handling for such a small struct
+			 * seems overkill.
+			 */
+			meta = kmem_alloc(sizeof (struct flush_meta), GFP_ATOMIC);
+			M_ASSERT(meta != NULL);
+
+			meta->magic = FLUSH_META_MAGIC;
+			meta->bc = bc;
+			INIT_WORK(&meta->work, cached_dev_flush_worker);
+			meta->gennum = wi->bi_gennum;
+			ret = queue_work(bc->bc_dev_flush_wq, &meta->work);
 			ASSERT(ret == 1);
 		}
 		spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
@@ -1298,7 +1298,7 @@ void cached_dev_flush_end_bio_process(struct bittern_cache *bc, uint64_t gennum)
 {
 	bool processed;
 
-	printk_err("end_bio_process: processing flush, gennum=%llu\n", gennum);
+	printk_debug("end_bio_process: processing flush, gennum=%llu\n", gennum);
 
 	/*
 	 * ack previously pending writes
@@ -1337,7 +1337,7 @@ void cached_dev_flush_end_bio_process(struct bittern_cache *bc, uint64_t gennum)
 					     wi->bi_gennum,
 					     gennum);
 			}
-			M_ASSERT(cc++ < 500);
+			M_ASSERT(cc++ < 10000);
 		}
 		spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 	} while (processed);

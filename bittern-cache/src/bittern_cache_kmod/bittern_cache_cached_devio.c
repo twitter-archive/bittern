@@ -260,7 +260,7 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 
 		M_ASSERT(bc->bc_dev_flush_pending_count >= 1);
 
-		if (wi->devio_gennum < bc->bc_dev_gennum_flush) {
+		if (wi->devio_gennum > bc->bc_dev_gennum_flush) {
 			int ret;
 			struct flush_meta *meta;
 

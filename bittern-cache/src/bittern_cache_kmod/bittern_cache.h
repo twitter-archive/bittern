@@ -253,6 +253,11 @@ struct work_item {
 	struct list_head bi_dev_flush_pending_list;
 	/*! generation number for this work_item */
 	int64_t bi_gennum;
+	/*!
+	 * Copy of current bio's flags. Looking at the bio flags
+	 * is not possible, as block IO layer may strip them.
+	 */
+	int bi_flags;
 };
 #define __ASSERT_WORK_ITEM(__wi) ({					\
 	/* make sure it's l-value, compiler will optimize this away */	\

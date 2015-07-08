@@ -1096,24 +1096,37 @@ static void cached_dev_make_request_endio(struct work_item *wi,
 	cache_state_machine(bc, wi, err);
 }
 
-/*forward*/ void cached_dev_flush_end_bio_process(struct bittern_cache *bc, struct work_item *wi);
+#define FLUSH_META_MAGIC	0xf10c9a21
+/*! passed as bi_private field to the pure flush bio */
+struct flush_meta {
+	int magic;
+	struct bittern_cache *bc;
+	uint64_t gennum;
+};
 
+/*forward*/ void cached_dev_flush_end_bio_process(struct bittern_cache *bc, uint64_t gennum);
+
+/*! handles completion of pureflush request */
 static void cached_dev_flush_end_bio(struct bio *bio, int err)
 {
+	struct flush_meta *meta;
 	struct bittern_cache *bc;
-	struct cache_block *cache_block;
-	struct work_item *wi;
-	unsigned long flags;
-	int c;
+	uint64_t gennum;
 
-	ASSERT(bio != NULL);
-	wi = bio->bi_private;
-	ASSERT(wi != NULL);
+	printk_err("flush_end_bio: bio %p flush done, flush_meta %p\n", bio, flush_meta);
 
-	bc = wi->wi_cache;
+	meta = bio->bi_private;
+	ASSERT(meta->magic == FLUSH_META_MAGIC);
+	bc = meta->bc;
+	gennum = meta->gennum;
 	ASSERT_BITTERN_CACHE(bc);
 
-	printk_err("flush done\n");
+	printk_err("flush_end_bio: gennum = %llu\n", gennum);
+
+	bio_put(bio);
+
+	kmem_free(meta, sizeof(struct flush_meta));
+
 	cached_dev_flush_end_bio_process(bc, wi);
 }
 
@@ -1122,7 +1135,10 @@ static void cached_dev_flush_worker(struct work_struct *work)
 	struct work_item *wi;
 	struct bittern_cache *bc;
 	struct bio *bio;
+	struct flush_meta *meta;
 	unsigned long flags;
+
+	printk_err("dev_flush worker: issue flush\n");
 
 	ASSERT(!in_irq());
 	ASSERT(!in_softirq());
@@ -1140,7 +1156,12 @@ static void cached_dev_flush_worker(struct work_struct *work)
 		     bc,
 		     wi,
 		     &wi->wi_work);
-	printk_err("dev_flush worker: issue flush\n");
+
+	meta = kmem_alloc(sizeof (struct flush_meta), GFP_NOIO);
+	M_ASSERT_FIXME(meta != NULL);
+	meta->magic = FLUSH_META_MAGIC;
+	meta->bc = bc;
+	meta->gennum = wi->bi_gennum;
 
 	bio = bio_alloc(GFP_NOIO, 1);
 #if 0
@@ -1165,19 +1186,20 @@ static void cached_dev_flush_worker(struct work_struct *work)
 	bio->bi_iter.bi_size = 0;
 	bio->bi_bdev = bc->bc_dev->bdev;
 	bio->bi_end_io = cached_dev_flush_end_bio;
-	bio->bi_private = wi;
+	bio->bi_private = meta;
 	bio->bi_vcnt = 0;
 
-	/* this work_item is already in the pending_flush queue */
-	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
-	wi->bi_gennum = atomic64_inc_return(&bc->bc_dev_gennum);
-	atomic64_set(&bc->bc_dev_gennum_flush, wi->bi_gennum);
-	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
+	wi->bi_flags = bio->bi_rw;
 
-	printk_debug("flush bio %p bi_sector=%lu, gennum=%llu\n",
+	/*
+	 * work_item is already in the pending_flush queue,
+	 * so don't readd it.
+	 */
+
+	printk_debug("ISSUE pure flush bio %p bi_sector=%lu, gennum=%llu\n",
 		     bio,
 		     bio->bi_iter.bi_sector,
-		     wi->bi_gennum);
+		     meta->gennum);
 
 	generic_make_request(bio);
 }
@@ -1219,6 +1241,7 @@ static void cached_dev_make_request_end_bio(struct bio *bio, int err)
 	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 
 	if (bio_data_dir(bio) == READ) {
+		printk_err("end_bio: process read bio %p\n", bio);
 		/*
 		 * Process READ request acks immediately.
 		 */
@@ -1232,67 +1255,34 @@ static void cached_dev_make_request_end_bio(struct bio *bio, int err)
 	 * If not, leave the write in pending_flush state until we get
 	 * the next flush acknowledge.
 	 */
-	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
-	if ((bio->bi_rw & (REQ_FLUSH | REQ_FUA)) != 0) {
-		bool processed;
-		M_ASSERT((bio->bi_rw & (REQ_FLUSH | REQ_FUA)) ==
+	if ((wi->bi_flags & (REQ_FLUSH | REQ_FUA)) != 0) {
+		M_ASSERT((wi->bi_flags & (REQ_FLUSH | REQ_FUA)) ==
 			 (REQ_FLUSH | REQ_FUA));
 
 		/*
-		 * ack previously pending writes
+		 * ack previously pending writes, then ack current work_item.
 		 */
-		do {
-			struct work_item *pend_wi;
-			struct bio *pend_bio;
-
-			processed = false;
-			list_for_each_entry(pend_wi,
-					    &bc->bc_dev_flush_pending_list,
-					    bi_dev_flush_pending_list) {
-				pend_bio = pend_wi->wi_cloned_bio;
-				if (pend_wi->bi_gennum < wi->bi_gennum) {
-					list_del_init(&wi->bi_dev_flush_pending_list);
-					c = atomic_dec_return(&bc->bc_dev_flush_pending_count);
-					M_ASSERT(c >= 0);
-					printk_debug("bio %p bi_sector=%lu, gennum=%llu, flush wait done\n",
-						     pend_bio,
-						     pend_bio->bi_iter.bi_sector,
-						     pend_wi->bi_gennum);
-					spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
-					cached_dev_make_request_endio(wi, bio, err);
-					spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
-					processed = true;
-					break;
-				}
-			}
-		} while (processed);
-
-		/*
-		 * fall thru
-		 */
-		list_del_init(&wi->bi_dev_flush_pending_list);
-		c = atomic_dec_return(&bc->bc_dev_flush_pending_count);
-		M_ASSERT(c >= 0);
-		spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
-		printk_debug("bio %p bi_sector=%lu, gennum=%llu, flush done\n",
+		printk_err("end_bio: bio %p bi_sector=%lu, gennum=%llu, flush done\n",
 			     bio,
 			     bio->bi_iter.bi_sector,
 			     wi->bi_gennum);
-		cached_dev_make_request_endio(wi, bio, err);
+		cached_dev_flush_end_bio_process(bc, wi->bi_gennum);
+
 	} else {
 		/*
 		 * Just wait until a flush is processed. If this is the only
 		 * write request in the queue, issue an explicit flush.
 		 */
-		printk_debug("bio %p bi_sector=%lu, gennum=%llu, waiting for flush\n",
+		printk_err("end_bio: add bio %p bi_sector=%lu, gennum=%llu, waiting for flush\n",
 			     bio,
 			     bio->bi_iter.bi_sector,
 			     wi->bi_gennum);
+		spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
 		c = atomic_read(&bc->bc_dev_flush_pending_count);
 		M_ASSERT(c >= 1);
 		if (c == 1) {
 			int ret;
-			printk_debug("bio %p bi_sector=%lu, gennum=%llu: issue explicit flush\n",
+			printk_err("end_bio: bio %p bi_sector=%lu, gennum=%llu: issue explicit flush\n",
 				     bio,
 				     bio->bi_iter.bi_sector,
 				     wi->bi_gennum);
@@ -1301,13 +1291,55 @@ static void cached_dev_make_request_end_bio(struct bio *bio, int err)
 			ret = queue_work(bc->bc_dev_flush_wq, &wi->wi_work);
 			ASSERT(ret == 1);
 		}
+		spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 	}
-	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 }
 
-void cached_dev_flush_end_bio_process(struct bittern_cache *bc, struct work_item *wi)
+void cached_dev_flush_end_bio_process(struct bittern_cache *bc, uint64_t gennum)
 {
-	printk_err("flush_end_bio_process gennum=%llu\n", wi->bi_gennum);
+	bool processed;
+
+	printk_err("end_bio_process: processing flush, gennum=%llu\n", gennum);
+
+	/*
+	 * ack previously pending writes
+	 */
+	do {
+		struct work_item *wi;
+		struct bio *bio;
+		int c;
+		unsigned long flags;
+		int cc = 0;
+
+		processed = false;
+		spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
+		list_for_each_entry(wi,
+				    &bc->bc_dev_flush_pending_list,
+				    bi_dev_flush_pending_list) {
+			bio = pend_wi->wi_cloned_bio;
+			if (gennum >= wi->bi_gennum) {
+				list_del_init(&wi->bi_dev_flush_pending_list);
+				c = atomic_dec_return(&bc->bc_dev_flush_pending_count);
+				M_ASSERT(c >= 0);
+				printk_debug("end_bio_process: PROCESS bio %p bi_sector=%lu, gennum=%llu, flush wait done\n",
+					     bio,
+					     bio->bi_iter.bi_sector,
+					     wi->bi_gennum);
+				spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
+				cached_dev_make_request_endio(wi, bio, 0);
+				spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
+				processed = true;
+				break;
+			} else {
+				printk_debug("end_bio_process: do not process bio %p bi_sector=%lu, gennum=%llu, flush still wait\n",
+					     bio,
+					     bio->bi_iter.bi_sector,
+					     wi->bi_gennum);
+			}
+			M_ASSERT(cc++ < 500);
+		}
+		spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
+	} while (processed);
 }
 
 /*!
@@ -1328,6 +1360,13 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_WORK_ITEM(wi, bc);
 
+	BT_DEV_TRACE(BT_LEVEL_TRACE0, bc, NULL, NULL, NULL, NULL,
+		     "in_irq=%lu, in_softirq=%lu, wi=%p, datadir=%d, set_original_bio=%d",
+		     in_irq(),
+		     in_softirq(),
+		     wi,
+		     datadir,
+		     set_original_bio);
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
 		     "in_irq=%lu, in_softirq=%lu, wi=%p, datadir=%d, set_original_bio=%d",
 		     in_irq(),
@@ -1415,18 +1454,20 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 			 */
 			bio->bi_rw |= REQ_FLUSH | REQ_FUA;
 			atomic64_set(&bc->bc_dev_gennum_flush, wi->bi_gennum);
-			printk_debug("write_flush bio %p bi_sector=%lu, gennum=%llu\n",
+			printk_debug("ISSUE write+flush bio %p bi_sector=%lu, gennum=%llu\n",
 				     bio,
 				     bio->bi_iter.bi_sector,
 				     wi->bi_gennum);
 		} else {
-			printk_debug("write bio %p bi_sector=%lu, gennum=%llu\n",
+			printk_debug("ISSUE write bio %p bi_sector=%lu, gennum=%llu\n",
 				     bio,
 				     bio->bi_iter.bi_sector,
 				     wi->bi_gennum);
 		}
 	}
 	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
+
+	wi->bi_flags = bio->bi_rw;
 
 	generic_make_request(bio);
 }

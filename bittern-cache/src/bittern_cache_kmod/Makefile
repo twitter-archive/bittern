@@ -33,6 +33,7 @@ M_SOURCE_FILES = bittern_cache_module.c \
 			bittern_cache_module_dtr.c \
 			bittern_cache_main.c \
 			bittern_cache_main_subr.c \
+			bittern_cache_cached_devio.c \
 			bittern_cache_sm_read.c \
 			bittern_cache_sm_write.c \
 			bittern_cache_sm_pwrite.c \
@@ -64,6 +65,7 @@ bittern_cache-objs := bittern_cache_module.o \
 			bittern_cache_module_dtr.o \
 			bittern_cache_main.o \
 			bittern_cache_main_subr.o \
+			bittern_cache_cached_devio.o \
 			bittern_cache_sm_read.o \
 			bittern_cache_sm_write.o \
 			bittern_cache_sm_pwrite.o \

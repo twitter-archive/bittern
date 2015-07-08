@@ -18,7 +18,7 @@
 
 #include "bittern_cache.h"
 
-static bool __xxxyyy = true;
+static bool __xxxyyy = false;
 
 #define FLUSH_META_MAGIC	0xf10c9a21
 /*! passed as bi_private field to the pure flush bio */

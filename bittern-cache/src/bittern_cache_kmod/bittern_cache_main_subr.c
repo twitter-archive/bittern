@@ -1114,13 +1114,6 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_WORK_ITEM(wi, bc);
 
-	BT_DEV_TRACE(BT_LEVEL_TRACE0, bc, NULL, NULL, NULL, NULL,
-		     "in_irq=%lu, in_softirq=%lu, wi=%p, datadir=%d, set_original_bio=%d",
-		     in_irq(),
-		     in_softirq(),
-		     wi,
-		     datadir,
-		     set_original_bio);
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
 		     "in_irq=%lu, in_softirq=%lu, wi=%p, datadir=%d, set_original_bio=%d",
 		     in_irq(),

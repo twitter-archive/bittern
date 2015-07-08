@@ -1316,7 +1316,7 @@ void cached_dev_flush_end_bio_process(struct bittern_cache *bc, uint64_t gennum)
 				    &bc->bc_dev_flush_pending_list,
 				    bi_dev_flush_pending_list) {
 			bio = wi->wi_cloned_bio;
-			if (wi->bi_gennum < gennum) {
+			if (wi->bi_gennum <= gennum) {
 				list_del_init(&wi->bi_dev_flush_pending_list);
 				c = atomic_dec_return(&bc->bc_dev_flush_pending_count);
 				M_ASSERT(c >= 0);

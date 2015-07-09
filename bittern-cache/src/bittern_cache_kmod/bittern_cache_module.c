@@ -871,10 +871,11 @@ ssize_t cache_op_show_stats_extra(struct bittern_cache *bc,
 	       bc->bc_name,
 	       bc->bc_dev_implicit_flush_total_count,
 	       bc->bc_dev_explicit_flush_total_count);
-	DMEMIT("%s: stats_extra: dev_gennum=%llu dev_gennum_flush=%llu\n",
+	DMEMIT("%s: stats_extra: dev_gennum=%llu dev_gennum_flush=%llu dev_gennum_delayed_flush=%llu\n",
 	       bc->bc_name,
 	       bc->bc_dev_gennum,
-	       bc->bc_dev_gennum_flush);
+	       bc->bc_dev_gennum_flush,
+	       bc->bc_dev_gennum_delayed_flush);
 	{
 		unsigned long flags;
 		struct work_item *wi;

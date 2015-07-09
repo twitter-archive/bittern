@@ -115,6 +115,7 @@ static void cached_devio_flush_worker(struct work_struct *work)
 	struct bittern_cache *bc;
 	struct bio *bio;
 	struct flush_meta *meta;
+	uint64_t gennum;
 
 	ASSERT(!in_irq());
 	ASSERT(!in_softirq());
@@ -158,7 +159,12 @@ static void cached_devio_flush_worker(struct work_struct *work)
 	bio->bi_private = meta;
 	bio->bi_vcnt = 0;
 
-	if(__xxxyyy)printk_debug("worker: ISSUE pure flush gennum=%llu\n", meta->gennum);
+	gennum = bc->bc_dev_gennum;
+	bc->bc_dev_gennum_flush = gennum;
+
+	if(__xxxyyy)printk_debug("worker: ISSUE pure flush gennum=%llu/%llu\n", meta->gennum, gennum);
+	if (meta->gennum != gennum)
+		if(__xxxyyy)printk_debug("worker: ISSUE pure flush gennum=%llu/%llu <--- UPDATED\n", meta->gennum, gennum);
 
 	generic_make_request(bio);
 }
@@ -259,39 +265,11 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 		M_ASSERT(bc->bc_dev_flush_pending_count >= 1);
 	}
 
-	__xxx = 0;
-#if 0
-	wi = NULL;
-	list_for_each_entry(wi,
-			    &bc->bc_dev_flush_pending_list,
-			    devio_pending_list) {
-		ASSERT_WORK_ITEM(wi, bc);
-		if (wi->devio_gennum > bc->bc_dev_gennum_flush) {
-			gennum = wi->devio_gennum;
-			__xxx = 1;
-			break;
-		}
-	}
-#endif
-	M_ASSERT(bc->bc_dev_flush_pending_count >= 1);
-	if (bc->bc_dev_flush_pending_count == 1) {
-		/*
-		 * If there is only one request waiting for a flush,
-		 * there is no guarantee that there will be such flush
-		 * (could be the last request), so issue explicit flush.
-		 *
-		 * \todo this can be optimized a bit more.
-		 *
-		 */
-		__xxx = 1;
-	}
-
-	if (__xxx) {
+	if (bc->bc_dev_flush_pending_count > 0) {
 		int ret;
 		struct flush_meta *meta;
 
-		M_ASSERT(gennum > bc->bc_dev_gennum_flush);
-		bc->bc_dev_gennum_flush = gennum;
+		bc->bc_dev_gennum_flush = bc->bc_dev_gennum;
 
 		bc->bc_dev_pure_flush_pending_count++;
 		bc->bc_dev_explicit_flush_total_count++;

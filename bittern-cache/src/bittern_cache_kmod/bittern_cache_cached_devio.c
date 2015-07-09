@@ -65,9 +65,14 @@ static void cached_devio_flush_end_bio_process(struct bittern_cache *bc, uint64_
 					     bio->bi_iter.bi_sector,
 					     wi->devio_gennum,
 					     gennum);
+
 				spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
+
+				cache_timer_add(&bc->bc_timer_cached_device_flushes, wi->wi_ts_physio_flush);
 				cached_dev_make_request_endio(wi, bio, 0);
+
 				spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
+
 				processed = true;
 				break;
 			} else {
@@ -223,6 +228,8 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 		return;
 	}
 
+	wi->wi_ts_physio_flush = current_kernel_time_nsec();
+
 	/*
 	 * If this is a flush, acknowledge all pending writes which
 	 * have a gennum lower that the current flush.
@@ -244,6 +251,7 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 
 		cached_devio_flush_end_bio_process(bc, wi->devio_gennum);
 
+		cache_timer_add(&bc->bc_timer_cached_device_flushes, wi->wi_ts_physio_flush);
 		cached_dev_make_request_endio(wi, bio, err);
 
 		spin_lock_irqsave(&bc->bc_dev_spinlock, flags);

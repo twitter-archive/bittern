@@ -1436,8 +1436,6 @@ ssize_t cache_op_show_timers(struct bittern_cache *bc, char *result)
 	       T_FMT_ARGS(bc, bc_timer_read_dirty_hits),
 	       T_FMT_ARGS(bc, bc_timer_write_dirty_hits));
 	DMEMIT("%s: timers: "
-	       T_FMT_STRING("cached_device_reads") " "
-	       T_FMT_STRING("cached_device_writes") " "
 	       T_FMT_STRING("writebacks") " "
 	       T_FMT_STRING("invalidations") " "
 	       T_FMT_STRING("pending_queue") " "
@@ -1445,13 +1443,21 @@ ssize_t cache_op_show_timers(struct bittern_cache *bc, char *result)
 	       T_FMT_STRING("deferred_wait_page") " "
 	       "\n",
 	       bc->bc_name,
-	       T_FMT_ARGS(bc, bc_timer_cached_device_reads),
-	       T_FMT_ARGS(bc, bc_timer_cached_device_writes),
 	       T_FMT_ARGS(bc, bc_timer_writebacks),
 	       T_FMT_ARGS(bc, bc_timer_invalidations),
 	       T_FMT_ARGS(bc, bc_timer_pending_queue),
 	       T_FMT_ARGS(bc, bc_deferred_wait_busy.bc_defer_timer),
 	       T_FMT_ARGS(bc, bc_deferred_wait_page.bc_defer_timer));
+	DMEMIT("%s: timers: "
+	       T_FMT_STRING("cached_device_reads") " "
+	       T_FMT_STRING("cached_device_writes") " "
+	       T_FMT_STRING("cached_device_flushes") " "
+	       T_FMT_STRING("deferred_wait_page") " "
+	       "\n",
+	       bc->bc_name,
+	       T_FMT_ARGS(bc, bc_timer_cached_device_reads),
+	       T_FMT_ARGS(bc, bc_timer_cached_device_writes),
+	       T_FMT_ARGS(bc, bc_timer_cached_device_flushes));
 	DMEMIT("%s: timers: " T_FMT_STRING("resource_alloc_reads") " " T_FMT_STRING("resource_alloc_writes") "\n",
 	       bc->bc_name,
 	       T_FMT_ARGS(bc, bc_timer_resource_alloc_reads),

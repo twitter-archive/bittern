@@ -941,6 +941,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	cache_timer_init(&bc->bc_timer_write_dirty_hits);
 	cache_timer_init(&bc->bc_timer_cached_device_reads);
 	cache_timer_init(&bc->bc_timer_cached_device_writes);
+	cache_timer_init(&bc->bc_timer_cached_device_flushes);
 	cache_timer_init(&bc->bc_timer_writebacks);
 	cache_timer_init(&bc->bc_timer_invalidations);
 	cache_timer_init(&bc->bc_timer_pending_queue);

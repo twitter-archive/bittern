@@ -238,8 +238,13 @@ struct work_item {
 	uint64_t wi_ts_workqueue;
 	/* io start time */
 	uint64_t wi_ts_started;
-	/* keeps track of physical io */
+	/*! keeps track of physical io */
 	uint64_t wi_ts_physio;
+	/*!
+	 * Keeps track of flush latency. Note that this latency is
+	 * already accounted for in @ref wi_ts_physio.
+	 */
+	uint64_t wi_ts_physio_flush;
 	/*! pmem async context for cache operations */
 	struct async_context wi_async_context;
 	int wi_magic2;
@@ -623,6 +628,7 @@ struct bittern_cache {
 	struct cache_timer bc_timer_write_dirty_hits;
 	struct cache_timer bc_timer_cached_device_reads;
 	struct cache_timer bc_timer_cached_device_writes;
+	struct cache_timer bc_timer_cached_device_flushes;
 	struct cache_timer bc_timer_writebacks;
 	struct cache_timer bc_timer_invalidations;
 	struct cache_timer bc_timer_pending_queue;

@@ -41,7 +41,6 @@ static void cached_devio_flush_end_bio_process(struct bittern_cache *bc, uint64_
 	do {
 		struct work_item *wi;
 		struct bio *bio;
-		int c;
 		unsigned long flags;
 		int cc = 0;
 
@@ -99,7 +98,7 @@ static void cached_devio_flush_end_bio(struct bio *bio, int err)
 	ASSERT_BITTERN_CACHE(bc);
 
 	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
-	atomic_dec(&bc->bc_dev_pure_flush_pending_count);
+	bc->bc_dev_pure_flush_pending_count--;
 	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 
 	if(__xxxyyy)printk_debug("flush_end_bio: need to ack up to gennum = %llu\n", gennum);
@@ -116,9 +115,6 @@ static void cached_devio_flush_worker(struct work_struct *work)
 	struct bittern_cache *bc;
 	struct bio *bio;
 	struct flush_meta *meta;
-	unsigned long flags;
-	uint64_t gennum;
-	struct work_item *wi;
 
 	ASSERT(!in_irq());
 	ASSERT(!in_softirq());
@@ -175,7 +171,7 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 	struct work_item *wi;
 	uint64_t gennum;
 	unsigned long flags;
-	int c;
+	int __xxx;
 
 	ASSERT(bio != NULL);
 	wi = bio->bi_private;
@@ -245,6 +241,8 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 
 		cached_dev_make_request_endio(wi, bio, err);
 
+		spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
+
 	} else {
 		/*
 		 * Just wait until a flush is processed. If this is the only
@@ -259,16 +257,26 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 		bc->bc_dev_flush_pending_count++;
 
 		M_ASSERT(bc->bc_dev_flush_pending_count >= 1);
-
-		spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 	}
 
-	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
+	__xxx = 0;
+	wi = NULL;
+	list_for_each_entry(wi,
+			    &bc->bc_dev_flush_pending_list,
+			    devio_pending_list) {
+		ASSERT_WORK_ITEM(wi, bc);
+		if (wi->devio_gennum > bc->bc_dev_gennum_flush) {
+			gennum = wi->devio_gennum;
+			__xxx = 1;
+			break;
+		}
+	}
 
-	if (gennum > bc->bc_dev_gennum_flush) {
+	if (__xxx) {
 		int ret;
 		struct flush_meta *meta;
 
+		M_ASSERT(gennum > bc->bc_dev_gennum_flush);
 		bc->bc_dev_gennum_flush = gennum;
 
 		bc->bc_dev_pure_flush_pending_count++;

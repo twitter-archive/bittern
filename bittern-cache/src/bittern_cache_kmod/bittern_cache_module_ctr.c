@@ -964,9 +964,6 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		ti->error = "cannot allocate dev flush workqueue";
 		goto bad_0;
 	}
-	INIT_DELAYED_WORK(&bc->bc_dev_flush_delayed_work, cached_devio_flush_delayed_worker);
-	ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(1));
-	ASSERT(ret == 1);
 
 	pmem_info_initialize(bc);
 
@@ -1203,6 +1200,10 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	M_ASSERT_FIXME(bc->bc_make_request_wq != NULL);
 	cache_timer_init(&bc->bc_make_request_wq_timer);
 	atomic_set(&bc->bc_make_request_wq_count, 0);
+
+	INIT_DELAYED_WORK(&bc->bc_dev_flush_delayed_work, cached_devio_flush_delayed_worker);
+	ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(1));
+	ASSERT(ret == 1);
 
 
 	/*

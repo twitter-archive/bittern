@@ -136,8 +136,6 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 		goto out;
 #endif
 
-	ASSERT_BITTERN_CACHE(bc);
-
 	bc->bc_dev_pure_flush_pending_count++;
 	bc->bc_dev_explicit_flush_total_count++;
 

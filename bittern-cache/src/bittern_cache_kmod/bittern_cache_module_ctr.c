@@ -953,6 +953,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	spin_lock_init(&bc->bc_dev_spinlock);
 	INIT_LIST_HEAD(&bc->bc_dev_pending_list);
 	INIT_LIST_HEAD(&bc->bc_dev_flush_pending_list);
+	INIT_DELAYED_WORK(&bc->bc_dev_flush_delayed_work, cached_devio_flush_delayed_worker);
 	bc->bc_dev_flush_wq = alloc_workqueue("b_dvf:%s",
 					      WQ_UNBOUND,
 					      1,
@@ -1201,7 +1202,6 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	cache_timer_init(&bc->bc_make_request_wq_timer);
 	atomic_set(&bc->bc_make_request_wq_count, 0);
 
-	INIT_DELAYED_WORK(&bc->bc_dev_flush_delayed_work, cached_devio_flush_delayed_worker);
 	ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(1));
 	ASSERT(ret == 1);
 

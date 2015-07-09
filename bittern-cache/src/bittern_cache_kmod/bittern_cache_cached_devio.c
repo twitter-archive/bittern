@@ -177,7 +177,6 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 	struct work_item *wi;
 	uint64_t gennum;
 	unsigned long flags;
-	int __xxx;
 
 	ASSERT(bio != NULL);
 	wi = bio->bi_private;
@@ -265,7 +264,14 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 		M_ASSERT(bc->bc_dev_flush_pending_count >= 1);
 	}
 
-	if (bc->bc_dev_flush_pending_count > 0) {
+	M_ASSERT(bc->bc_dev_flush_pending_count >= 0);
+	M_ASSERT(bc->bc_dev_pending_count >= 0);
+	/*
+	 * Issue an explicit flush if
+	 * 1) there are bios waiting on pending_flush
+	 * 2) there are no pending io operations which could trigger a flush
+	 */
+	if (bc->bc_dev_flush_pending_count > 0 && bc->bc_dev_pending_count == 0) {
 		int ret;
 		struct flush_meta *meta;
 

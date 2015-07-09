@@ -84,19 +84,23 @@ static void cached_devio_flush_end_bio(struct bio *bio, int err)
 {
 	struct bittern_cache *bc;
 	unsigned long flags;
+        uint64_t gennum;
 
 	bc = bio->bi_private;
 	ASSERT_BITTERN_CACHE(bc);
 
+        gennum = bc->bc_dev_gennum_delayed_flush;
+
 	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
 	bc->bc_dev_pure_flush_pending_count--;
+        M_ASSERT(bc->bc_dev_pure_flush_pending_count == 0);
 	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 
-	if(__xxxyyy)printk_debug("flush_end_bio: need to ack up to delayed flush gennum = %llu\n", bc->bc_dev_gennum_delayed_flush);
+	if(__xxxyyy)printk_debug("flush_end_bio: need to ack up to delayed flush gennum = %llu\n", gennum);
 
 	bio_put(bio);
 
-	cached_devio_flush_end_bio_process(bc, bc->bc_dev_gennum_delayed_flush);
+	cached_devio_flush_end_bio_process(bc, gennum);
 }
 
 void cached_devio_flush_delayed_worker(struct work_struct *work)
@@ -111,7 +115,16 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 			  struct bittern_cache,
 			  bc_dev_flush_delayed_work);
 	ASSERT(bc != NULL);
+
+        /*
+         * No work to do if there no requests waiting for a flush.
+         */
 	if (bc->bc_dev_flush_pending_count == 0)
+		goto out;
+        /*
+         * No work to do if a previous explicit flush is still pending.
+         */
+	if (bc->bc_dev_pure_flush_pending_count != 0)
 		goto out;
 
 	ASSERT_BITTERN_CACHE(bc);

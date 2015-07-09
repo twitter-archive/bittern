@@ -18,7 +18,13 @@
 
 #include "bittern_cache.h"
 
+#ifdef DEBUG_THIS
+static bool __xxxyyy = true;
+#define DELAYED_WORKER_INTERVAL_MS	500
+#else
 static bool __xxxyyy = false;
+#define DELAYED_WORKER_INTERVAL_MS	10
+#endif
 
 /*! completes all requests which have gennum <= gennum */
 static void cached_devio_flush_end_bio_process(struct bittern_cache *bc, uint64_t gennum)
@@ -117,6 +123,7 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	ASSERT(bc != NULL);
 
 #if 0
+	if(__xxxyyy)printk_debug("delayed_worker\n");
         /*
          * No work to do if there no requests waiting for a flush.
          */
@@ -170,7 +177,7 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	generic_make_request(bio);
 
 out:
-	ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(3));
+	ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(DELAYED_WORKER_INTERVAL_MS));
 	ASSERT(ret == 1);
 }
 

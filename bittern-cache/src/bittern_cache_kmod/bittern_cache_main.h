@@ -377,6 +377,8 @@ static inline bool bio_is_data_request(struct bio *bio)
 	return !bio_is_pureflush_or_discard_request(bio);
 }
 
+/*! worker used to issue explicit flushes */
+extern void cached_devio_flush_delayed_worker(struct work_struct *work);
 /*
  * Queue request to devio layer.
  */

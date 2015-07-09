@@ -18,16 +18,7 @@
 
 #include "bittern_cache.h"
 
-static bool __xxxyyy = false;
-
-#define FLUSH_META_MAGIC	0xf10c9a21
-/*! passed as bi_private field to the pure flush bio */
-struct flush_meta {
-	int magic;
-	struct bittern_cache *bc;
-	struct work_struct work;
-	uint64_t gennum;
-};
+static bool __xxxyyy = true;
 
 /*! completes all requests which have gennum <= gennum */
 static void cached_devio_flush_end_bio_process(struct bittern_cache *bc, uint64_t gennum)
@@ -91,52 +82,35 @@ static void cached_devio_flush_end_bio_process(struct bittern_cache *bc, uint64_
 /*! handles completion of pureflush request */
 static void cached_devio_flush_end_bio(struct bio *bio, int err)
 {
-	struct flush_meta *meta;
 	struct bittern_cache *bc;
-	uint64_t gennum;
 	unsigned long flags;
 
-	meta = bio->bi_private;
-	ASSERT(meta->magic == FLUSH_META_MAGIC);
-	bc = meta->bc;
-	gennum = meta->gennum;
+	bc = bio->bi_private;
 	ASSERT_BITTERN_CACHE(bc);
 
 	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
 	bc->bc_dev_pure_flush_pending_count--;
 	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 
-	if(__xxxyyy)printk_debug("flush_end_bio: need to ack up to gennum = %llu\n", gennum);
+	if(__xxxyyy)printk_debug("flush_end_bio: need to ack up to delayed flush gennum = %llu\n", bc->bc_dev_gennum_delayed_flush);
 
 	bio_put(bio);
 
-	kmem_free(meta, sizeof(struct flush_meta));
-
-	cached_devio_flush_end_bio_process(bc, gennum);
+	cached_devio_flush_end_bio_process(bc, bc->bc_dev_gennum_delayed_flush);
 }
 
-static void cached_devio_flush_worker(struct work_struct *work)
+void cached_devio_flush_delayed_worker(struct work_struct *work)
 {
+	int ret;
 	struct bittern_cache *bc;
 	struct bio *bio;
-	struct flush_meta *meta;
-	uint64_t gennum;
+	unsigned long flags;
 
-	ASSERT(!in_irq());
-	ASSERT(!in_softirq());
+	if (bc->bc_dev_flush_pending_count == 0)
+		goto out;
 
-	meta = container_of(work, struct flush_meta, work);
-	ASSERT(meta->magic == FLUSH_META_MAGIC);
-	bc = meta->bc;
-	ASSERT_BITTERN_CACHE(bc);
-
-	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-		     "in_irq=%lu, in_softirq=%lu, bc=%p, work=%p, gennum=%llu",
-		     in_irq(),
-		     in_softirq(),
-		     bc,
-		     &meta->work,
-		     meta->gennum);
+	bc->bc_dev_pure_flush_pending_count++;
+	bc->bc_dev_explicit_flush_total_count++;
 
 	bio = bio_alloc(GFP_NOIO, 1);
 #if 0
@@ -161,17 +135,21 @@ static void cached_devio_flush_worker(struct work_struct *work)
 	bio->bi_iter.bi_size = 0;
 	bio->bi_bdev = bc->bc_dev->bdev;
 	bio->bi_end_io = cached_devio_flush_end_bio;
-	bio->bi_private = meta;
+	bio->bi_private = bc;
 	bio->bi_vcnt = 0;
 
-	gennum = bc->bc_dev_gennum;
-	bc->bc_dev_gennum_flush = gennum;
+	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
+	bc->bc_dev_gennum_flush = bc->bc_dev_gennum;
+	bc->bc_dev_gennum_delayed_flush = bc->bc_dev_gennum;
+	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 
-	if(__xxxyyy)printk_debug("worker: ISSUE pure flush gennum=%llu/%llu\n", meta->gennum, gennum);
-	if (meta->gennum != gennum)
-		if(__xxxyyy)printk_debug("worker: ISSUE pure flush gennum=%llu/%llu <--- UPDATED\n", meta->gennum, gennum);
+	if(__xxxyyy)printk_debug("delayed_worker: ISSUE pure flush gennum=%llu\n", bc->bc_dev_gennum_delayed_flush);
 
 	generic_make_request(bio);
+
+out:
+	ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(1));
+	ASSERT(ret == 1);
 }
 
 /*! end_bio function used by @ref cached_devio_do_make_request */
@@ -270,41 +248,6 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 		bc->bc_dev_flush_pending_count++;
 
 		M_ASSERT(bc->bc_dev_flush_pending_count >= 1);
-	}
-
-	M_ASSERT(bc->bc_dev_flush_pending_count >= 0);
-	M_ASSERT(bc->bc_dev_pending_count >= 0);
-	/*
-	 * Issue an explicit flush if
-	 * 1) there are bios waiting on pending_flush
-	 * 2) there are no pending io operations which could trigger a flush
-	 */
-	if (bc->bc_dev_flush_pending_count > 0 && bc->bc_dev_pending_count == 0) {
-		int ret;
-		struct flush_meta *meta;
-
-		bc->bc_dev_gennum_flush = bc->bc_dev_gennum;
-
-		bc->bc_dev_pure_flush_pending_count++;
-		bc->bc_dev_explicit_flush_total_count++;
-
-		if(__xxxyyy)printk_debug("end_bio: last request: issue explicit flush up to gennum=%llu\n", gennum);
-
-		/* defer to worker thread, which will start io */
-
-		/*
-		 * Trying to do error handling for such a small struct
-		 * seems overkill.
-		 */
-		meta = kmem_alloc(sizeof (struct flush_meta), GFP_ATOMIC);
-		M_ASSERT(meta != NULL);
-
-		meta->magic = FLUSH_META_MAGIC;
-		meta->bc = bc;
-		INIT_WORK(&meta->work, cached_devio_flush_worker);
-		meta->gennum = gennum;
-		ret = queue_work(bc->bc_dev_flush_wq, &meta->work);
-		ASSERT(ret == 1);
 	}
 
 	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);

@@ -1452,7 +1452,6 @@ ssize_t cache_op_show_timers(struct bittern_cache *bc, char *result)
 	       T_FMT_STRING("cached_device_reads") " "
 	       T_FMT_STRING("cached_device_writes") " "
 	       T_FMT_STRING("cached_device_flushes") " "
-	       T_FMT_STRING("deferred_wait_page") " "
 	       "\n",
 	       bc->bc_name,
 	       T_FMT_ARGS(bc, bc_timer_cached_device_reads),

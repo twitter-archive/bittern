@@ -105,9 +105,16 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	struct bittern_cache *bc;
 	struct bio *bio;
 	unsigned long flags;
+	struct delayed_work *dwork = to_delayed_work(work);
 
+	bc = container_of(dwork,
+			  struct bittern_cache,
+			  bc_dev_flush_delayed_work);
+	ASSERT(bc != NULL);
 	if (bc->bc_dev_flush_pending_count == 0)
 		goto out;
+
+	ASSERT_BITTERN_CACHE(bc);
 
 	bc->bc_dev_pure_flush_pending_count++;
 	bc->bc_dev_explicit_flush_total_count++;

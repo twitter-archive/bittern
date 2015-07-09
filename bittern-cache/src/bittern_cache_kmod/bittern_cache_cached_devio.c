@@ -18,7 +18,7 @@
 
 #include "bittern_cache.h"
 
-static bool __xxxyyy = true;
+static bool __xxxyyy = false;
 
 /*! completes all requests which have gennum <= gennum */
 static void cached_devio_flush_end_bio_process(struct bittern_cache *bc, uint64_t gennum)

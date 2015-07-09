@@ -116,6 +116,7 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 			  bc_dev_flush_delayed_work);
 	ASSERT(bc != NULL);
 
+#if 0
         /*
          * No work to do if there no requests waiting for a flush.
          */
@@ -126,6 +127,7 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
          */
 	if (bc->bc_dev_pure_flush_pending_count != 0)
 		goto out;
+#endif
 
 	ASSERT_BITTERN_CACHE(bc);
 
@@ -168,7 +170,7 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	generic_make_request(bio);
 
 out:
-	ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(1));
+	ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(3));
 	ASSERT(ret == 1);
 }
 

@@ -18,14 +18,15 @@
 
 #include "bittern_cache.h"
 
-#define DEBUG_THIS
+/*#define DEBUG_THIS*/
 #ifdef DEBUG_THIS
+#define DDELAYED_WORKER_INTERVAL_MS	500
 static bool __xxxyyy = true;
-#define DELAYED_WORKER_INTERVAL_MS	500
 #else
+#define DDELAYED_WORKER_INTERVAL_MS	10
 static bool __xxxyyy = false;
-#define DELAYED_WORKER_INTERVAL_MS	10
 #endif
+#define DELAYED_WORKER_INTERVAL_MS	10
 
 /*! completes all requests which have gennum <= gennum */
 static void cached_devio_flush_end_bio_process(struct bittern_cache *bc, uint64_t gennum)
@@ -123,10 +124,12 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 			  bc_dev_flush_delayed_work);
 	ASSERT(bc != NULL);
 
-	if(__xxxyyy)printk_debug("delayed_worker: dev_flush_pending_count=%d, dev_pending_count=%d\n", bc->bc_dev_flush_pending_count, bc->bc_dev_pending_count);
-
-	if (bc->bc_dev_flush_pending_count == 0 && bc->bc_dev_pending_count == 0)
-		goto out;
+	if (bc->bc_dev_flush_pending_count == 0 && bc->bc_dev_pending_count == 0) {
+		if(__xxxyyy)printk_debug("delayed_worker: dev_flush_pending_count=%d, dev_pending_count=%d\n", bc->bc_dev_flush_pending_count, bc->bc_dev_pending_count);
+		ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(DDELAYED_WORKER_INTERVAL_MS));
+		M_ASSERT(ret == 1);
+		return;
+	}
 
 #if 0
 	if(__xxxyyy)printk_debug("delayed_worker\n");
@@ -180,7 +183,6 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 
 	generic_make_request(bio);
 
-out:
 	ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(DELAYED_WORKER_INTERVAL_MS));
 	ASSERT(ret == 1);
 }

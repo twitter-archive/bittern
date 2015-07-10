@@ -18,6 +18,7 @@
 
 #include "bittern_cache.h"
 
+#define DEBUG_THIS
 #ifdef DEBUG_THIS
 static bool __xxxyyy = true;
 #define DELAYED_WORKER_INTERVAL_MS	500
@@ -121,6 +122,11 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 			  struct bittern_cache,
 			  bc_dev_flush_delayed_work);
 	ASSERT(bc != NULL);
+
+	if(__xxxyyy)printk_debug("delayed_worker: dev_flush_pending_count=%d, dev_pending_count=%d\n", bc->bc_dev_flush_pending_count, bc->bc_dev_pending_count);
+
+	if (bc->bc_dev_flush_pending_count == 0 && bc->bc_dev_pending_count == 0)
+		goto out;
 
 #if 0
 	if(__xxxyyy)printk_debug("delayed_worker\n");

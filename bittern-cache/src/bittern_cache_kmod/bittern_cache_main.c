@@ -107,6 +107,7 @@ void __bio_copy_from_cache(struct work_item *wi,
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 
+	bc = bc; /* quiet compiler about unused variable (used in dev build) */
 	cache_vaddr = pmem_context_data_vaddr(&wi->wi_pmem_ctx);
 
 	/*
@@ -172,7 +173,7 @@ void __bio_copy_from_cache(struct work_item *wi,
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "done-copy-from-cache");
 
-	ASSERT(biovec_offset == bio->bi_iter.bi_size);
+	M_ASSERT(biovec_offset == bio->bi_iter.bi_size);
 	if (bio->bi_iter.bi_size == PAGE_SIZE) {
 		ASSERT(biovec_offset == PAGE_SIZE);
 		ASSERT(cache_block_copy_offset == 0);
@@ -211,6 +212,7 @@ void bio_copy_to_cache(struct work_item *wi,
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 
+	bc = bc; /* quiet compiler about unused variable (used in dev build) */
 	cache_vaddr = pmem_context_data_vaddr(&wi->wi_pmem_ctx);
 
 	/*

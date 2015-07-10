@@ -1044,6 +1044,7 @@ int pmem_metadata_initialize(struct bittern_cache *bc, unsigned int block_id)
 	struct pmem_api *pa = &bc->bc_papi;
 	struct pmem_block_metadata *pmbm;
 
+	pa = pa; /* shutoff compiler warning (used in dev build) */
 	ASSERT(bc != NULL);
 	ASSERT(sizeof(struct pmem_header) == PAGE_SIZE);
 	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
@@ -1345,6 +1346,7 @@ int pmem_metadata_sync_read(struct bittern_cache *bc,
 	struct pmem_api *pa = &bc->bc_papi;
 	int block_id = cache_block->bcb_block_id;
 
+	pa = pa; /* shutoff compiler warning (used in dev build) */
 	ASSERT(out_pmbm_mem != NULL);
 	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 		     "out_pmbm_mem=%p", out_pmbm_mem);

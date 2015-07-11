@@ -51,7 +51,7 @@
 
 #include "bittern_cache_linux.h"
 
-#define BITTERN_CACHE_VERSION "0.27.3"
+#define BITTERN_CACHE_VERSION "0.27.4"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"

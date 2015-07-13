@@ -105,10 +105,10 @@ static void cached_devio_flush_end_bio(struct bio *bio, int err)
 
 	ASSERT_BITTERN_CACHE(flush_meta->bc);
 
-	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
-	bc->bc_dev_pure_flush_pending_count--;
-        M_ASSERT(bc->bc_dev_pure_flush_pending_count >= 0);
-	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
+	spin_lock_irqsave(&flush_meta->bc->bc_dev_spinlock, flags);
+	flush_meta->bc->bc_dev_pure_flush_pending_count--;
+        M_ASSERT(flush_meta->bc->bc_dev_pure_flush_pending_count >= 0);
+	spin_unlock_irqrestore(&flush_meta->bc->bc_dev_spinlock, flags);
 
 	if(__xxxyyy)printk_debug("FLUSH_END_BIO: ack up to delayed flush gennum = %llu\n", flush_meta->gennum);
 

@@ -867,10 +867,10 @@ ssize_t cache_op_show_stats_extra(struct bittern_cache *bc,
 	       bc->bc_dev_pending_count,
 	       bc->bc_dev_flush_pending_count,
 	       bc->bc_dev_pure_flush_pending_count);
-	DMEMIT("%s: stats_extra: dev_implicit_flush_total_count=%llu dev_explicit_flush_total_count=%llu\n",
+	DMEMIT("%s: stats_extra: dev_pure_flush_total_count=%llu dev_flush_flush_total_count=%llu\n",
 	       bc->bc_name,
-	       bc->bc_dev_implicit_flush_total_count,
-	       bc->bc_dev_explicit_flush_total_count);
+	       bc->bc_dev_pure_flush_total_count,
+	       bc->bc_dev_flush_total_count);
 	DMEMIT("%s: stats_extra: dev_gennum=%llu dev_gennum_flush=%llu dev_gennum_delayed_flush=%llu\n",
 	       bc->bc_name,
 	       bc->bc_dev_gennum,

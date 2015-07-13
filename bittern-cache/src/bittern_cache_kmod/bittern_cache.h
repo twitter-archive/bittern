@@ -898,10 +898,10 @@ struct bittern_cache {
 	int bc_dev_flush_pending_count;
 	/*! counts number of pending pure flushes */
 	int bc_dev_pure_flush_pending_count;
-	/*! count of implicit flushes */
-	uint64_t bc_dev_implicit_flush_total_count;
-	/*! count of explicit flushes */
-	uint64_t bc_dev_explicit_flush_total_count;
+	/*! count of flushes */
+	uint64_t bc_dev_flush_total_count;
+	/*! count of pure flushes */
+	uint64_t bc_dev_pure_flush_total_count;
 	/*!
 	 * Generation number used to associate requests which
 	 * have been issued before a given generation number.

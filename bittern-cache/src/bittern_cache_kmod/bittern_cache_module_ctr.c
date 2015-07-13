@@ -950,6 +950,8 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	cache_timer_init(&bc->bc_deferred_wait_busy.bc_defer_timer);
 	cache_timer_init(&bc->bc_deferred_wait_page.bc_defer_timer);
 
+	bc->bc_dev_worker_delay = CACHED_DEV_WORKER_DELAY_DEFAULT;
+	bc->bc_dev_fua_insert = CACHED_DEV_FUA_INSERT_DEFAULT;
 	spin_lock_init(&bc->bc_dev_spinlock);
 	INIT_LIST_HEAD(&bc->bc_dev_pending_list);
 	INIT_LIST_HEAD(&bc->bc_dev_flush_pending_list);

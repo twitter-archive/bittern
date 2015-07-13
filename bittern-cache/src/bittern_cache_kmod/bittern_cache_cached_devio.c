@@ -20,13 +20,10 @@
 
 //#define DEBUG_THIS
 #ifdef DEBUG_THIS
-#define DDELAYED_WORKER_INTERVAL_MS	1000
 static bool __xxxyyy = true;
 #else
-#define DDELAYED_WORKER_INTERVAL_MS	10
 static bool __xxxyyy = false;
 #endif
-#define DELAYED_WORKER_INTERVAL_MS	10
 
 struct flush_meta {
 	struct bittern_cache *bc;
@@ -134,7 +131,8 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 
 	if (bc->bc_dev_flush_pending_count == 0 && bc->bc_dev_pending_count == 0) {
 		if(__xxxyyy)printk_debug("DELAYED_WORKER: empty flush_pending count\n");
-		ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(DDELAYED_WORKER_INTERVAL_MS));
+		ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(bc->bc_dev_worker_delay));
+	bc->bc_dev_fua_insert = CACHED_DEV_FUA_INSERT_DEFAULT;
 		M_ASSERT(ret == 1);
 		return;
 	}
@@ -196,7 +194,7 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 
 	generic_make_request(bio);
 
-	ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(DELAYED_WORKER_INTERVAL_MS));
+	ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(bc->bc_dev_worker_delay));
 	ASSERT(ret == 1);
 }
 
@@ -319,7 +317,7 @@ void cached_devio_make_request(struct bittern_cache *bc,
 
 	if (bio_data_dir_write(bio)) {
 		wi->devio_gennum = ++bc->bc_dev_gennum;
-		if ((wi->devio_gennum - bc->bc_dev_gennum_flush) > 4) {
+		if ((wi->devio_gennum - bc->bc_dev_gennum_flush) > bc->bc_dev_fua_insert) {
 			bc->bc_dev_gennum_flush = wi->devio_gennum;
 			bc->bc_dev_flush_total_count++;
 			/*

@@ -99,7 +99,6 @@ inner_out:
 /*! handles completion of pureflush request */
 static void cached_devio_flush_end_bio(struct bio *bio, int err)
 {
-	struct bittern_cache *bc;
 	unsigned long flags;
 	struct flush_meta *flush_meta = bio->bi_private;
 
@@ -114,7 +113,7 @@ static void cached_devio_flush_end_bio(struct bio *bio, int err)
 
 	bio_put(bio);
 
-	cached_devio_flush_end_bio_process(bc, flush_meta->gennum);
+	cached_devio_flush_end_bio_process(flush_meta->bc, flush_meta->gennum);
 
 	kmem_free(flush_meta, sizeof(struct flush_meta));
 }

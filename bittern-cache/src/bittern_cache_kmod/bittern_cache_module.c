@@ -272,19 +272,30 @@ static const char *param_show_replacement_mode(struct bittern_cache *bc)
 	return cache_replacement_mode_to_str(bc->bc_replacement_mode);
 }
 
-static int param_set_enable_req_fua(struct bittern_cache *bc, int value)
+static int param_set_dev_worker_delay(struct bittern_cache *bc, int value)
 {
-	ASSERT(value == false || value == true);
-	bc->bc_enable_req_fua = (bool)value;
-	printk_info("%s: set enable_req_fua=%d\n",
-		    bc->bc_name,
-		    bc->bc_enable_req_fua);
+	if (value == 0)
+		value = CACHED_DEV_WORKER_DELAY_DEFAULT;
+	bc->bc_dev_worker_delay = value;
 	return 0;
 }
 
-static int param_get_enable_req_fua(struct bittern_cache *bc)
+static int param_get_dev_worker_delay(struct bittern_cache *bc)
 {
-	return (int)bc->bc_enable_req_fua;
+	return (int)bc->bc_dev_worker_delay;
+}
+
+static int param_set_dev_fua_insert(struct bittern_cache *bc, int value)
+{
+	if (value == 0)
+		value = CACHED_DEV_FUA_INSERT_DEFAULT;
+	bc->bc_dev_fua_insert = value;
+	return 0;
+}
+
+static int param_get_dev_fua_insert(struct bittern_cache *bc)
+{
+	return (int)bc->bc_dev_fua_insert;
 }
 
 static int param_set_verifier_running(struct bittern_cache *bc, int value)
@@ -559,15 +570,26 @@ struct cache_conf_param_entry cache_conf_param_list[] = {
 		.cache_conf_show_function_str = param_show_replacement_mode,
 	},
 	/*
-	 * enable_req_fua
+	 * dev_worker_delay
 	 */
 	{
-		.cache_conf_name = "enable_req_fua",
+		.cache_conf_name = "dev_worker_delay",
 		.cache_conf_type = CONF_TYPE_INT,
 		.cache_conf_min = 0,
 		.cache_conf_max = 1,
-		.cache_conf_setup_function = param_set_enable_req_fua,
-		.cache_conf_show_function = param_get_enable_req_fua,
+		.cache_conf_setup_function = param_set_dev_worker_delay,
+		.cache_conf_show_function = param_get_dev_worker_delay,
+	},
+	/*
+	 * dev_fua_insert
+	 */
+	{
+		.cache_conf_name = "dev_fua_insert",
+		.cache_conf_type = CONF_TYPE_INT,
+		.cache_conf_min = 0,
+		.cache_conf_max = 1,
+		.cache_conf_setup_function = param_set_dev_fua_insert,
+		.cache_conf_show_function = param_get_dev_fua_insert,
 	},
 	/*
 	 * verifier params
@@ -871,11 +893,10 @@ ssize_t cache_op_show_stats_extra(struct bittern_cache *bc,
 	       bc->bc_name,
 	       bc->bc_dev_pure_flush_total_count,
 	       bc->bc_dev_flush_total_count);
-	DMEMIT("%s: stats_extra: dev_gennum=%llu dev_gennum_flush=%llu dev_gennum_delayed_flush=%llu\n",
+	DMEMIT("%s: stats_extra: dev_gennum=%llu dev_gennum_flush=%llu\n",
 	       bc->bc_name,
 	       bc->bc_dev_gennum,
-	       bc->bc_dev_gennum_flush,
-	       bc->bc_dev_gennum_delayed_flush);
+	       bc->bc_dev_gennum_flush);
 	{
 		unsigned long flags;
 		struct work_item *wi;

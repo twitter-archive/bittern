@@ -28,6 +28,14 @@ static bool __xxxyyy = false;
 #endif
 #define DELAYED_WORKER_INTERVAL_MS	10
 
+struct flush_meta {
+	struct bittern_cache *bc;
+	/*! work struct for explicit flushes */
+	struct delayed_work dwork;
+	/*! pass as arg to delayed worker */
+	uint64_t gennum;
+};
+
 /*! completes all requests which have gennum <= gennum */
 static void cached_devio_flush_end_bio_process(struct bittern_cache *bc, uint64_t gennum)
 {
@@ -93,23 +101,22 @@ static void cached_devio_flush_end_bio(struct bio *bio, int err)
 {
 	struct bittern_cache *bc;
 	unsigned long flags;
-        uint64_t gennum;
+	flush_meta *flush_meta = bio->bi_private;
 
-	bc = bio->bi_private;
-	ASSERT_BITTERN_CACHE(bc);
-
-        gennum = bc->bc_dev_gennum_delayed_flush;
+	ASSERT_BITTERN_CACHE(flush_meta->bc != NULL);
 
 	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
 	bc->bc_dev_pure_flush_pending_count--;
         M_ASSERT(bc->bc_dev_pure_flush_pending_count >= 0);
 	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 
-	if(__xxxyyy)printk_debug("FLUSH_END_BIO: ack up to delayed flush gennum = %llu (HACK-FIXME)\n", gennum);
+	if(__xxxyyy)printk_debug("FLUSH_END_BIO: ack up to delayed flush gennum = %llu\n", flush_meta->gennum);
 
 	bio_put(bio);
 
-	cached_devio_flush_end_bio_process(bc, gennum);
+	cached_devio_flush_end_bio_process(bc, flush_meta->gennum);
+
+	kmem_free(flush_meta, sizeof(struct flush_meta));
 }
 
 void cached_devio_flush_delayed_worker(struct work_struct *work)
@@ -119,6 +126,7 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	struct bio *bio;
 	unsigned long flags;
 	struct delayed_work *dwork = to_delayed_work(work);
+	flush_meta *flush_meta;
 
 	bc = container_of(dwork,
 			  struct bittern_cache,
@@ -131,6 +139,12 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 		M_ASSERT(ret == 1);
 		return;
 	}
+
+	ASSERT_BITTERN_CACHE(bc);
+
+	flush_meta = kmem_alloc(sizeof(struct flush_meta), GFP_NOIO);
+	M_ASSERT_FIXME(flush_meta != NULL);
+	flush_meta->bc = bc;
 
 #if 0
 	if(__xxxyyy)printk_debug("delayed_worker\n");
@@ -145,9 +159,6 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	if (bc->bc_dev_pure_flush_pending_count != 0)
 		goto out;
 #endif
-
-	bc->bc_dev_pure_flush_pending_count++;
-	bc->bc_dev_pure_flush_total_count++;
 
 	bio = bio_alloc(GFP_NOIO, 1);
 #if 0
@@ -172,12 +183,14 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	bio->bi_iter.bi_size = 0;
 	bio->bi_bdev = bc->bc_dev->bdev;
 	bio->bi_end_io = cached_devio_flush_end_bio;
-	bio->bi_private = bc;
+	bio->bi_private = flush_meta;
 	bio->bi_vcnt = 0;
 
 	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
 	bc->bc_dev_gennum_flush = bc->bc_dev_gennum;
-	bc->bc_dev_gennum_delayed_flush = bc->bc_dev_gennum;
+	flush_meta->gennum = bc->bc_dev_gennum;
+	bc->bc_dev_pure_flush_pending_count++;
+	bc->bc_dev_pure_flush_total_count++;
 	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 
 	if(__xxxyyy)printk_debug("DELAYED_WORKER: ISSUE pure flush gennum=%llu\n", bc->bc_dev_gennum_delayed_flush);

@@ -206,4 +206,17 @@
  */
 #define CACHE_MAX_TRACK_HASH_CHECKSUMS                (1000UL * 1024UL * 1024UL)
 
+/*! how often dev worker runs - don't stray too far from default */
+#define CACHED_DEV_WORKER_DELAY_MIN 1
+#define CACHED_DEV_WORKER_DELAY_DEFAULT 10
+#define CACHED_DEV_WORKER_DELAY_MAX 5000
+
+/*!
+ * How often FUA is inserted in the write stream -
+ * don't stray too far from default.
+ */
+#define CACHED_DEV_FUA_INSERT_MIN 5
+#define CACHED_DEV_FUA_INSERT_DEFAULT 10
+#define CACHED_DEV_FUA_INSERT_MAX 500
+
 #endif /* BITTERN_CACHE_TUNABLES_H */

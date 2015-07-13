@@ -926,13 +926,14 @@ struct bittern_cache {
 	 * \todo handle rollover
 	 */
 	uint64_t bc_dev_gennum_flush;
-	/*! pass as arg to delayed worker */
-	uint64_t bc_dev_gennum_delayed_flush;
 	/*! workqueue used to issue explicit flushes */
 	struct workqueue_struct *bc_dev_flush_wq;
 	/*! work struct for explicit flushes */
 	struct delayed_work bc_dev_flush_delayed_work;
-
+	/*! conf param - how often the delayed worker runs */
+	int bc_dev_worker_delay;
+	/*! conf param - how often FUA is inserted in the write stream */
+	int bc_dev_fua_insert;
 
 	/*! device acting as the cache */
 	struct dm_dev *bc_cache_dev;

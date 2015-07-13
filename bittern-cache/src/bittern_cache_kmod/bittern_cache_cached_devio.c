@@ -101,9 +101,9 @@ static void cached_devio_flush_end_bio(struct bio *bio, int err)
 {
 	struct bittern_cache *bc;
 	unsigned long flags;
-	flush_meta *flush_meta = bio->bi_private;
+	struct flush_meta *flush_meta = bio->bi_private;
 
-	ASSERT_BITTERN_CACHE(flush_meta->bc != NULL);
+	ASSERT_BITTERN_CACHE(flush_meta->bc);
 
 	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
 	bc->bc_dev_pure_flush_pending_count--;
@@ -126,7 +126,7 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	struct bio *bio;
 	unsigned long flags;
 	struct delayed_work *dwork = to_delayed_work(work);
-	flush_meta *flush_meta;
+	struct flush_meta *flush_meta;
 
 	bc = container_of(dwork,
 			  struct bittern_cache,
@@ -193,7 +193,7 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	bc->bc_dev_pure_flush_total_count++;
 	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
 
-	if(__xxxyyy)printk_debug("DELAYED_WORKER: ISSUE pure flush gennum=%llu\n", bc->bc_dev_gennum_delayed_flush);
+	if(__xxxyyy)printk_debug("DELAYED_WORKER: ISSUE pure flush gennum=%llu\n", flush_meta->gennum);
 
 	generic_make_request(bio);
 

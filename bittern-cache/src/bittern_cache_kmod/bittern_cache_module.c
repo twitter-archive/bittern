@@ -575,8 +575,8 @@ struct cache_conf_param_entry cache_conf_param_list[] = {
 	{
 		.cache_conf_name = "dev_worker_delay",
 		.cache_conf_type = CONF_TYPE_INT,
-		.cache_conf_min = 0,
-		.cache_conf_max = 1,
+		.cache_conf_min = CACHED_DEV_WORKER_DELAY_MIN,
+		.cache_conf_max = CACHED_DEV_WORKER_DELAY_MAX,
 		.cache_conf_setup_function = param_set_dev_worker_delay,
 		.cache_conf_show_function = param_get_dev_worker_delay,
 	},
@@ -586,8 +586,8 @@ struct cache_conf_param_entry cache_conf_param_list[] = {
 	{
 		.cache_conf_name = "dev_fua_insert",
 		.cache_conf_type = CONF_TYPE_INT,
-		.cache_conf_min = 0,
-		.cache_conf_max = 1,
+		.cache_conf_min = CACHED_DEV_FUA_INSERT_MIN,
+		.cache_conf_max = CACHED_DEV_FUA_INSERT_MAX,
 		.cache_conf_setup_function = param_set_dev_fua_insert,
 		.cache_conf_show_function = param_get_dev_fua_insert,
 	},

@@ -214,6 +214,6 @@
 /*! how often FUA is inserted in the write stream */
 #define CACHED_DEV_FUA_INSERT_MIN 5
 #define CACHED_DEV_FUA_INSERT_DEFAULT 500
-#define CACHED_DEV_FUA_INSERT_MAX 5000
+#define CACHED_DEV_FUA_INSERT_MAX 10000
 
 #endif /* BITTERN_CACHE_TUNABLES_H */

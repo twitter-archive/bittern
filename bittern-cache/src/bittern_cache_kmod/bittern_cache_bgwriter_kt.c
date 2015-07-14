@@ -358,6 +358,9 @@ int cache_bgwriter_io_start_batch(struct bittern_cache *bc)
 	if (sector_hint != SECTOR_NUMBER_INVALID) {
 		while (count < bc->bc_bgwriter_conf_cluster_size) {
 			sector_t last_hint = sector_hint;
+
+			/* shutoff compiler warning (used in dev build) */
+			last_hint = last_hint;
 			/*
 			 * wait for resources
 			 * FIXME: wait flag should be policy controlled

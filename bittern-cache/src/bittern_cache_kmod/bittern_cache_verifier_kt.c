@@ -53,7 +53,6 @@ int cache_block_verify_data(struct bittern_cache *bc,
 			    void *cache_vaddr)
 {
 	int errors = 0;
-	int ret;
 	struct bio *bio;
 	struct bio_context bcontext;
 	void *buf;

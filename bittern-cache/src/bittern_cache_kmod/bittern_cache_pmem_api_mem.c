@@ -45,7 +45,7 @@ void pmem_deallocate_papi_mem(struct bittern_cache *bc)
 {
 	struct pmem_api *pa = &bc->bc_papi;
 
-	ASSERT(pa->papi_interface == &cache_papi_mem);
+	M_ASSERT(pa->papi_interface == &cache_papi_mem);
 }
 
 /*

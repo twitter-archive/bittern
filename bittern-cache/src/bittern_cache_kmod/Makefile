@@ -22,7 +22,10 @@ EXTRA_CFLAGS += -I$(KERNEL_TREE)/include/ \
 		-I$(KERNEL_TREE)/include/linux \
 		-I$(src)/../murmurhash3 \
 		$(NULL)
-EXTRA_CFLAGS += -Wframe-larger-than=100
+#
+# Turn on this flag when you become worried about stack usage
+#
+#EXTRA_CFLAGS += -Wframe-larger-than=100
 
 LINUX_VERSION_CODE := $(shell grep LINUX_VERSION_CODE $(KERNEL_TREE)/include/generated/uapi/linux/version.h | awk '{ print $$3 }')
 # 262144 = KERNEL_VERSION(4, 0, 0)

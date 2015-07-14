@@ -1108,7 +1108,6 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 {
 	struct bio *bio;
 	struct cache_block *cache_block;
-	unsigned long flags;
 
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_WORK_ITEM(wi, bc);

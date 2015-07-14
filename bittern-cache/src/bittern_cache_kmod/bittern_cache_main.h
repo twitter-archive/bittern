@@ -385,8 +385,8 @@ extern void cached_dev_do_make_request(struct bittern_cache *bc,
 /*! defer generic_make_request() to thread (workqueue) */
 extern void cached_dev_make_request_defer(struct bittern_cache *bc,
 					  struct work_item *wi,
-				          int datadir,
-				          bool set_original_bio);
+					  int datadir,
+					  bool set_original_bio);
 
 /*! main state machine */
 extern void cache_state_machine(struct bittern_cache *bc,

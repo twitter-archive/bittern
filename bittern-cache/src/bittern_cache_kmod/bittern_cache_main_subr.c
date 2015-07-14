@@ -1254,9 +1254,9 @@ void cached_dev_make_request_defer(struct bittern_cache *bc,
 	atomic_inc(&bc->bc_make_request_wq_count);
 	wi->wi_ts_workqueue = current_kernel_time_nsec();
 
-        /* set up args for cache_make_request */
-        wi->bi_datadir = datadir;
-        wi->bi_set_original_bio = set_original_bio;
+	/* set up args for cache_make_request */
+	wi->bi_datadir = datadir;
+	wi->bi_set_original_bio = set_original_bio;
 
 	/* defer to worker thread, which will start io */
 	INIT_WORK(&wi->wi_work, cached_dev_make_request_worker);

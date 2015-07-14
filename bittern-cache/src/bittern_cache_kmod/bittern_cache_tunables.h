@@ -164,7 +164,7 @@
 #define CACHE_BGWRITER_MAX_CLUSTER_SIZE 32
 
 /*! bgwriter policy */
-#define CACHE_BGWRITER_DEFAULT_POLICY	"experimental/classic"
+#define CACHE_BGWRITER_DEFAULT_POLICY	"classic"
 /* #define CACHE_BGWRITER_DEFAULT_POLICY	"default" */
 
 /*
@@ -209,11 +209,11 @@
 
 /*! how often dev worker runs */
 #define CACHED_DEV_WORKER_DELAY_MIN 1
-#define CACHED_DEV_WORKER_DELAY_DEFAULT 10
+#define CACHED_DEV_WORKER_DELAY_DEFAULT 1
 #define CACHED_DEV_WORKER_DELAY_MAX 100
 
 /*! how often FUA is inserted in the write stream */
-#define CACHED_DEV_FUA_INSERT_MIN 5
+#define CACHED_DEV_FUA_INSERT_MIN 10
 #define CACHED_DEV_FUA_INSERT_DEFAULT 500
 #define CACHED_DEV_FUA_INSERT_MAX 5000
 

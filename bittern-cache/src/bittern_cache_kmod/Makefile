@@ -44,7 +44,6 @@ M_SOURCE_FILES = bittern_cache_module.c \
 			bittern_cache_sm_invalidate.c \
 			bittern_cache_getput.c \
 			bittern_cache_bgwriter_policy.c \
-			bittern_cache_bgwriter_policy_experimental.c \
 			bittern_cache_bgwriter_kt.c \
 			bittern_cache_invalidator_kt.c \
 			bittern_cache_pmem_api.c \
@@ -76,7 +75,6 @@ bittern_cache-objs := bittern_cache_module.o \
 			bittern_cache_sm_invalidate.o \
 			bittern_cache_getput.o \
 			bittern_cache_bgwriter_policy.o \
-			bittern_cache_bgwriter_policy_experimental.o \
 			bittern_cache_bgwriter_kt.o \
 			bittern_cache_invalidator_kt.o \
 			bittern_cache_pmem_api.o \

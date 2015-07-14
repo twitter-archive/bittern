@@ -164,7 +164,7 @@
 #define CACHE_BGWRITER_MAX_CLUSTER_SIZE 32
 
 /*! bgwriter policy */
-#define CACHE_BGWRITER_DEFAULT_POLICY	"classic"
+#define CACHE_BGWRITER_DEFAULT_POLICY	"experimental/classic"
 /* #define CACHE_BGWRITER_DEFAULT_POLICY	"default" */
 
 /*

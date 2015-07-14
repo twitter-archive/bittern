@@ -159,9 +159,9 @@
  *
  * cluster size of 1 essentially turns off sequential batching.
  */
-#define CACHE_BGWRITER_MIN_CLUSTER_SIZE 1
-#define CACHE_BGWRITER_DEFAULT_CLUSTER_SIZE 32
-#define CACHE_BGWRITER_MAX_CLUSTER_SIZE 512
+#define CACHE_BGWRITER_MIN_CLUSTER_SIZE 1 /* no clustering */
+#define CACHE_BGWRITER_DEFAULT_CLUSTER_SIZE 32 /* 128 kbytes */
+#define CACHE_BGWRITER_MAX_CLUSTER_SIZE 512 /* 2048 mbytes */
 
 /*! bgwriter policy */
 #define CACHE_BGWRITER_DEFAULT_POLICY	"classic"

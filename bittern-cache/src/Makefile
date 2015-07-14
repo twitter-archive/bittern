@@ -34,5 +34,11 @@ distclean: clean
 devconfig:
 	./mk.configure --developer
 
+kdevconfig:
+	./mk.configure --developer --extra-kern-info
+
 prodconfig:
 	./mk.configure --production
+
+kprodconfig:
+	./mk.configure --production --extra-kern-info

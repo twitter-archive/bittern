@@ -196,6 +196,7 @@ void sm_writeback_update_metadata_end(struct bittern_cache *bc,
 	M_ASSERT(wi->wi_cloned_bio == NULL);
 	M_ASSERT(wi->wi_original_cache_block == NULL);
 
+	bio = bio; /* shutoff compiler warning (used in dev build) */
 	ASSERT(cache_block->bcb_state ==
 	       S_DIRTY_WRITEBACK_UPD_METADATA_END ||
 	       cache_block->bcb_state ==

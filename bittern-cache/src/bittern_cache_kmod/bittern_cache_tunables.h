@@ -148,7 +148,7 @@
 /* expressed as percentage of max pending requests */
 #define CACHE_BGWRITER_DEFAULT_QUEUE_DEPTH_PCT 50
 
-/*
+/*!
  * default cluster size amount, that is, the number of blocks
  * which the bgwriter will try to write out in a sequential batch.
  * the exact number is not hugely important right now, but eventually
@@ -160,8 +160,8 @@
  * cluster size of 1 essentially turns off sequential batching.
  */
 #define CACHE_BGWRITER_MIN_CLUSTER_SIZE 1
-#define CACHE_BGWRITER_DEFAULT_CLUSTER_SIZE 1
-#define CACHE_BGWRITER_MAX_CLUSTER_SIZE 32
+#define CACHE_BGWRITER_DEFAULT_CLUSTER_SIZE 32
+#define CACHE_BGWRITER_MAX_CLUSTER_SIZE 512
 
 /*! bgwriter policy */
 #define CACHE_BGWRITER_DEFAULT_POLICY	"classic"

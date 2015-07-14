@@ -236,7 +236,7 @@ void cache_bgwriter_policy_init(struct bittern_cache *bc)
 {
 	bc->bc_bgwriter_conf_policy = 0;
 	bc->bc_bgwriter_active_policy = 0;
-	printk_info("policy set to default/standard\n");
+	cache_bgwriter_policy_set(bc, CACHE_BGWRITER_DEFAULT_POLICY);
 }
 
 void cache_bgwriter_update_policy(struct bittern_cache *bc)
@@ -269,10 +269,6 @@ void cache_bgwriter_compute_policy_slow(struct bittern_cache *bc)
 	ASSERT(bp->bgw_policy_name != NULL);
 	ASSERT(bp->bgw_policy_function_slow != NULL);
 
-	/*
-	 * FIXME: if we are exiting, we need to override every policy decision
-	 * FIXME: on exit, should we use standard/default policy?
-	 */
 	(*bp->bgw_policy_function_slow)(bc);
 }
 
@@ -292,10 +288,6 @@ void cache_bgwriter_compute_policy_fast(struct bittern_cache *bc)
 	ASSERT(bp->bgw_policy_name != NULL);
 	ASSERT(bp->bgw_policy_function_slow != NULL);
 
-	/*
-	 * FIXME: if we are exiting, we need to override every policy decision
-	 * FIXME: on exit, should we use standard/default policy?
-	 */
 	if (bp->bgw_policy_function_fast != NULL)
 		(*bp->bgw_policy_function_fast)(bc);
 }

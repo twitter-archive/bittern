@@ -57,14 +57,6 @@ int cache_calculate_min_invalid(struct bittern_cache *bc, int min_invalid_count)
 	if (min_invalid_count > S_INVALIDATOR_MAX_INVALID_COUNT)
 		min_invalid_count = S_INVALIDATOR_MAX_INVALID_COUNT;
 	bc->bc_invalidator_conf_min_invalid_count = min_invalid_count;
-	/*
-	 * this should not really happen in production, but it's useful for
-	 * test runs when we have a very small cache
-	 */
-	if (bc->bc_invalidator_conf_min_invalid_count >
-	    (bc->bc_papi.papi_hdr.lm_cache_blocks / 10))
-		bc->bc_invalidator_conf_min_invalid_count =
-		    bc->bc_papi.papi_hdr.lm_cache_blocks / 10;
 	printk_info("conf_min_invalid_count=%u:%u [%u..%u]\n",
 		    min_invalid_count,
 		    bc->bc_invalidator_conf_min_invalid_count,

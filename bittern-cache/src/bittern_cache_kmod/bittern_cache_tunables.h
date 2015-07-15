@@ -136,8 +136,8 @@
  * queued the max is the lowest of the two numbers below
  */
 #define CACHE_MIN_MAX_PENDING_REQUESTS 50
-#define CACHE_DEFAULT_MAX_PENDING_REQUESTS 400
-#define CACHE_MAX_MAX_PENDING_REQUESTS 500
+#define CACHE_DEFAULT_MAX_PENDING_REQUESTS 600
+#define CACHE_MAX_MAX_PENDING_REQUESTS 1000
 
 /* expressed as percentage of max pending requests */
 #define CACHE_BGWRITER_MIN_QUEUE_DEPTH_PCT 20
@@ -160,7 +160,7 @@
  * cluster size of 1 essentially turns off sequential batching.
  */
 #define CACHE_BGWRITER_MIN_CLUSTER_SIZE 1 /* no clustering */
-#define CACHE_BGWRITER_DEFAULT_CLUSTER_SIZE 32 /* 128 kbytes */
+#define CACHE_BGWRITER_DEFAULT_CLUSTER_SIZE 64 /* 256 kbytes */
 #define CACHE_BGWRITER_MAX_CLUSTER_SIZE 512 /* 2048 mbytes */
 
 /*! bgwriter policy */
@@ -174,10 +174,10 @@
 	(CACHE_MAX_MAX_PENDING_REQUESTS * 2)
 
 #define S_INVALIDATOR_DEFAULT_INVALID_COUNT \
-	(S_INVALIDATOR_MIN_INVALID_COUNT + 4000)
+	(S_INVALIDATOR_MIN_INVALID_COUNT + 10000)
 
 #define S_INVALIDATOR_MAX_INVALID_COUNT \
-	(S_INVALIDATOR_MIN_INVALID_COUNT + 10000)
+	(S_INVALIDATOR_MIN_INVALID_COUNT + 30000)
 
 /*
  * we need a minimal amount of allocatable page pool buffers.

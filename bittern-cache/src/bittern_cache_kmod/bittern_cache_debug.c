@@ -243,18 +243,18 @@ void cache_dump_devio_pending(struct bittern_cache *bc,
 	printk_debug("dump_devio_pending_start[start_offset=%u]\n",
 		     curr_offset);
 
-	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
+	spin_lock_irqsave(&bc->bc_devio_spinlock, flags);
 
 	__cache_dump_devio_pending(bc,
-				   &bc->bc_dev_pending_list,
+				   &bc->bc_devio_pending_list,
 				   "devio_pending/write",
 				   &curr_offset);
 	__cache_dump_devio_pending(bc,
-				   &bc->bc_dev_flush_pending_list,
+				   &bc->bc_devio_flush_pending_list,
 				   "devio_pending/flush",
 				   &curr_offset);
 
-	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
+	spin_unlock_irqrestore(&bc->bc_devio_spinlock, flags);
 
 	/* prints redundant stuff so that it can keep the same output format */
 	printk_debug("dump_devio_pending_done[start_offset=%u, current_offset=%u, dump_count=%u]\n",

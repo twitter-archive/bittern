@@ -144,12 +144,12 @@ void cache_dtr_pre(struct dm_target *ti)
 	M_ASSERT(ret == 0);
 
 	printk_info("cancelling dev_flush delayed_work\n");
-	cancel_delayed_work(&bc->bc_dev_flush_delayed_work);
+	cancel_delayed_work(&bc->bc_devio_flush_delayed_work);
 	printk_info("flushing dev_flush workqueue\n");
-	M_ASSERT(bc->bc_dev_flush_wq != NULL);
-	flush_workqueue(bc->bc_dev_flush_wq);
+	M_ASSERT(bc->bc_devio_flush_wq != NULL);
+	flush_workqueue(bc->bc_devio_flush_wq);
 	printk_info("destroying dev_flush workqueue\n");
-	destroy_workqueue(bc->bc_dev_flush_wq);
+	destroy_workqueue(bc->bc_devio_flush_wq);
 
 	printk_info("exit\n");
 }

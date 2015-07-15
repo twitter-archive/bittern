@@ -942,17 +942,17 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	cache_timer_init(&bc->bc_deferred_wait_busy.bc_defer_timer);
 	cache_timer_init(&bc->bc_deferred_wait_page.bc_defer_timer);
 
-	bc->bc_dev_worker_delay = CACHED_DEV_WORKER_DELAY_DEFAULT;
-	bc->bc_dev_fua_insert = CACHED_DEV_FUA_INSERT_DEFAULT;
-	spin_lock_init(&bc->bc_dev_spinlock);
-	INIT_LIST_HEAD(&bc->bc_dev_pending_list);
-	INIT_LIST_HEAD(&bc->bc_dev_flush_pending_list);
-	INIT_DELAYED_WORK(&bc->bc_dev_flush_delayed_work, cached_devio_flush_delayed_worker);
-	bc->bc_dev_flush_wq = alloc_workqueue("b_dvf:%s",
+	bc->bc_devio_worker_delay = CACHED_DEV_WORKER_DELAY_DEFAULT;
+	bc->bc_devio_fua_insert = CACHED_DEV_FUA_INSERT_DEFAULT;
+	spin_lock_init(&bc->bc_devio_spinlock);
+	INIT_LIST_HEAD(&bc->bc_devio_pending_list);
+	INIT_LIST_HEAD(&bc->bc_devio_flush_pending_list);
+	INIT_DELAYED_WORK(&bc->bc_devio_flush_delayed_work, cached_devio_flush_delayed_worker);
+	bc->bc_devio_flush_wq = alloc_workqueue("b_dvf:%s",
 					      WQ_UNBOUND,
 					      1,
 					      bc->bc_name);
-	if (bc->bc_dev_flush_wq == NULL) {
+	if (bc->bc_devio_flush_wq == NULL) {
 		printk_err("%s: cannot allocate dev flush workqueue\n",
 			   bc->bc_name);
 		ret = -ENOMEM;
@@ -1196,7 +1196,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	cache_timer_init(&bc->bc_make_request_wq_timer);
 	atomic_set(&bc->bc_make_request_wq_count, 0);
 
-	ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(1));
+	ret = schedule_delayed_work(&bc->bc_devio_flush_delayed_work, msecs_to_jiffies(1));
 	ASSERT(ret == 1);
 
 
@@ -1375,7 +1375,7 @@ bad_2:
 		flush_workqueue(bc->bc_make_request_wq);
 		destroy_workqueue(bc->bc_make_request_wq);
 	}
-	cancel_delayed_work(&bc->bc_dev_flush_delayed_work);
+	cancel_delayed_work(&bc->bc_devio_flush_delayed_work);
 
 	cache_sysfs_deinit(bc);
 
@@ -1397,10 +1397,10 @@ bad_0:
 	printk_err("error: %s\n", ti->error);
 	M_ASSERT(ti->error != NULL);
 
-	if (bc->bc_dev_flush_wq != NULL) {
-		flush_workqueue(bc->bc_dev_flush_wq);
+	if (bc->bc_devio_flush_wq != NULL) {
+		flush_workqueue(bc->bc_devio_flush_wq);
 		printk_info("destroying make_request workqueue\n");
-		destroy_workqueue(bc->bc_dev_flush_wq);
+		destroy_workqueue(bc->bc_devio_flush_wq);
 	}
 	if (bc->bc_dev != NULL) {
 		printk_err("dm_put_device\n");

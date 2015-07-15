@@ -276,26 +276,26 @@ static int param_set_dev_worker_delay(struct bittern_cache *bc, int value)
 {
 	if (value == 0)
 		value = CACHED_DEV_WORKER_DELAY_DEFAULT;
-	bc->bc_dev_worker_delay = value;
+	bc->bc_devio_worker_delay = value;
 	return 0;
 }
 
 static int param_get_dev_worker_delay(struct bittern_cache *bc)
 {
-	return (int)bc->bc_dev_worker_delay;
+	return (int)bc->bc_devio_worker_delay;
 }
 
 static int param_set_dev_fua_insert(struct bittern_cache *bc, int value)
 {
 	if (value == 0)
 		value = CACHED_DEV_FUA_INSERT_DEFAULT;
-	bc->bc_dev_fua_insert = value;
+	bc->bc_devio_fua_insert = value;
 	return 0;
 }
 
 static int param_get_dev_fua_insert(struct bittern_cache *bc)
 {
-	return (int)bc->bc_dev_fua_insert;
+	return (int)bc->bc_devio_fua_insert;
 }
 
 static int param_set_verifier_running(struct bittern_cache *bc, int value)
@@ -886,17 +886,17 @@ ssize_t cache_op_show_stats_extra(struct bittern_cache *bc,
 	       atomic_read(&bc->bc_make_request_wq_count));
 	DMEMIT("%s: stats_extra: dev_pending_count=%d dev_flush_pending_count=%d dev_pure_flush_pending_count=%d\n",
 	       bc->bc_name,
-	       bc->bc_dev_pending_count,
-	       bc->bc_dev_flush_pending_count,
-	       bc->bc_dev_pure_flush_pending_count);
+	       bc->bc_devio_pending_count,
+	       bc->bc_devio_flush_pending_count,
+	       bc->bc_devio_pure_flush_pending_count);
 	DMEMIT("%s: stats_extra: dev_pure_flush_total_count=%llu dev_flush_flush_total_count=%llu\n",
 	       bc->bc_name,
-	       bc->bc_dev_pure_flush_total_count,
-	       bc->bc_dev_flush_total_count);
+	       bc->bc_devio_pure_flush_total_count,
+	       bc->bc_devio_flush_total_count);
 	DMEMIT("%s: stats_extra: dev_gennum=%llu dev_gennum_flush=%llu\n",
 	       bc->bc_name,
-	       bc->bc_dev_gennum,
-	       bc->bc_dev_gennum_flush);
+	       bc->bc_devio_gennum,
+	       bc->bc_devio_gennum_flush);
 	return sz;
 }
 

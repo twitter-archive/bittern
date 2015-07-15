@@ -252,9 +252,9 @@ struct work_item {
 	int bi_datadir;
 	/*! bi_set_original_bio used for deferred worker */
 	bool bi_set_original_bio;
-	/*! access serialized with @ref bc_dev_spinlock */
+	/*! access serialized with @ref bc_devio_spinlock */
 	struct list_head devio_pending_list;
-	/*! access serialized with @ref bc_dev_spinlock */
+	/*! access serialized with @ref bc_devio_spinlock */
 	int64_t devio_gennum;
 	/*!
 	 * Copy of current bio's flags. Looking at the bio flags
@@ -880,28 +880,28 @@ struct bittern_cache {
 	/*! device being cached */
 	struct dm_dev *bc_dev;
 	/*!  serializes access to bio and flush pending lists */
-	spinlock_t bc_dev_spinlock;
+	spinlock_t bc_devio_spinlock;
 	/*!
 	 * List of all pending requests issed to @ref bc_dev.
 	 * When a read or write request is issued, the work_item is
 	 * inserted into this list.
 	 * When IO completes, the request is either acked immediately
-	 * or moved to the @ref bc_dev_flush_pending_list.
+	 * or moved to the @ref bc_devio_flush_pending_list.
 	 * A request can only be in one of these two queues.
 	 */
-	struct list_head bc_dev_pending_list;
-	/*! counts elements in @ref bc_dev_bio_pending */
-	int bc_dev_pending_count;
+	struct list_head bc_devio_pending_list;
+	/*! counts elements in @ref bc_devio_bio_pending */
+	int bc_devio_pending_count;
 	/*! list of all pending FLUSH requests issed to @ref bc_dev */
-	struct list_head bc_dev_flush_pending_list;
-	/*! counts elements in @ref bc_dev_flush_pending */
-	int bc_dev_flush_pending_count;
+	struct list_head bc_devio_flush_pending_list;
+	/*! counts elements in @ref bc_devio_flush_pending */
+	int bc_devio_flush_pending_count;
 	/*! counts number of pending pure flushes */
-	int bc_dev_pure_flush_pending_count;
+	int bc_devio_pure_flush_pending_count;
 	/*! count of flushes */
-	uint64_t bc_dev_flush_total_count;
+	uint64_t bc_devio_flush_total_count;
 	/*! count of pure flushes */
-	uint64_t bc_dev_pure_flush_total_count;
+	uint64_t bc_devio_pure_flush_total_count;
 	/*!
 	 * Generation number used to associate requests which
 	 * have been issued before a given generation number.
@@ -917,23 +917,23 @@ struct bittern_cache {
 	 * can be acknowledged.
 	 * \todo handle rollover
 	 */
-	uint64_t bc_dev_gennum;
+	uint64_t bc_devio_gennum;
 	/*!
 	 * Gennum of last flush which was issued.
-	 * (@ref bc_dev_gennum_flush - ref @bc_dev_gennum) tells
+	 * (@ref bc_devio_gennum_flush - ref @bc_devio_gennum) tells
 	 * how many write requests were issued after the last flush
 	 * was issued.
 	 * \todo handle rollover
 	 */
-	uint64_t bc_dev_gennum_flush;
+	uint64_t bc_devio_gennum_flush;
 	/*! workqueue used to issue explicit flushes */
-	struct workqueue_struct *bc_dev_flush_wq;
+	struct workqueue_struct *bc_devio_flush_wq;
 	/*! work struct for explicit flushes */
-	struct delayed_work bc_dev_flush_delayed_work;
+	struct delayed_work bc_devio_flush_delayed_work;
 	/*! conf param - how often the delayed worker runs */
-	int bc_dev_worker_delay;
+	int bc_devio_worker_delay;
 	/*! conf param - how often FUA is inserted in the write stream */
-	int bc_dev_fua_insert;
+	int bc_devio_fua_insert;
 
 	/*! device acting as the cache */
 	struct dm_dev *bc_cache_dev;

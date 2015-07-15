@@ -161,6 +161,9 @@ void cache_bgwriter_compute_policy_classic(struct bittern_cache *bc)
 	}
 }
 
+#undef BITTERN_CACHE_ALLOW_EXPERIMENTAL_POLICIES
+#ifdef BITTERN_CACHE_ALLOW_EXPERIMENTAL_POLICIES
+
 void cache_bgwriter_compute_policy_aggressive(struct bittern_cache *bc)
 {
 	int dirty_pct, dirty_pct_f100;
@@ -485,27 +488,40 @@ cache_bgwriter_compute_policy_queue_depth_adaptive(struct bittern_cache *bc)
 #undef bc_bgwriter_curr_policy_no_sched_until
 }
 
+#endif /*BITTERN_CACHE_ALLOW_EXPERIMENTAL_POLICIES*/
+
 struct cache_bgwriter_policy {
 	const char *bgw_policy_name;
 	void (*bgw_policy_function_slow)(struct bittern_cache *bc);
 	void (*bgw_policy_function_fast)(struct bittern_cache *bc);
 } cache_bgwriter_policies[] = {
 	{
-	"standard",
-		    cache_bgwriter_compute_policy_standard, NULL,}, {
-	"default", cache_bgwriter_compute_policy_standard, NULL,}, {
-	"classic",
-		    cache_bgwriter_compute_policy_classic,
-		    NULL,}, {
-	"exp/aggressive",
-		    cache_bgwriter_compute_policy_aggressive,
-		    NULL,}, {
-	"exp/queue-depth-adaptive",
-		    cache_bgwriter_compute_policy_queue_depth_adaptive,
-		    cache_bgwriter_compute_policy_queue_depth_adaptive,}, {
-	"exp/queue-depth",
-		    cache_bgwriter_compute_policy_queue_depth,
-		    cache_bgwriter_compute_policy_queue_depth,},
+		"classic",
+		cache_bgwriter_compute_policy_classic,
+		NULL,
+	},
+	{
+		"old_default",
+		cache_bgwriter_compute_policy_standard,
+		NULL,
+	},
+#ifdef BITTERN_CACHE_ALLOW_EXPERIMENTAL_POLICIES
+	{
+		"exp/aggressive",
+		cache_bgwriter_compute_policy_aggressive,
+		NULL,
+	},
+	{
+		"exp/queue-depth-adaptive",
+		cache_bgwriter_compute_policy_queue_depth_adaptive,
+		cache_bgwriter_compute_policy_queue_depth_adaptive,
+	},
+	{
+		"exp/queue-depth",
+		cache_bgwriter_compute_policy_queue_depth,
+		cache_bgwriter_compute_policy_queue_depth,
+	},
+#endif /*BITTERN_CACHE_ALLOW_EXPERIMENTAL_POLICIES*/
 };
 
 #define CACHE_BGWRITER_POLICIES		\

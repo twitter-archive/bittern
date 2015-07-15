@@ -152,7 +152,8 @@ void cache_dump_pending(struct bittern_cache *bc,
 	printk_debug("dump_pending_start[start_offset=%u]\n", start_offset);
 
 	spin_lock_irqsave(&bc->bc_entries_lock, flags);
-	list_for_each_entry(wi, &bc->bc_pending_requests_list,
+	list_for_each_entry(wi,
+			    &bc->bc_pending_requests_list,
 			    wi_pending_io_list) {
 		struct cache_block *cache_block = wi->wi_cache_block;
 
@@ -161,7 +162,7 @@ void cache_dump_pending(struct bittern_cache *bc,
 		if (cache_block != NULL)
 			printk(KERN_DEBUG
 			       "%s[%u]: op=%s, dir=%s, s=%lu %c%c%c: %d:%lu: %d(%s)\n",
-			       "pending",
+			       "pending/cache_block",
 			       curr_offset,
 			       wi->wi_op_type,
 			       data_dir_read(wi->wi_op_rw) ? "read" : "write",
@@ -190,7 +191,76 @@ void cache_dump_pending(struct bittern_cache *bc,
 	spin_unlock_irqrestore(&bc->bc_entries_lock, flags);
 
 	printk_debug("dump_pending_done[start_offset=%u, current_offset=%u, dump_count=%u]\n",
-	     start_offset, curr_offset, dump_count);
+		     start_offset,
+		     curr_offset,
+		     dump_count);
+}
+
+/*! WARNING: spinlock is kept held while calling this function */
+void __cache_dump_devio_pending(struct bittern_cache *bc,
+				struct list_head *pending_list,
+				const char *pending_list_name,
+				int *curr_offset)
+{
+	struct work_item *wi;
+	list_for_each_entry(wi, pending_list, devio_pending_list) {
+		struct cache_block *cache_block = wi->wi_cache_block;
+
+		if (cache_block != NULL)
+			printk(KERN_DEBUG
+			       "%s[%u]: op=%s, dir=%s, s=%lu, gennum=%llu: %d:%lu: %d(%s)\n",
+			       pending_list_name,
+			       *curr_offset,
+			       wi->wi_op_type,
+			       data_dir_read(wi->wi_op_rw) ? "read" : "write",
+			       wi->wi_op_sector,
+			       wi->devio_gennum,
+			       cache_block->bcb_block_id,
+			       cache_block->bcb_sector,
+			       cache_block->bcb_state,
+			       cache_state_to_str(cache_block->bcb_state));
+		else
+			printk(KERN_DEBUG
+			       "%s[%u]: op=%s, dir=%s, s=%lu, gennum=%llu\n",
+			       pending_list_name,
+			       *curr_offset,
+			       wi->wi_op_type,
+			       data_dir_read(wi->wi_op_rw) ? "read" : "write",
+			       wi->wi_op_sector,
+			       wi->devio_gennum);
+		(*curr_offset)++;
+	}
+}
+
+void cache_dump_devio_pending(struct bittern_cache *bc,
+			      unsigned int start_offset)
+{
+	unsigned long flags;
+	int curr_offset = 0;
+
+	ASSERT(bc != NULL);
+	ASSERT_BITTERN_CACHE(bc);
+	printk_debug("dump_devio_pending_start[start_offset=%u]\n",
+		     curr_offset);
+
+	spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
+
+	__cache_dump_devio_pending(bc,
+				   &bc->bc_dev_pending_list,
+				   "devio_pending/write",
+				   &curr_offset);
+	__cache_dump_devio_pending(bc,
+				   &bc->bc_dev_flush_pending_list,
+				   "devio_pending/flush",
+				   &curr_offset);
+
+	spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
+
+	/* prints redundant stuff so that it can keep the same output format */
+	printk_debug("dump_devio_pending_done[start_offset=%u, current_offset=%u, dump_count=%u]\n",
+		     0,
+		     curr_offset,
+		     curr_offset);
 }
 
 int cache_dump_blocks(struct bittern_cache *bc,
@@ -221,6 +291,8 @@ int cache_dump_blocks(struct bittern_cache *bc,
 					      dump_offset);
 	else if (strcmp(dump_op, "pending") == 0)
 		cache_dump_pending(bc, dump_offset);
+	else if (strcmp(dump_op, "devio_pending") == 0)
+		cache_dump_devio_pending(bc, dump_offset);
 	else if (strcmp(dump_op, "deferred") == 0) {
 		cache_dump_deferred(bc,
 				    &bc->bc_deferred_wait_busy,

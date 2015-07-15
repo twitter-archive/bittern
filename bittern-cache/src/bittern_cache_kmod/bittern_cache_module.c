@@ -897,35 +897,6 @@ ssize_t cache_op_show_stats_extra(struct bittern_cache *bc,
 	       bc->bc_name,
 	       bc->bc_dev_gennum,
 	       bc->bc_dev_gennum_flush);
-	{
-		unsigned long flags;
-		struct work_item *wi;
-		struct bio *bio;
-		spin_lock_irqsave(&bc->bc_dev_spinlock, flags);
-		list_for_each_entry(wi,
-				    &bc->bc_dev_pending_list,
-				    devio_pending_list) {
-			ASSERT_WORK_ITEM(wi, bc);
-			bio = wi->wi_cloned_bio;
-			DMEMIT("%s: stats_extra: pending: bio=%p bi_sector=%lu gennum=%llu\n",
-			       bc->bc_name,
-			       bio,
-			       bio->bi_iter.bi_sector,
-			       wi->devio_gennum);
-		}
-		list_for_each_entry(wi,
-				    &bc->bc_dev_flush_pending_list,
-				    devio_pending_list) {
-			ASSERT_WORK_ITEM(wi, bc);
-			bio = wi->wi_cloned_bio;
-			DMEMIT("%s: stats_extra: flush_pending: bio=%p bi_sector=%lu gennum=%llu\n",
-			       bc->bc_name,
-			       bio,
-			       bio->bi_iter.bi_sector,
-			       wi->devio_gennum);
-		}
-		spin_unlock_irqrestore(&bc->bc_dev_spinlock, flags);
-	}
 	return sz;
 }
 

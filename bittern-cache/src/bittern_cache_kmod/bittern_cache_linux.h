@@ -46,6 +46,8 @@
 #define bio_set_data_dir_read(__bio) ((__bio)->bi_rw &= ~1)
 #define data_dir_read(__bi_rw) (((__bi_rw) & 1) == READ)
 #define data_dir_write(__bi_rw) (((__bi_rw) & 1) == WRITE)
+#define bio_data_dir_read(__bio) (((__bio)->bi_rw & 1) == READ)
+#define bio_data_dir_write(__bio) (((__bio)->bi_rw & 1) == WRITE)
 
 /*!
  * Atomically compares "new" with "v".

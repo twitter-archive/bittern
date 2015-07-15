@@ -57,14 +57,6 @@ int cache_calculate_min_invalid(struct bittern_cache *bc, int min_invalid_count)
 	if (min_invalid_count > S_INVALIDATOR_MAX_INVALID_COUNT)
 		min_invalid_count = S_INVALIDATOR_MAX_INVALID_COUNT;
 	bc->bc_invalidator_conf_min_invalid_count = min_invalid_count;
-	/*
-	 * this should not really happen in production, but it's useful for
-	 * test runs when we have a very small cache
-	 */
-	if (bc->bc_invalidator_conf_min_invalid_count >
-	    (bc->bc_papi.papi_hdr.lm_cache_blocks / 10))
-		bc->bc_invalidator_conf_min_invalid_count =
-		    bc->bc_papi.papi_hdr.lm_cache_blocks / 10;
 	printk_info("conf_min_invalid_count=%u:%u [%u..%u]\n",
 		    min_invalid_count,
 		    bc->bc_invalidator_conf_min_invalid_count,
@@ -941,6 +933,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	cache_timer_init(&bc->bc_timer_write_dirty_hits);
 	cache_timer_init(&bc->bc_timer_cached_device_reads);
 	cache_timer_init(&bc->bc_timer_cached_device_writes);
+	cache_timer_init(&bc->bc_timer_cached_device_flushes);
 	cache_timer_init(&bc->bc_timer_writebacks);
 	cache_timer_init(&bc->bc_timer_invalidations);
 	cache_timer_init(&bc->bc_timer_pending_queue);
@@ -948,6 +941,24 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	cache_timer_init(&bc->bc_timer_resource_alloc_writes);
 	cache_timer_init(&bc->bc_deferred_wait_busy.bc_defer_timer);
 	cache_timer_init(&bc->bc_deferred_wait_page.bc_defer_timer);
+
+	bc->bc_dev_worker_delay = CACHED_DEV_WORKER_DELAY_DEFAULT;
+	bc->bc_dev_fua_insert = CACHED_DEV_FUA_INSERT_DEFAULT;
+	spin_lock_init(&bc->bc_dev_spinlock);
+	INIT_LIST_HEAD(&bc->bc_dev_pending_list);
+	INIT_LIST_HEAD(&bc->bc_dev_flush_pending_list);
+	INIT_DELAYED_WORK(&bc->bc_dev_flush_delayed_work, cached_devio_flush_delayed_worker);
+	bc->bc_dev_flush_wq = alloc_workqueue("b_dvf:%s",
+					      WQ_UNBOUND,
+					      1,
+					      bc->bc_name);
+	if (bc->bc_dev_flush_wq == NULL) {
+		printk_err("%s: cannot allocate dev flush workqueue\n",
+			   bc->bc_name);
+		ret = -ENOMEM;
+		ti->error = "cannot allocate dev flush workqueue";
+		goto bad_0;
+	}
 
 	pmem_info_initialize(bc);
 
@@ -1185,6 +1196,9 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	cache_timer_init(&bc->bc_make_request_wq_timer);
 	atomic_set(&bc->bc_make_request_wq_count, 0);
 
+	ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(1));
+	ASSERT(ret == 1);
+
 
 	/*
 	 * now we have initialized everything we can show sysfs.
@@ -1361,6 +1375,7 @@ bad_2:
 		flush_workqueue(bc->bc_make_request_wq);
 		destroy_workqueue(bc->bc_make_request_wq);
 	}
+	cancel_delayed_work(&bc->bc_dev_flush_delayed_work);
 
 	cache_sysfs_deinit(bc);
 
@@ -1381,7 +1396,12 @@ bad_1:
 bad_0:
 	printk_err("error: %s\n", ti->error);
 	M_ASSERT(ti->error != NULL);
-	printk_err("error: bad\n");
+
+	if (bc->bc_dev_flush_wq != NULL) {
+		flush_workqueue(bc->bc_dev_flush_wq);
+		printk_info("destroying make_request workqueue\n");
+		destroy_workqueue(bc->bc_dev_flush_wq);
+	}
 	if (bc->bc_dev != NULL) {
 		printk_err("dm_put_device\n");
 		dm_put_device(ti, bc->bc_dev);

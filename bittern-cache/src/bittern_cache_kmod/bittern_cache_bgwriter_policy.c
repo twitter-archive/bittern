@@ -31,7 +31,7 @@
  *   way that uses a table to set values.
  */
 
-void cache_bgwriter_compute_policy_standard(struct bittern_cache *bc)
+void cache_bgwriter_compute_policy_old_default(struct bittern_cache *bc)
 {
 	int dirty_pct, dirty_pct_f100;
 	unsigned int valid_entries_dirty, total_entries;
@@ -495,27 +495,32 @@ struct cache_bgwriter_policy {
 	void (*bgw_policy_function_slow)(struct bittern_cache *bc);
 	void (*bgw_policy_function_fast)(struct bittern_cache *bc);
 } cache_bgwriter_policies[] = {
+	/*! current default writeback policy */
 	{
 		"classic",
 		cache_bgwriter_compute_policy_classic,
 		NULL,
 	},
+	/*! old default writeback policy (before REQ_FUA|REQ_FLUSH) */
 	{
 		"old_default",
-		cache_bgwriter_compute_policy_standard,
+		cache_bgwriter_compute_policy_old_default,
 		NULL,
 	},
 #ifdef BITTERN_CACHE_ALLOW_EXPERIMENTAL_POLICIES
+	/*! experimental, use at your own risk and peril */
 	{
 		"exp/aggressive",
 		cache_bgwriter_compute_policy_aggressive,
 		NULL,
 	},
+	/*! experimental, use at your own risk and peril */
 	{
 		"exp/queue-depth-adaptive",
 		cache_bgwriter_compute_policy_queue_depth_adaptive,
 		cache_bgwriter_compute_policy_queue_depth_adaptive,
 	},
+	/*! experimental, use at your own risk and peril */
 	{
 		"exp/queue-depth",
 		cache_bgwriter_compute_policy_queue_depth,

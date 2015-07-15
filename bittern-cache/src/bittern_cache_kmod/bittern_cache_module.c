@@ -860,7 +860,7 @@ ssize_t cache_op_show_stats_extra(struct bittern_cache *bc,
 	       list_empty(&bc->bc_pending_requests_list));
 	DMEMIT("%s: stats_extra: bc_make_request_count=%u bc_make_request_wq_count=%u\n",
 	       bc->bc_name,
-	       atomic_read(&bc->bc_make_request_wq_count),
+	       atomic_read(&bc->bc_make_request_count),
 	       atomic_read(&bc->bc_make_request_wq_count));
 	return sz;
 }

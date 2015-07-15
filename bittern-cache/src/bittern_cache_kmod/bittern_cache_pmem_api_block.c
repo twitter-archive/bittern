@@ -363,7 +363,7 @@ done:
 static void pmem_do_make_request_block_endbio(struct bio *bio, int err)
 {
 	struct pmem_context *pmem_ctx;
-	struct async_context *ctx = &pmem_ctx->async_ctx;
+	struct async_context *ctx;
 
 	pmem_ctx = (struct pmem_context *)bio->bi_private;
 	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);

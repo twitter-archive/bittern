@@ -129,31 +129,34 @@ void cache_bgwriter_compute_policy_classic(struct bittern_cache *bc)
 	bc->bc_bgwriter_curr_min_age_secs = 0;
 
 	if (dirty_pct > 95) {
-		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(75, bc->bc_bgwriter_curr_max_queue_depth);
+		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(80, bc->bc_bgwriter_curr_max_queue_depth);
 		bc->bc_bgwriter_curr_min_age_secs = 1;
 	} else if (dirty_pct > 90) {
-		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(50, bc->bc_bgwriter_curr_max_queue_depth);
+		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(85, bc->bc_bgwriter_curr_max_queue_depth);
 		bc->bc_bgwriter_curr_min_age_secs = 1;
 	} else if (dirty_pct > 80) {
-		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(40, bc->bc_bgwriter_curr_max_queue_depth);
+		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(70, bc->bc_bgwriter_curr_max_queue_depth);
 		bc->bc_bgwriter_curr_min_age_secs = 1;
 	} else if (dirty_pct > 70) {
-		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(30, bc->bc_bgwriter_curr_max_queue_depth);
+		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(50, bc->bc_bgwriter_curr_max_queue_depth);
 		bc->bc_bgwriter_curr_min_age_secs = 2;
 	} else if (dirty_pct > 60) {
-		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(20, bc->bc_bgwriter_curr_max_queue_depth);
+		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(45, bc->bc_bgwriter_curr_max_queue_depth);
 		bc->bc_bgwriter_curr_min_age_secs = 4;
 	} else if (dirty_pct > 50) {
-		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(10, bc->bc_bgwriter_curr_max_queue_depth);
-		bc->bc_bgwriter_curr_rate_per_sec = 50;
+		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(40, bc->bc_bgwriter_curr_max_queue_depth);
 		bc->bc_bgwriter_curr_min_age_secs = 5;
+	} else if (dirty_pct > 40) {
+		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(30, bc->bc_bgwriter_curr_max_queue_depth);
+		bc->bc_bgwriter_curr_min_age_secs = 20;
+	} else if (dirty_pct > 30) {
+		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(15, bc->bc_bgwriter_curr_max_queue_depth);
+		bc->bc_bgwriter_curr_min_age_secs = 20;
 	} else if (dirty_pct > 20) {
-		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(5, bc->bc_bgwriter_curr_max_queue_depth);
-		bc->bc_bgwriter_curr_rate_per_sec = 50;
+		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(10, bc->bc_bgwriter_curr_max_queue_depth);
 		bc->bc_bgwriter_curr_min_age_secs = 20;
 	} else {
 		bc->bc_bgwriter_curr_queue_depth = A_PERCENT_OF_B(5, bc->bc_bgwriter_curr_max_queue_depth);
-		bc->bc_bgwriter_curr_rate_per_sec = 30;
 		bc->bc_bgwriter_curr_min_age_secs = 30;
 	}
 }

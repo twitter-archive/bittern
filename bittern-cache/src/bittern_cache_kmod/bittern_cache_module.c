@@ -437,8 +437,8 @@ struct cache_conf_param_entry cache_conf_param_list[] = {
 	{
 		.cache_conf_name = "bgwriter_conf_greedyness",
 		.cache_conf_type = CONF_TYPE_INT,
-		.cache_conf_min = 20,
-		.cache_conf_max = -20,
+		.cache_conf_min = -20,
+		.cache_conf_max = 20,
 		.cache_conf_setup_function = set_bgwriter_conf_greedyness,
 		.cache_conf_show_function = show_bgwriter_conf_greedyness,
 	},

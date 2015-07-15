@@ -130,11 +130,8 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	ASSERT(bc != NULL);
 
 	if (bc->bc_dev_flush_pending_count == 0 && bc->bc_dev_pending_count == 0) {
-		if(__xxxyyy)printk_debug("DELAYED_WORKER: empty flush_pending count\n");
-		ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(bc->bc_dev_worker_delay));
-	bc->bc_dev_fua_insert = CACHED_DEV_FUA_INSERT_DEFAULT;
-		M_ASSERT(ret == 1);
-		return;
+		if(__xxxyyy)printk_debug("DELAYED_WORKER: zero flush_pending count\n");
+		goto out;
 	}
 
 	ASSERT_BITTERN_CACHE(bc);
@@ -194,6 +191,7 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 
 	generic_make_request(bio);
 
+out:
 	ret = schedule_delayed_work(&bc->bc_dev_flush_delayed_work, msecs_to_jiffies(bc->bc_dev_worker_delay));
 	ASSERT(ret == 1);
 }

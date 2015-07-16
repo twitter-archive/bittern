@@ -923,9 +923,9 @@ struct bittern_cache {
 	 * above case W1 and W3 will be acknowledged, but W3 cannot because it
 	 * was issued after F3.
 	 */
-	struct devio {
-		/*! device being cached */
-		struct dm_dev *bc_dev;
+	/* struct devio { */
+	/*! device being cached */
+	struct dm_dev *bc_dev;
 
 	/*!  serializes access to bio and flush pending lists */
 	spinlock_t bc_devio_spinlock;
@@ -975,6 +975,7 @@ struct bittern_cache {
 
 	/*! device acting as the cache */
 	struct dm_dev *bc_cache_dev;
+	/* }; */
 
 	int bc_verifier_running;
 	struct task_struct *bc_verifier_task;

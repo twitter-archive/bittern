@@ -36,6 +36,9 @@
 #define jiffies_to_secs(__jiffies) \
 	((unsigned long)(jiffies_to_msecs(__jiffies)) / 1000UL)
 
+/* percent macro: this calculates _a % of _b (result undefined if _b is zero) */
+#define PERCENT_OF(_a, _b) ({ ((_a) * 100) / (_b); })
+
 #define RB_NON_EMPTY_NODE(__node) (!RB_EMPTY_NODE(__node))
 #define RB_NON_EMPTY_ROOT(__root) (!RB_EMPTY_ROOT(__root))
 

@@ -258,7 +258,7 @@ struct work_item {
 	int64_t devio_gennum;
 	/*!
 	 * Copy of current bio's flags. Looking at the bio flags
-	 * is not possible, as block IO layer may strip them.
+	 * is not possible, as bio strips them before acking the request.
 	 */
 	int devio_flags;
 };
@@ -877,8 +877,56 @@ struct bittern_cache {
 	/*! target info */
 	struct dm_target *bc_ti;
 
-	/*! device being cached */
-	struct dm_dev *bc_dev;
+	/*!
+	 * This struct implements the devio layer which sits between Bittern
+	 * and the cached device itself @ref bc_dev
+	 *
+	 * It implements the abstraction of stable writes, that is writes which
+	 * are guaranteed to be stable on the storage media, that is, written
+	 * from the device's hardware cache (if any) to the storage media, the
+	 * spinning platter in the case of HDD.
+	 *
+	 * Basically, write requests are kept pending until a later
+	 * REQ_FUA|REQ_FLUSH completes.
+	 *
+	 * Read requests are passed through directly to the cached device.
+	 * Write request are kept in two different (mutually exclusive) queues,
+	 * @ref pending_queue and @ref flush_pending_queue. Pending writes are
+	 * first held in pending_queue. Upon write completion the request is
+	 * moved to @ref flush_pending_queue, and kept there until a later flush
+	 * request is acknowledged.
+	 *
+	 * That is to say, the devio layer buffers write operations and only
+	 * acknowledge them to Bittern once they are guaranteed stable.
+	 * Say we have these requests issued:
+	 *
+	 * W1         gen=1
+	 * W2         gen=2
+	 * F3         gen=3
+	 * W4         gen=4
+	 *
+	 * A possible timeline is as follows:
+	 *
+	 * time  event               pend_queue  flush_pend_queue  acked
+	 * ----------------------------------------------------------------
+	 * 0     write W1 issued     W1
+	 * 1     write W2 issued     W1 W2
+	 * 2     write W1 completes  W2          W1
+	 * 3     flush F3 issued     W2          W1
+	 * 4     write W3 issued     W2 W3       W1
+	 * 5     write W3 completes  W2          W1 W3
+	 * 6     write W2 completes  W1 W2 W3
+	 * 7     flush F3 completes  W3                            W1 W2
+	 *
+	 * When F3 completes, all previously completed write requests which are
+	 * waiting for a flush will be acknowledged. So it follows that in the
+	 * above case W1 and W3 will be acknowledged, but W3 cannot because it
+	 * was issued after F3.
+	 */
+	struct devio {
+		/*! device being cached */
+		struct dm_dev *bc_dev;
+
 	/*!  serializes access to bio and flush pending lists */
 	spinlock_t bc_devio_spinlock;
 	/*!
@@ -905,16 +953,6 @@ struct bittern_cache {
 	/*!
 	 * Generation number used to associate requests which
 	 * have been issued before a given generation number.
-	 * Say we have these requests issued:
-	 *
-	 * W1         gen=1
-	 * W2         gen=2
-	 * F3         gen=3
-	 * W4         gen=4
-	 *
-	 * When flush request F3 is acknowledged, every previously queued
-	 * request (which has a generation number equal or less than 3)
-	 * can be acknowledged.
 	 * \todo handle rollover
 	 */
 	uint64_t bc_devio_gennum;
@@ -1215,11 +1253,6 @@ __printf(9, 10) cache_trace(int level,
 	}                                                                                       \
 })
 #endif /*DISABLE_BT_DEV_TRACE */
-
-/* percent macro - this calculates _b% of _a% */
-#define B_PERCENT_OF_A(_a, _b) ({ ((_a) * 100) / (_b); })
-/* percent macro - it also calculates _a% percentage of %_b */
-#define A_PERCENT_OF_B(_a, _b) ({ ((_a) * (_b)) / 100; })
 
 /* __xop accessors */
 #define __xop_null(__x_value) (__x_value)

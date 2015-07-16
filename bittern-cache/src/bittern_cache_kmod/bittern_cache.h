@@ -51,7 +51,7 @@
 
 #include "bittern_cache_linux.h"
 
-#define BITTERN_CACHE_VERSION "0.28.4"
+#define BITTERN_CACHE_VERSION "0.28.5"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -252,9 +252,9 @@ struct work_item {
 	int bi_datadir;
 	/*! bi_set_original_bio used for deferred worker */
 	bool bi_set_original_bio;
-	/*! access serialized with @ref bc_devio_spinlock */
+	/*! access serialized with @ref devio spinlock */
 	struct list_head devio_pending_list;
-	/*! access serialized with @ref bc_devio_spinlock */
+	/*! access serialized with @ref devio spinlock */
 	int64_t devio_gennum;
 	/*!
 	 * Copy of current bio's flags. Looking at the bio flags
@@ -878,6 +878,7 @@ struct bittern_cache {
 	struct dm_target *bc_ti;
 
 	/*!
+	 *
 	 * This struct implements the devio layer which sits between Bittern
 	 * and the cached device itself @ref bc_dev
 	 *
@@ -922,60 +923,61 @@ struct bittern_cache {
 	 * waiting for a flush will be acknowledged. So it follows that in the
 	 * above case W1 and W3 will be acknowledged, but W3 cannot because it
 	 * was issued after F3.
+	 *
 	 */
-	/* struct devio { */
-	/*! device being cached */
-	struct dm_dev *bc_dev;
+	struct devio {
+		/*! device being cached */
+		struct dm_dev *dm_dev;
 
-	/*!  serializes access to bio and flush pending lists */
-	spinlock_t bc_devio_spinlock;
-	/*!
-	 * List of all pending requests issed to @ref bc_dev.
-	 * When a read or write request is issued, the work_item is
-	 * inserted into this list.
-	 * When IO completes, the request is either acked immediately
-	 * or moved to the @ref bc_devio_flush_pending_list.
-	 * A request can only be in one of these two queues.
-	 */
-	struct list_head bc_devio_pending_list;
-	/*! counts elements in @ref bc_devio_bio_pending */
-	int bc_devio_pending_count;
-	/*! list of all pending FLUSH requests issed to @ref bc_dev */
-	struct list_head bc_devio_flush_pending_list;
-	/*! counts elements in @ref bc_devio_flush_pending */
-	int bc_devio_flush_pending_count;
-	/*! counts number of pending pure flushes */
-	int bc_devio_pure_flush_pending_count;
-	/*! count of flushes */
-	uint64_t bc_devio_flush_total_count;
-	/*! count of pure flushes */
-	uint64_t bc_devio_pure_flush_total_count;
-	/*!
-	 * Generation number used to associate requests which
-	 * have been issued before a given generation number.
-	 * \todo handle rollover
-	 */
-	uint64_t bc_devio_gennum;
-	/*!
-	 * Gennum of last flush which was issued.
-	 * (@ref bc_devio_gennum_flush - ref @bc_devio_gennum) tells
-	 * how many write requests were issued after the last flush
-	 * was issued.
-	 * \todo handle rollover
-	 */
-	uint64_t bc_devio_gennum_flush;
-	/*! workqueue used to issue explicit flushes */
-	struct workqueue_struct *bc_devio_flush_wq;
-	/*! work struct for explicit flushes */
-	struct delayed_work bc_devio_flush_delayed_work;
-	/*! conf param - how often the delayed worker runs */
-	int bc_devio_worker_delay;
-	/*! conf param - how often FUA is inserted in the write stream */
-	int bc_devio_fua_insert;
+		/*!  serializes access to bio and flush pending lists */
+		spinlock_t spinlock;
+		/*!
+		 * List of all pending requests issed to @ref bc_dev.
+		 * When a read or write request is issued, the work_item is
+		 * inserted into this list.
+		 * When IO completes, the request is either acked immediately
+		 * or moved to the @ref flush_pending_list.
+		 * A request can only be in one of these two queues.
+		 */
+		struct list_head pending_list;
+		/*! counts elements in @ref bio_pending */
+		int pending_count;
+		/*! list of all pending FLUSH requests issed to @ref bc_dev */
+		struct list_head flush_pending_list;
+		/*! counts elements in @ref flush_pending */
+		int flush_pending_count;
+		/*! counts number of pending pure flushes */
+		int pure_flush_pending_count;
+		/*! count of flushes */
+		uint64_t flush_total_count;
+		/*! count of pure flushes */
+		uint64_t pure_flush_total_count;
+		/*!
+		 * Generation number used to associate requests which
+		 * have been issued before a given generation number.
+		 * \todo handle rollover
+		 */
+		uint64_t gennum;
+		/*!
+		 * Gennum of last flush which was issued.
+		 * (@ref gennum_flush - ref @gennum) tells
+		 * how many write requests were issued after the last flush
+		 * was issued.
+		 * \todo handle rollover
+		 */
+		uint64_t gennum_flush;
+		/*! workqueue used to issue explicit flushes */
+		struct workqueue_struct *flush_wq;
+		/*! work struct for explicit flushes */
+		struct delayed_work flush_delayed_work;
+		/*! conf param - how often the delayed worker runs */
+		int conf_worker_delay;
+		/*! conf param - how often FUA is inserted in the write stream */
+		int conf_fua_insert;
+	} devio;
 
 	/*! device acting as the cache */
 	struct dm_dev *bc_cache_dev;
-	/* }; */
 
 	int bc_verifier_running;
 	struct task_struct *bc_verifier_task;
@@ -1075,7 +1077,7 @@ static inline const char *cache_mode_to_str(struct bittern_cache *bc)
 	ASSERT((__bc)->bc_magic3 == BC_MAGIC3);				\
 	ASSERT((__bc)->bc_magic4 == BC_MAGIC4);				\
 	ASSERT((__bc)->bc_ti != NULL);					\
-	ASSERT((__bc)->bc_dev != NULL);					\
+	ASSERT((__bc)->devio.dm_dev != NULL);				\
 	ASSERT_CACHE_REPLACEMENT_MODE((__bc)->bc_replacement_mode);	\
 	ASSERT((__bc)->bc_cache_blocks != NULL);			\
 	ASSERT((__bc)->bc_cache_mode_writeback == 0 ||			\
@@ -1172,13 +1174,21 @@ extern int cache_block_verifier_kthread(void *bc);
 extern void cache_invalidate_clean_block(struct bittern_cache *bc,
 					 struct cache_block *cache_block);
 extern void cache_invalidate_blocks(struct bittern_cache *bc);
-/* \todo should this be in cache_getput? */
+/*! \todo should this be in cache_getput? */
 extern void cache_invalidate_block_io_end(struct bittern_cache *bc,
 					  struct work_item *wi,
 					  struct cache_block *cache_block);
-/* \todo should this be in cache_getput? */
+/*! \todo should this be in cache_getput? */
 extern void cache_invalidate_block_io_start(struct bittern_cache *bc,
 					    struct cache_block *cache_block);
+
+/*! worker used to issue explicit flushes */
+extern void cached_devio_flush_delayed_worker(struct work_struct *work);
+/*! queue request to devio layer */
+extern void cached_devio_make_request(struct bittern_cache *bc,
+				      struct work_item *wi,
+				      struct bio *bio);
+
 extern void cache_zero_stats(struct bittern_cache *bc);
 extern int cache_dump_blocks(struct bittern_cache *bc,
 			     const char *dump_op,

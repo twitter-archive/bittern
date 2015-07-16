@@ -50,27 +50,27 @@ static void cached_devio_flush_end_bio_process(struct bittern_cache *bc, uint64_
 
 		processed = false;
 
-		spin_lock_irqsave(&bc->bc_devio_spinlock, flags);
+		spin_lock_irqsave(&bc->devio.spinlock, flags);
 		list_for_each_entry(wi,
-				    &bc->bc_devio_flush_pending_list,
+				    &bc->devio.flush_pending_list,
 				    devio_pending_list) {
 			ASSERT_WORK_ITEM(wi, bc);
 			bio = wi->wi_cloned_bio;
 			if (wi->devio_gennum <= gennum) {
-				M_ASSERT(!list_empty(&bc->bc_devio_flush_pending_list));
+				M_ASSERT(!list_empty(&bc->devio.flush_pending_list));
 				list_del_init(&wi->devio_pending_list);
-				bc->bc_devio_flush_pending_count--;
-				M_ASSERT(bc->bc_devio_flush_pending_count >= 0);
-				if (bc->bc_devio_flush_pending_count == 0)
-					M_ASSERT(list_empty(&bc->bc_devio_flush_pending_list));
+				bc->devio.flush_pending_count--;
+				M_ASSERT(bc->devio.flush_pending_count >= 0);
+				if (bc->devio.flush_pending_count == 0)
+					M_ASSERT(list_empty(&bc->devio.flush_pending_list));
 				else
-					M_ASSERT(!list_empty(&bc->bc_devio_flush_pending_list));
+					M_ASSERT(!list_empty(&bc->devio.flush_pending_list));
 				if(__xxxyyy)printk_debug("END_BIO_PROCESS: bi_sector=%lu, gennum=%llu/%llu, flush wait done\n",
 					     bio->bi_iter.bi_sector,
 					     wi->devio_gennum,
 					     gennum);
 
-				spin_unlock_irqrestore(&bc->bc_devio_spinlock, flags);
+				spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 
 				cache_timer_add(&bc->bc_timer_cached_device_flushes, wi->wi_ts_physio_flush);
 				cached_dev_make_request_endio(wi, bio, 0);
@@ -85,7 +85,7 @@ static void cached_devio_flush_end_bio_process(struct bittern_cache *bc, uint64_
 			}
 			M_ASSERT(cc++ < 10000);
 		}
-		spin_unlock_irqrestore(&bc->bc_devio_spinlock, flags);
+		spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 
 inner_out:
 		;
@@ -101,10 +101,10 @@ static void cached_devio_flush_end_bio(struct bio *bio, int err)
 
 	ASSERT_BITTERN_CACHE(flush_meta->bc);
 
-	spin_lock_irqsave(&flush_meta->bc->bc_devio_spinlock, flags);
-	flush_meta->bc->bc_devio_pure_flush_pending_count--;
-        M_ASSERT(flush_meta->bc->bc_devio_pure_flush_pending_count >= 0);
-	spin_unlock_irqrestore(&flush_meta->bc->bc_devio_spinlock, flags);
+	spin_lock_irqsave(&flush_meta->bc->devio.spinlock, flags);
+	flush_meta->bc->devio.pure_flush_pending_count--;
+        M_ASSERT(flush_meta->bc->devio.pure_flush_pending_count >= 0);
+	spin_unlock_irqrestore(&flush_meta->bc->devio.spinlock, flags);
 
 	if(__xxxyyy)printk_debug("FLUSH_END_BIO: ack up to delayed flush gennum = %llu\n", flush_meta->gennum);
 
@@ -126,10 +126,10 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 
 	bc = container_of(dwork,
 			  struct bittern_cache,
-			  bc_devio_flush_delayed_work);
+			  devio.flush_delayed_work);
 	ASSERT(bc != NULL);
 
-	if (bc->bc_devio_flush_pending_count == 0 && bc->bc_devio_pending_count == 0) {
+	if (bc->devio.flush_pending_count == 0 && bc->devio.pending_count == 0) {
 		if(__xxxyyy)printk_debug("DELAYED_WORKER: zero flush_pending count\n");
 		goto out;
 	}
@@ -145,12 +145,12 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
         /*
          * No work to do if there no requests waiting for a flush.
          */
-	if (bc->bc_devio_flush_pending_count == 0)
+	if (bc->devio.flush_pending_count == 0)
 		goto out;
         /*
          * No work to do if a previous pure flush is still pending.
          */
-	if (bc->bc_devio_pure_flush_pending_count != 0)
+	if (bc->devio.pure_flush_pending_count != 0)
 		goto out;
 #endif
 
@@ -175,24 +175,25 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	bio_set_data_dir_write(bio);
 	bio->bi_iter.bi_sector = 0;
 	bio->bi_iter.bi_size = 0;
-	bio->bi_bdev = bc->bc_dev->bdev;
+	bio->bi_bdev = bc->devio.dm_dev->bdev;
 	bio->bi_end_io = cached_devio_flush_end_bio;
 	bio->bi_private = flush_meta;
 	bio->bi_vcnt = 0;
 
-	spin_lock_irqsave(&bc->bc_devio_spinlock, flags);
-	bc->bc_devio_gennum_flush = bc->bc_devio_gennum;
-	flush_meta->gennum = bc->bc_devio_gennum;
-	bc->bc_devio_pure_flush_pending_count++;
-	bc->bc_devio_pure_flush_total_count++;
-	spin_unlock_irqrestore(&bc->bc_devio_spinlock, flags);
+	spin_lock_irqsave(&bc->devio.spinlock, flags);
+	bc->devio.gennum_flush = bc->devio.gennum;
+	flush_meta->gennum = bc->devio.gennum;
+	bc->devio.pure_flush_pending_count++;
+	bc->devio.pure_flush_total_count++;
+	spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 
 	if(__xxxyyy)printk_debug("DELAYED_WORKER: ISSUE pure flush gennum=%llu\n", flush_meta->gennum);
 
 	generic_make_request(bio);
 
 out:
-	ret = schedule_delayed_work(&bc->bc_devio_flush_delayed_work, msecs_to_jiffies(bc->bc_devio_worker_delay));
+	ret = schedule_delayed_work(&bc->devio.flush_delayed_work,
+				msecs_to_jiffies(bc->devio.conf_worker_delay));
 	ASSERT(ret == 1);
 }
 
@@ -227,20 +228,20 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 	ASSERT_CACHE_STATE(cache_block);
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 
-	spin_lock_irqsave(&bc->bc_devio_spinlock, flags);
+	spin_lock_irqsave(&bc->devio.spinlock, flags);
 
-	M_ASSERT(!list_empty(&bc->bc_devio_pending_list));
+	M_ASSERT(!list_empty(&bc->devio.pending_list));
 	list_del_init(&wi->devio_pending_list);
-	bc->bc_devio_pending_count--;
-	M_ASSERT(bc->bc_devio_pending_count >= 0);
-	if (bc->bc_devio_pending_count == 0)
-		M_ASSERT(list_empty(&bc->bc_devio_pending_list));
+	bc->devio.pending_count--;
+	M_ASSERT(bc->devio.pending_count >= 0);
+	if (bc->devio.pending_count == 0)
+		M_ASSERT(list_empty(&bc->devio.pending_list));
 	else
-		M_ASSERT(!list_empty(&bc->bc_devio_pending_list));
+		M_ASSERT(!list_empty(&bc->devio.pending_list));
 
 	if (bio_data_dir(bio) == READ) {
 
-		spin_unlock_irqrestore(&bc->bc_devio_spinlock, flags);
+		spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 
 		/*
 		 * Process READ request acks immediately.
@@ -267,14 +268,14 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 			     bio->bi_iter.bi_sector,
 			     wi->devio_gennum);
 
-		spin_unlock_irqrestore(&bc->bc_devio_spinlock, flags);
+		spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 
 		cached_devio_flush_end_bio_process(bc, wi->devio_gennum);
 
 		cache_timer_add(&bc->bc_timer_cached_device_flushes, wi->wi_ts_physio_flush);
 		cached_dev_make_request_endio(wi, bio, err);
 
-		spin_lock_irqsave(&bc->bc_devio_spinlock, flags);
+		spin_lock_irqsave(&bc->devio.spinlock, flags);
 
 	} else {
 		/*
@@ -285,13 +286,13 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 			     bio->bi_iter.bi_sector,
 			     wi->devio_gennum);
 
-		list_add_tail(&wi->devio_pending_list, &bc->bc_devio_flush_pending_list);
-		bc->bc_devio_flush_pending_count++;
+		list_add_tail(&wi->devio_pending_list, &bc->devio.flush_pending_list);
+		bc->devio.flush_pending_count++;
 
-		M_ASSERT(bc->bc_devio_flush_pending_count >= 1);
+		M_ASSERT(bc->devio.flush_pending_count >= 1);
 	}
 
-	spin_unlock_irqrestore(&bc->bc_devio_spinlock, flags);
+	spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 }
 
 void cached_devio_make_request(struct bittern_cache *bc,
@@ -303,21 +304,22 @@ void cached_devio_make_request(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_WORK_ITEM(wi, bc);
 	bio->bi_end_io = cached_devio_make_request_end_bio;
-	bio->bi_bdev = bc->bc_dev->bdev;
+	bio->bi_bdev = bc->devio.dm_dev->bdev;
 
-	spin_lock_irqsave(&bc->bc_devio_spinlock, flags);
+	spin_lock_irqsave(&bc->devio.spinlock, flags);
 
 	/*
-	 * Add to bc_devio_pending_list.
+	 * Add to devio.pending_list.
 	 */
-	list_add_tail(&wi->devio_pending_list, &bc->bc_devio_pending_list);
-	bc->bc_devio_pending_count++;
+	list_add_tail(&wi->devio_pending_list, &bc->devio.pending_list);
+	bc->devio.pending_count++;
 
 	if (bio_data_dir_write(bio)) {
-		wi->devio_gennum = ++bc->bc_devio_gennum;
-		if ((wi->devio_gennum - bc->bc_devio_gennum_flush) > bc->bc_devio_fua_insert) {
-			bc->bc_devio_gennum_flush = wi->devio_gennum;
-			bc->bc_devio_flush_total_count++;
+		wi->devio_gennum = ++bc->devio.gennum;
+		if ((wi->devio_gennum - bc->devio.gennum_flush) >
+		    bc->devio.conf_fua_insert) {
+			bc->devio.gennum_flush = wi->devio_gennum;
+			bc->devio.flush_total_count++;
 			/*
 			 * Issue flush
 			 */
@@ -332,7 +334,7 @@ void cached_devio_make_request(struct bittern_cache *bc,
 		}
 	}
 
-	spin_unlock_irqrestore(&bc->bc_devio_spinlock, flags);
+	spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 
 	wi->devio_flags = bio->bi_rw;
 

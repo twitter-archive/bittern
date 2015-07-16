@@ -886,6 +886,10 @@ struct bittern_cache {
 	 * are guaranteed to be stable on the storage media, that is, written
 	 * from the device's hardware cache (if any) to the storage media, the
 	 * spinning platter in the case of HDD.
+	 * This abstraction is needed by the rest of Bittern, as Bittern
+	 * disk model is one of in which disk writes are always guaranteed to
+	 * be on stable storage (that is, it assumes a good ol' disk without
+	 * the write buffer).
 	 *
 	 * Basically, write requests are kept pending until a later
 	 * REQ_FUA|REQ_FLUSH completes.
@@ -899,6 +903,7 @@ struct bittern_cache {
 	 *
 	 * That is to say, the devio layer buffers write operations and only
 	 * acknowledge them to Bittern once they are guaranteed stable.
+	 *
 	 * Say we have these requests issued:
 	 *
 	 * W1         gen=1
@@ -906,10 +911,10 @@ struct bittern_cache {
 	 * F3         gen=3
 	 * W4         gen=4
 	 *
-	 * A possible timeline is as follows:
+	 * For the sake of example, consider this possible timeline:
 	 *
 	 * time  event               pend_queue  flush_pend_queue  acked
-	 * ----------------------------------------------------------------
+	 * -------------------------------------------------------------
 	 * 0     write W1 issued     W1
 	 * 1     write W2 issued     W1 W2
 	 * 2     write W1 completes  W2          W1

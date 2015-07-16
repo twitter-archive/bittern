@@ -140,20 +140,6 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	M_ASSERT_FIXME(flush_meta != NULL);
 	flush_meta->bc = bc;
 
-#if 0
-	if(__xxxyyy)printk_debug("delayed_worker\n");
-        /*
-         * No work to do if there no requests waiting for a flush.
-         */
-	if (bc->devio.flush_pending_count == 0)
-		goto out;
-        /*
-         * No work to do if a previous pure flush is still pending.
-         */
-	if (bc->devio.pure_flush_pending_count != 0)
-		goto out;
-#endif
-
 	bio = bio_alloc(GFP_NOIO, 1);
 #if 0
 	/*TODO_ADD_ERROR_INJECTION*/

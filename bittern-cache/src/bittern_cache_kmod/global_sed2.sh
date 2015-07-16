@@ -41,5 +41,6 @@ do
 	#replace_in_file _STARTIO _START $f
 	#replace_in_file _ENDIO _END $f
 	#replace_in_file UPDATE_METADATA UPD_METADATA $f
-	replace_in_file _hit_clone_ _hit_ $f
+	#replace_in_file _hit_clone_ _hit_ $f
+	replace_in_file bc_dev_ devio. $f
 done

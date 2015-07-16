@@ -116,7 +116,7 @@ ins_all_mods
 rm_all_mods
 
 make distclean
-make devconfig
+make kdevconfig
 make
 # keep the developer build for the all the tests
 ins_all_mods

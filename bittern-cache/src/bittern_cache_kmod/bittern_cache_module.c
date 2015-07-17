@@ -470,8 +470,8 @@ struct cache_conf_param_entry cache_conf_param_list[] = {
 	{
 		.cache_conf_name = "invalidator_conf_min_invalid_count",
 		.cache_conf_type = CONF_TYPE_INT,
-		.cache_conf_min = S_INVALIDATOR_MIN_INVALID_COUNT,
-		.cache_conf_max = S_INVALIDATOR_MAX_INVALID_COUNT,
+		.cache_conf_min = INVALIDATOR_MIN_INVALID_COUNT,
+		.cache_conf_max = INVALIDATOR_MAX_INVALID_COUNT,
 		.cache_conf_setup_function = cache_calculate_min_invalid,
 		.cache_conf_show_function = show_cache_min_invalid,
 	},

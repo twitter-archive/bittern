@@ -51,17 +51,17 @@ int cache_calculate_max_pending(struct bittern_cache *bc, int max_requests)
 int cache_calculate_min_invalid(struct bittern_cache *bc, int min_invalid_count)
 {
 	if (min_invalid_count == 0)
-		min_invalid_count = S_INVALIDATOR_DEFAULT_INVALID_COUNT;
-	if (min_invalid_count < S_INVALIDATOR_MIN_INVALID_COUNT)
-		min_invalid_count = S_INVALIDATOR_MIN_INVALID_COUNT;
-	if (min_invalid_count > S_INVALIDATOR_MAX_INVALID_COUNT)
-		min_invalid_count = S_INVALIDATOR_MAX_INVALID_COUNT;
+		min_invalid_count = INVALIDATOR_DEFAULT_INVALID_COUNT;
+	if (min_invalid_count < INVALIDATOR_MIN_INVALID_COUNT)
+		min_invalid_count = INVALIDATOR_MIN_INVALID_COUNT;
+	if (min_invalid_count > INVALIDATOR_MAX_INVALID_COUNT)
+		min_invalid_count = INVALIDATOR_MAX_INVALID_COUNT;
 	bc->bc_invalidator_conf_min_invalid_count = min_invalid_count;
 	printk_info("conf_min_invalid_count=%u:%u [%u..%u]\n",
 		    min_invalid_count,
 		    bc->bc_invalidator_conf_min_invalid_count,
-		    S_INVALIDATOR_MIN_INVALID_COUNT,
-		    S_INVALIDATOR_MAX_INVALID_COUNT);
+		    INVALIDATOR_MIN_INVALID_COUNT,
+		    INVALIDATOR_MAX_INVALID_COUNT);
 	return 0;
 }
 
@@ -1179,8 +1179,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	cache_bgwriter_policy_init(bc);
 
 	init_waitqueue_head(&bc->bc_invalidator_wait);
-	cache_calculate_min_invalid(bc,
-				    S_INVALIDATOR_DEFAULT_INVALID_COUNT);
+	cache_calculate_min_invalid(bc, INVALIDATOR_DEFAULT_INVALID_COUNT);
 
 	printk_info("initializing workqueues\n");
 	/*

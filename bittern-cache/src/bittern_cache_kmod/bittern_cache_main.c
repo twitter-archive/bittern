@@ -2269,10 +2269,10 @@ int bittern_cache_map(struct dm_target *ti, struct bio *bio)
 	 * or if any of the deferred queues are non-empty (so to avoid request
 	 * starvation).
 	 */
-	if (atomic_read(&bc->bc_pending_requests) > bc->bc_max_pending_requests
-	    || atomic_read(&bc->bc_deferred_requests) > 0) {
+	if (!can_schedule_map_request(bc) || atomic_read(&bc->bc_deferred_requests) > 0) {
 		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
-			 "queue-to-deferred (pending=%u, deferred=%u)",
+			 "queue-to-deferred (can_schedule=%u, pending=%u, deferred=%u)",
+			 can_schedule_map_request(bc),
 			 atomic_read(&bc->bc_pending_requests),
 			 atomic_read(&bc->bc_deferred_requests));
 		/*
@@ -2393,12 +2393,8 @@ struct bio *cache_dequeue_from_deferred(struct bittern_cache *bc,
 bool cache_deferred_has_work(struct bittern_cache *bc,
 			     struct deferred_queue *queue)
 {
-	int cc = queue->bc_defer_curr_count;
-	/* always expect to have some invalid entries */
-	int available_entries = atomic_read(&bc->bc_invalid_entries);
-	int can_queue = atomic_read(&bc->bc_pending_requests) <
-			bc->bc_max_pending_requests;
-	return cc != 0 && available_entries != 0 && can_queue != 0;
+	bool has_requests = queue->bc_defer_curr_count != 0;
+	return has_requests && can_schedule_map_request(bc);
 }
 
 /*! handle one or more deferred requests on a given queue */

@@ -354,8 +354,8 @@ do_get() {
 	echo "replacement algorithm:"
 	echo "	 replacement = $(get_replacement replacement)"
 	echo "cache conf parameters:"
-	echo "	 dev_worker_delay = $(get_cache_conf dev_worker_delay)"
-	echo "	 dev_fua_insert = $(get_cache_conf dev_fua_insert)"
+	echo "	 devio_worker_delay = $(get_cache_conf devio_worker_delay)"
+	echo "	 devio_fua_insert = $(get_cache_conf devio_fua_insert)"
 	echo "	 max_pending_requests = $(get_cache_conf max_pending_requests)"
 	echo "	 bgwriter_conf_flush_on_exit = $(get_cache_conf bgwriter_conf_flush_on_exit)"
 	echo "	 bgwriter_conf_greedyness = $(get_cache_conf bgwriter_conf_greedyness)"
@@ -553,13 +553,13 @@ do_set() {
 		do_set_check_value
 		set_cache_conf bgwriter_conf_cluster_size $VALUE_OPTION
 		;;
-	"dev_worker_delay")
+	"devio_worker_delay")
 		do_set_check_value
-		set_cache_conf dev_worker_delay $VALUE_OPTION
+		set_cache_conf devio_worker_delay $VALUE_OPTION
 		;;
-	"dev_fua_insert")
+	"devio_fua_insert")
 		do_set_check_value
-		set_cache_conf dev_fua_insert $VALUE_OPTION
+		set_cache_conf devio_fua_insert $VALUE_OPTION
 		;;
 	"invalidator_conf_min_invalid_count")
 		do_set_check_value

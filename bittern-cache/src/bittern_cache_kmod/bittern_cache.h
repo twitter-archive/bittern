@@ -51,7 +51,7 @@
 
 #include "bittern_cache_linux.h"
 
-#define BITTERN_CACHE_VERSION "0.28.5"
+#define BITTERN_CACHE_VERSION "0.28.6"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -670,9 +670,24 @@ struct bittern_cache {
 	 */
 	atomic64_t bc_xid;
 
+	/*!
+	 * absolute maximum total requests that can be in flight at any time.
+	 * this includes the extra cache block needed for write cloning. in order
+	 * to avoid severe performance degradation due to resource starvation,
+	 * there needs to be a minimum amount of blocks that must be invalid
+	 * in order to guarantee speedy forward progress.
+	 *
+	 * the function @ref can_schedule_map_request needs to used to flow control
+	 * all explicit requests coming via DM map() which can potentially require the
+	 * allocation of an extra cache block.
+	 *
+	 * if the above happens and the number of invalid free blocks is already below
+	 * @ref bc_max_pending requests, then such requests will be starved because the new
+	 * block can only be allocated if there is an available free block.
+	 */
 	volatile unsigned int bc_max_pending_requests;
 
-	/*
+	/*!
 	 * each count of invalid, valid_clean and valid_dirty entries can never
 	 * be negative. the only relationship that holds true is that in a
 	 * qiuesced state the following holds true:
@@ -686,14 +701,9 @@ struct bittern_cache {
 	 * quiesced
 	 * (in practice the above counts are accurate within 1 or 2 units).
 	 */
-	/*
-	 * this list contains all invalid(free) elements
-	 *
-	 * invariant:   state == INVALID
-	 */
 	atomic_t bc_invalid_entries;
 	struct list_head bc_invalid_entries_list;
-	/*
+	/*!
 	 * clean+dirty list contains all the valid and busy elements, and it's
 	 * used for LRU/FIFO replacement
 	 *
@@ -1008,6 +1018,25 @@ struct bittern_cache {
 
 	int bc_magic4;
 };
+
+/*!
+ * returns true if a dm map() request can be queued into the state machine.
+ * needs a minimum number of free blocks, which is the sum of
+ * @ref bc_max_pending_requests and @ref INVALIDATOR_MIN_INVALID_COUNT.
+ * it's possible to get away with the maximum of the two quantities, but it's better
+ * to be a bit conservative.
+ * please also see @ref bittern_cache::bc_max_pending_requests.
+ */
+static inline bool can_schedule_map_request(struct bittern_cache *bc)
+{
+	unsigned int avail_reserved;
+	bool avail, can_queue;
+
+	avail_reserved = bc->bc_max_pending_requests + INVALIDATOR_MIN_INVALID_COUNT;
+	avail = atomic_read(&bc->bc_invalid_entries) > avail_reserved;
+	can_queue = atomic_read(&bc->bc_pending_requests) < bc->bc_max_pending_requests;
+	return avail && can_queue;
+}
 
 static inline bool is_cache_mode_writeback(struct bittern_cache *bc)
 {

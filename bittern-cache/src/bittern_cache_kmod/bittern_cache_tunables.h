@@ -135,18 +135,18 @@
  * maximum pending requests - we will never have more than max pending requests
  * queued the max is the lowest of the two numbers below
  */
-#define CACHE_MIN_MAX_PENDING_REQUESTS 50
-#define CACHE_DEFAULT_MAX_PENDING_REQUESTS 600
+#define CACHE_MIN_MAX_PENDING_REQUESTS 10
+#define CACHE_DEFAULT_MAX_PENDING_REQUESTS 100
 #define CACHE_MAX_MAX_PENDING_REQUESTS 1000
 
 /* expressed as percentage of max pending requests */
-#define CACHE_BGWRITER_MIN_QUEUE_DEPTH_PCT 20
+#define CACHE_BGWRITER_MIN_QUEUE_DEPTH_PCT 10
 
 /* expressed as percentage of max pending requests */
-#define CACHE_BGWRITER_MAX_QUEUE_DEPTH_PCT 90
+#define CACHE_BGWRITER_MAX_QUEUE_DEPTH_PCT 100
 
 /* expressed as percentage of max pending requests */
-#define CACHE_BGWRITER_DEFAULT_QUEUE_DEPTH_PCT 50
+#define CACHE_BGWRITER_DEFAULT_QUEUE_DEPTH_PCT 90
 
 /*!
  * default cluster size amount, that is, the number of blocks
@@ -167,17 +167,10 @@
 #define CACHE_BGWRITER_DEFAULT_POLICY	"classic"
 /* #define CACHE_BGWRITER_DEFAULT_POLICY	"default" */
 
-/*
- * invalidator tunables
- */
-#define S_INVALIDATOR_MIN_INVALID_COUNT \
-	(CACHE_MAX_MAX_PENDING_REQUESTS * 2)
-
-#define S_INVALIDATOR_DEFAULT_INVALID_COUNT \
-	(S_INVALIDATOR_MIN_INVALID_COUNT + 10000)
-
-#define S_INVALIDATOR_MAX_INVALID_COUNT \
-	(S_INVALIDATOR_MIN_INVALID_COUNT + 30000)
+/*! lowest minimum number of invalid blocks allowed */
+#define INVALIDATOR_MIN_INVALID_COUNT (CACHE_MAX_MAX_PENDING_REQUESTS * 2)
+#define INVALIDATOR_DEFAULT_INVALID_COUNT (INVALIDATOR_MIN_INVALID_COUNT + 10000)
+#define INVALIDATOR_MAX_INVALID_COUNT (INVALIDATOR_MIN_INVALID_COUNT + 30000)
 
 /*
  * we need a minimal amount of allocatable page pool buffers.

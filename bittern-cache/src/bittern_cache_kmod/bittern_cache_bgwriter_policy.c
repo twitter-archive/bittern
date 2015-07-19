@@ -117,6 +117,31 @@ void cache_bgwriter_compute_policy_classic(struct bittern_cache *bc)
 	int queue_depth_pct, min_age_s;
 	unsigned int valid_entries_dirty, total_entries;
 
+	/* writeback queue_depth indexed by percent dirty */
+	static int queue_depth[] = {
+		5,	/* 0% */
+		5,	/* 5% */
+		5,	/* 10% */
+		5,	/* 15% */
+		5,	/* 20% */
+		15,	/* 25% */
+		15,	/* 30% */
+		15,	/* 35% */
+		15,	/* 40% */
+		30,	/* 45% */
+		30,	/* 50% */
+		40,	/* 55% */
+		40,	/* 60% */
+		45,	/* 65% */
+		45,	/* 70% */
+		50,	/* 75% */
+		50,	/* 80% */
+		70,	/* 85% */
+		70,	/* 90% */
+		85,	/* 95% */
+		80,	/* 100% */
+	};
+
 	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
 	valid_entries_dirty = atomic_read(&bc->bc_valid_entries_dirty);
@@ -130,43 +155,10 @@ void cache_bgwriter_compute_policy_classic(struct bittern_cache *bc)
 			   bc->bc_max_pending_requests);
 	bc->bc_bgwriter_curr_rate_per_sec = 0;
 	bc->bc_bgwriter_curr_min_age_secs = 0;
-
-	if (dirty_pct > 95) {
-		queue_depth_pct = 80;
-		min_age_s = 1;
-	} else if (dirty_pct > 90) {
-		queue_depth_pct = 85;
-		min_age_s = 1;
-	} else if (dirty_pct > 80) {
-		queue_depth_pct = 70;
-		min_age_s = 1;
-	} else if (dirty_pct > 70) {
-		queue_depth_pct = 50;
-		min_age_s = 2;
-	} else if (dirty_pct > 60) {
-		queue_depth_pct = 45;
-		min_age_s = 4;
-	} else if (dirty_pct > 50) {
-		queue_depth_pct = 40;
-		min_age_s = 5;
-	} else if (dirty_pct > 40) {
-		queue_depth_pct = 30;
-		min_age_s = 20;
-	} else if (dirty_pct > 30) {
-		queue_depth_pct = 15;
-		min_age_s = 20;
-	} else if (dirty_pct > 20) {
-		queue_depth_pct = 10;
-		min_age_s = 20;
-	} else {
-		queue_depth_pct = 5;
-		min_age_s = 30;
-	}
-
 	bc->bc_bgwriter_curr_queue_depth =
-			PERCENT_OF(queue_depth_pct,
+			PERCENT_OF(queue_depth[dirty_pct / 5],
 				   bc->bc_bgwriter_curr_max_queue_depth);
-	bc->bc_bgwriter_curr_min_age_secs = min_age_s;
+	bc->bc_bgwriter_curr_min_age_secs = 4;
 }
 
 #undef BITTERN_CACHE_ALLOW_EXPERIMENTAL_POLICIES

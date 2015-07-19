@@ -114,7 +114,6 @@ void cache_bgwriter_compute_policy_old_default(struct bittern_cache *bc)
 void cache_bgwriter_compute_policy_classic(struct bittern_cache *bc)
 {
 	int dirty_pct;
-	int queue_depth_pct, min_age_s;
 	unsigned int valid_entries_dirty, total_entries;
 
 	/* writeback queue_depth indexed by percent dirty */
@@ -135,12 +134,12 @@ void cache_bgwriter_compute_policy_classic(struct bittern_cache *bc)
 		45,	/* 65% */
 		45,	/* 70% */
 		50,	/* 75% */
-		50,	/* 80% */
+		60,	/* 80% */
 		70,	/* 85% */
-		70,	/* 90% */
-		85,	/* 95% */
-		80,	/* 100% */
-                80,     /* 105% */
+		80,	/* 90% */
+		90,	/* 95% */
+		100,	/* 100% */
+                110,    /* 105% */
 	};
 
 	ASSERT(bc != NULL);
@@ -165,7 +164,6 @@ void cache_bgwriter_compute_policy_classic(struct bittern_cache *bc)
 void cache_bgwriter_compute_policy_aggressive(struct bittern_cache *bc)
 {
 	int dirty_pct;
-	int queue_depth_pct, min_age_s;
 	unsigned int valid_entries_dirty, total_entries;
 
 	/* writeback queue_depth indexed by percent dirty */
@@ -186,12 +184,12 @@ void cache_bgwriter_compute_policy_aggressive(struct bittern_cache *bc)
 		35,	/* 65% */
 		40,	/* 70% */
 		50,	/* 75% */
-		60,	/* 80% */
-		80,	/* 85% */
-		90,	/* 90% */
-		100,	/* 95% */
-		100,	/* 100% */
-                100,    /* 105% */
+		75,	/* 80% */
+		100,	/* 85% */
+		125,	/* 90% */
+		150,	/* 95% */
+		200,	/* 100% */
+                225,    /* 105% */
 	};
 
 	ASSERT(bc != NULL);

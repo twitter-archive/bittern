@@ -136,8 +136,8 @@
  * queued the max is the lowest of the two numbers below
  */
 #define CACHE_MIN_MAX_PENDING_REQUESTS 10
-#define CACHE_DEFAULT_MAX_PENDING_REQUESTS 100
-#define CACHE_MAX_MAX_PENDING_REQUESTS 1000
+#define CACHE_DEFAULT_MAX_PENDING_REQUESTS 500
+#define CACHE_MAX_MAX_PENDING_REQUESTS 5000
 
 /* expressed as percentage of max pending requests */
 #define CACHE_BGWRITER_MIN_QUEUE_DEPTH_PCT 5
@@ -146,7 +146,7 @@
 #define CACHE_BGWRITER_MAX_QUEUE_DEPTH_PCT 1000
 
 /* expressed as percentage of max pending requests */
-#define CACHE_BGWRITER_DEFAULT_QUEUE_DEPTH_PCT 200
+#define CACHE_BGWRITER_DEFAULT_QUEUE_DEPTH_PCT 300
 
 /*!
  * default cluster size amount, that is, the number of blocks

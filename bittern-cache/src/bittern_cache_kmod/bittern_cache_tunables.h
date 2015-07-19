@@ -146,7 +146,7 @@
 #define CACHE_BGWRITER_MAX_QUEUE_DEPTH_PCT 1000
 
 /* expressed as percentage of max pending requests */
-#define CACHE_BGWRITER_DEFAULT_QUEUE_DEPTH_PCT 250
+#define CACHE_BGWRITER_DEFAULT_QUEUE_DEPTH_PCT 200
 
 /*!
  * default cluster size amount, that is, the number of blocks

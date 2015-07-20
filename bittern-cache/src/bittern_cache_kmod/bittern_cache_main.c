@@ -2320,8 +2320,8 @@ void cache_queue_to_deferred(struct bittern_cache *bc,
 	int val;
 
 	/*
-	 * here we are either in a process or kernel thread context,
-	 * i.e., we can sleep during resource allocation if needed.
+	 * this function does not need to be sleepabale, however
+	 * the caller does and we assert on that.
 	 */
 	M_ASSERT(!in_softirq());
 	M_ASSERT(!in_irq());

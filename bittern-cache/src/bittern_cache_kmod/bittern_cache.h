@@ -387,8 +387,6 @@ struct seq_io_bypass {
 
 /*! holds queue of deferred requests */
 struct deferred_queue {
-	/*! protects all struct members */
-	spinlock_t bc_defer_lock;
 	struct bio_list bc_defer_list;
 
 	volatile unsigned int bc_defer_curr_count;
@@ -743,6 +741,8 @@ struct bittern_cache {
 	atomic_t bc_cache_transitions_counters[__TS_NUM];
 	atomic_t bc_cache_states_counters[__CACHE_STATES_NUM];
 
+	/*! synchronizes access to both deferred queues */
+	spinlock_t defer_lock;
 	/*! deferred queue, cases 1 and 2. see @ref (doxy_deferredqueues.md) */
 	struct deferred_queue bc_deferred_wait_busy;
 	/*! deferred queue, cases 3 and 4. see @ref (doxy_deferredqueues.md) */

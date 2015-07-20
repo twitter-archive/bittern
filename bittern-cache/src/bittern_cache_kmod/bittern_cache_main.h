@@ -347,7 +347,8 @@ extern void cache_wakeup_deferred(struct bittern_cache *bc);
 /*! queue request to deferred queue for execution in a thread context */
 extern void cache_queue_to_deferred(struct bittern_cache *bc,
 				    struct deferred_queue *queue,
-				    struct bio *bio);
+				    struct bio *bio,
+				    struct deferred_queue *old_queue);
 /*! dequeue request from deferred queue -- used by @ref cache_handle_deferred */
 extern struct bio *cache_dequeue_from_deferred(struct bittern_cache *bc,
 					       struct deferred_queue *queue);

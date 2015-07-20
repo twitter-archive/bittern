@@ -118,7 +118,7 @@ void cache_dump_deferred(struct bittern_cache *bc,
 	printk_debug("dump_%s_start[start_offset=%u]\n", queue_name,
 		     start_offset);
 
-	spin_lock_irqsave(&queue->bc_defer_lock, flags);
+	spin_lock_irqsave(&bc->defer_lock, flags);
 	bio_list_for_each(bio, &queue->bc_defer_list) {
 		if (curr_offset++ < start_offset)
 			continue;
@@ -134,7 +134,7 @@ void cache_dump_deferred(struct bittern_cache *bc,
 		if (++dump_count >= 10000)
 			break;
 	}
-	spin_unlock_irqrestore(&queue->bc_defer_lock, flags);
+	spin_unlock_irqrestore(&bc->defer_lock, flags);
 
 	printk_debug("dump_%s_done[start_offset=%u, current_offset=%u, dump_count=%u]\n",
 	     queue_name, start_offset, curr_offset, dump_count);

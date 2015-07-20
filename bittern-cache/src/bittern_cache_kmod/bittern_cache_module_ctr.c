@@ -1074,9 +1074,8 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	 * this is also used very early
 	 * \todo should have its own init function for this
 	 */
-	spin_lock_init(&bc->bc_deferred_wait_busy.bc_defer_lock);
+	spin_lock_init(&bc->defer_lock);
 	bio_list_init(&bc->bc_deferred_wait_busy.bc_defer_list);
-	spin_lock_init(&bc->bc_deferred_wait_page.bc_defer_lock);
 	bio_list_init(&bc->bc_deferred_wait_page.bc_defer_list);
 	bc->defer_wq = alloc_workqueue("dfr_wk:%s", WQ_UNBOUND, 1, bc->bc_name);
 	if (bc->defer_wq == NULL) {

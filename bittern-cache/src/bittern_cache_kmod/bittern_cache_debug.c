@@ -295,21 +295,21 @@ int cache_dump_blocks(struct bittern_cache *bc,
 		cache_dump_devio_pending(bc, dump_offset);
 	else if (strcmp(dump_op, "deferred") == 0) {
 		cache_dump_deferred(bc,
-				    &bc->defer_wait_busy,
+				    &bc->defer_busy,
 				    "deferred_wait_busy",
 				    dump_offset);
 		cache_dump_deferred(bc,
-				    &bc->defer_wait_page,
+				    &bc->defer_page,
 				    "deferred_wait_page",
 				    dump_offset);
 	} else if (strcmp(dump_op, "deferred_wait_busy") == 0)
 		cache_dump_deferred(bc,
-				    &bc->defer_wait_busy,
+				    &bc->defer_busy,
 				    "deferred_wait_busy",
 				    dump_offset);
 	else if (strcmp(dump_op, "deferred_wait_page") == 0)
 		cache_dump_deferred(bc,
-				    &bc->defer_wait_page,
+				    &bc->defer_page,
 				    "deferred_wait_page",
 				    dump_offset);
 	else

@@ -92,8 +92,8 @@ starvation is not possbile.
 
 A deferred queue is described by struct deferred_queue.
 There are two instances two instances of said structure in bittern_cache:
-* defer_wait_busy: this queue handles cases 1 and 2.
-* defer_wait_page: this queue handles cases 3 and 4.
+* defer_busy: this queue handles cases 1 and 2.
+* defer_page: this queue handles cases 3 and 4.
 
 ## Code Paths
 

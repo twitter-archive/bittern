@@ -54,9 +54,11 @@ do
 	#replace_in_file bc_defer_loop_count loop_count $f
 	#replace_in_file bc_defer_timer timer $f
 	#replace_in_file bc_defer_tstamp tstamp $f
-	replace_in_file cache_wakeup_deferred wakeup_deferred $f
-	replace_in_file cache_queue_to_deferred queue_to_deferred $f
-	replace_in_file cache_dequeue_from_deferred dequeue_from_deferred $f
-	replace_in_file cache_deferred_has_work deferred_has_work $f
-	replace_in_file cache_handle_deferred handle_deferred $f
+	#replace_in_file cache_wakeup_deferred wakeup_deferred $f
+	#replace_in_file cache_queue_to_deferred queue_to_deferred $f
+	#replace_in_file cache_dequeue_from_deferred dequeue_from_deferred $f
+	#replace_in_file cache_deferred_has_work deferred_has_work $f
+	#replace_in_file cache_handle_deferred handle_deferred $f
+	replace_in_file defer_wait_busy defer_busy $f
+	replace_in_file defer_wait_page defer_page $f
 done

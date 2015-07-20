@@ -1787,7 +1787,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 			 * defer request
 			 */
 			queue_to_deferred(bc,
-						&bc->defer_wait_page,
+						&bc->defer_page,
 						bio,
 						old_queue);
 			BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
@@ -1921,7 +1921,7 @@ void cache_map_workfunc_resource_busy(struct bittern_cache *bc,
 		atomic_inc(&bc->bc_write_hits_busy);
 	else
 		atomic_inc(&bc->bc_read_hits_busy);
-	queue_to_deferred(bc, &bc->defer_wait_busy, bio, old_queue);
+	queue_to_deferred(bc, &bc->defer_busy, bio, old_queue);
 }
 
 /*!
@@ -2052,7 +2052,7 @@ void cache_map_workfunc_no_resources(struct bittern_cache *bc,
 		atomic_inc(&bc->bc_write_misses_busy);
 	else
 		atomic_inc(&bc->bc_read_misses_busy);
-	queue_to_deferred(bc, &bc->defer_wait_page, bio, old_queue);
+	queue_to_deferred(bc, &bc->defer_page, bio, old_queue);
 }
 
 /*!
@@ -2290,7 +2290,7 @@ int bittern_cache_map(struct dm_target *ti, struct bio *bio)
 		 * pending request count.
 		 */
 		queue_to_deferred(bc,
-					&bc->defer_wait_page,
+					&bc->defer_page,
 					bio,
 					NULL);
 
@@ -2316,15 +2316,15 @@ void wakeup_deferred(struct bittern_cache *bc)
 	unsigned long flags;
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-		 "deferred_requests=%d, defer_wait_busy.curr_count=%d, defer_wait_page.curr_count=%d",
+		 "deferred_requests=%d, defer_busy.curr_count=%d, defer_page.curr_count=%d",
 		 atomic_read(&bc->bc_deferred_requests),
-		 bc->defer_wait_busy.curr_count,
-		 bc->defer_wait_page.curr_count);
+		 bc->defer_busy.curr_count,
+		 bc->defer_page.curr_count);
 
 	spin_lock_irqsave(&bc->defer_lock, flags);
 
-	if (bc->defer_wait_busy.curr_count != 0 ||
-	    bc->defer_wait_page.curr_count != 0)
+	if (bc->defer_busy.curr_count != 0 ||
+	    bc->defer_page.curr_count != 0)
 		queue_work(bc->defer_wq, &bc->defer_work);
 
 	spin_unlock_irqrestore(&bc->defer_lock, flags);
@@ -2347,10 +2347,10 @@ void queue_to_deferred(struct bittern_cache *bc,
 	unsigned long flags;
 	int val;
 
-	ASSERT(queue == &bc->defer_wait_busy ||
-	       queue == &bc->defer_wait_page);
-	ASSERT(old_queue == &bc->defer_wait_busy ||
-	       old_queue == &bc->defer_wait_page ||
+	ASSERT(queue == &bc->defer_busy ||
+	       queue == &bc->defer_page);
+	ASSERT(old_queue == &bc->defer_busy ||
+	       old_queue == &bc->defer_page ||
 	       old_queue == NULL);
 
 	spin_lock_irqsave(&bc->defer_lock, flags);
@@ -2372,7 +2372,7 @@ void queue_to_deferred(struct bittern_cache *bc,
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
 		 "%s",
-		 (queue == &bc->defer_wait_busy ? "busy" : "page"));
+		 (queue == &bc->defer_busy ? "busy" : "page"));
 }
 
 struct bio *dequeue_from_deferred(struct bittern_cache *bc,
@@ -2381,8 +2381,8 @@ struct bio *dequeue_from_deferred(struct bittern_cache *bc,
 	unsigned long flags;
 	struct bio *bio = NULL;
 
-	ASSERT(queue == &bc->defer_wait_busy ||
-	       queue == &bc->defer_wait_page);
+	ASSERT(queue == &bc->defer_busy ||
+	       queue == &bc->defer_page);
 
 	spin_lock_irqsave(&bc->defer_lock, flags);
 
@@ -2402,7 +2402,7 @@ struct bio *dequeue_from_deferred(struct bittern_cache *bc,
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
 		 "%s",
-		 (queue == &bc->defer_wait_busy ? "busy" : "page"));
+		 (queue == &bc->defer_busy ? "busy" : "page"));
 	return bio;
 }
 
@@ -2423,12 +2423,12 @@ int __handle_deferred(struct bittern_cache *bc, struct deferred_queue *queue)
 	int ret, count;
 	struct bio *bio = NULL;
 
-	ASSERT(queue == &bc->defer_wait_busy ||
-	       queue == &bc->defer_wait_page);
+	ASSERT(queue == &bc->defer_busy ||
+	       queue == &bc->defer_page);
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
 		 "wait_%s: curr_c=%u, max_c=%u",
-		 (queue == &bc->defer_wait_busy ? "busy" : "page"),
+		 (queue == &bc->defer_busy ? "busy" : "page"),
 		 queue->curr_count,
 		 queue->max_count);
 
@@ -2455,7 +2455,7 @@ int __handle_deferred(struct bittern_cache *bc, struct deferred_queue *queue)
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
 		 "wait_%s: curr_c=%u, max_c=%u, ret=%d, count=%d",
-		 (queue == &bc->defer_wait_busy ? "busy" : "pp"),
+		 (queue == &bc->defer_busy ? "busy" : "pp"),
 		 queue->curr_count,
 		 queue->max_count,
 		 ret,
@@ -2523,7 +2523,7 @@ void cache_deferred_worker(struct work_struct *work)
 	 * resource.
 	 */
 
-	handle_deferred(bc, &bc->defer_wait_busy);
+	handle_deferred(bc, &bc->defer_busy);
 
-	handle_deferred(bc, &bc->defer_wait_page);
+	handle_deferred(bc, &bc->defer_page);
 }

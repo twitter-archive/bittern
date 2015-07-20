@@ -742,9 +742,9 @@ struct bittern_cache {
 	/*! synchronizes access to both deferred queues */
 	spinlock_t defer_lock;
 	/*! deferred queue, cases 1 and 2. see @ref (doxy_deferredqueues.md) */
-	struct deferred_queue defer_wait_busy;
+	struct deferred_queue defer_busy;
 	/*! deferred queue, cases 3 and 4. see @ref (doxy_deferredqueues.md) */
-	struct deferred_queue defer_wait_page;
+	struct deferred_queue defer_page;
 	/*! deferred queue workqueue */
 	struct workqueue_struct *defer_wq;
 	struct work_struct defer_work;

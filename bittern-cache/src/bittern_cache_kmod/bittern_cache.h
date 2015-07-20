@@ -387,19 +387,6 @@ struct seq_io_bypass {
 
 struct deferred_queue {
 	/*
-	 * task ptr
-	 */
-	struct task_struct *bc_defer_task;
-	/*
-	 * generation number (not used in busy queues)
-	 */
-	atomic_t bc_defer_gennum;
-	/*
-	 * deferred thread waits on this queue for deferred requests to
-	 * execute
-	 */
-	wait_queue_head_t bc_defer_wait;
-	/*
 	 * protects all struct members except the fields above
 	 */
 	spinlock_t bc_defer_lock;
@@ -411,16 +398,16 @@ struct deferred_queue {
 	unsigned int bc_defer_no_work_count;
 	unsigned int bc_defer_work_count;
 	unsigned int bc_defer_loop_count;
-	/*
-	 * when we queue requests, or we know there are resources,
-	 * we increment the gennum above. this gennum is the current gennum.
-	 * so we use this for the waiting condition which shows new work:
-	 *
-	 * bc_defer_curr_gennum != atomic_read(bc_defer_gennum)
-	 *
-	 */
-	unsigned int bc_defer_curr_gennum;
+	/* timer */
 	struct cache_timer bc_defer_timer;
+	uint64_t bc_defer_tstamp;
+	/*
+	 * workqueue
+	 */
+	struct workqueue_struct *bc_defer_wq;
+	struct work_struct bc_defer_work;
+	/* backpointer */
+	struct bittern_cache *bc_bc;
 };
 
 struct pmem_api {
@@ -1183,11 +1170,12 @@ extern struct cache_block *cache_rb_last(struct bittern_cache *bc);
 
 #include "bittern_cache_main.h"
 
-extern int cache_deferred_busy_kthread(void *__bc);
-extern int cache_deferred_page_kthread(void *__bc);
 extern int cache_bgwriter_kthread(void *__bc);
 extern int cache_invalidator_kthread(void *__bc);
 extern int cache_invalidator_has_work_schmitt(struct bittern_cache *bc);
+
+/*! worker used to issue explicit flushes */
+extern void cache_deferred_worker(struct work_struct *work);
 
 /*! return bgwriter current policy name */
 extern const char *cache_bgwriter_policy(struct bittern_cache *bc);

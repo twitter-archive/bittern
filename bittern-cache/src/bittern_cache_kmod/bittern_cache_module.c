@@ -1275,7 +1275,7 @@ ssize_t cache_op_show_redblack_info(struct bittern_cache *bc,
 ssize_t cache_op_show_kthreads(struct bittern_cache *bc, char *result)
 {
 	size_t sz = 0, maxlen = PAGE_SIZE;
-	struct deferred_queue *q;
+
 	DMEMIT("%s: kthreads: " KT_FMT_STRING "\n",
 	       bc->bc_name,
 	       KT_FMT_ARGS(bc, "verifier_task", bc_verifier_task));
@@ -1292,32 +1292,6 @@ ssize_t cache_op_show_kthreads(struct bittern_cache *bc, char *result)
 	       bc->bc_name,
 	       KT_FMT_ARGS(bc, "invalidator_task", bc_invalidator_task),
 	       bc->bc_invalidator_no_work_count, bc->bc_invalidator_work_count);
-	q = &bc->bc_deferred_wait_busy;
-	DMEMIT("%s: kthreads: " KT_FMT_STRING ": deferred_wait_busy_curr_count=%u deferred_wait_busy_requeue_count=%u deferred_wait_busy_max_count=%u deferred_wait_busy_no_work_count=%u deferred_wait_busy_work_count=%u deferred_wait_busy_loop_count=%u deferred_wait_busy_gennum=%u/%u\n",
-	       bc->bc_name,
-	       KT_FMT_ARGS(bc, "deferred_busy_task",
-			   bc_deferred_wait_busy.bc_defer_task),
-	       q->bc_defer_curr_count,
-	       q->bc_defer_requeue_count,
-	       q->bc_defer_max_count,
-	       q->bc_defer_no_work_count,
-	       q->bc_defer_work_count,
-	       q->bc_defer_loop_count,
-	       q->bc_defer_curr_gennum,
-	       atomic_read(&q->bc_defer_gennum));
-	q = &bc->bc_deferred_wait_page;
-	DMEMIT("%s: kthreads: " KT_FMT_STRING ": deferred_wait_page_curr_count=%u deferred_wait_page_requeue_count=%u deferred_wait_page_max_count=%u deferred_wait_page_no_work_count=%u deferred_wait_page_work_count=%u deferred_wait_page_loop_count=%u deferred_wait_page_gennum=%u/%u\n",
-	       bc->bc_name,
-	       KT_FMT_ARGS(bc, "deferred_page_task",
-			   bc_deferred_wait_page.bc_defer_task),
-	       q->bc_defer_curr_count,
-	       q->bc_defer_requeue_count,
-	       q->bc_defer_max_count,
-	       q->bc_defer_no_work_count,
-	       q->bc_defer_work_count,
-	       q->bc_defer_loop_count,
-	       q->bc_defer_curr_gennum,
-	       atomic_read(&q->bc_defer_gennum));
 	return sz;
 }
 

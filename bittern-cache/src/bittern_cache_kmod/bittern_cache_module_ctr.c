@@ -1074,14 +1074,35 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	 * this is also used very early
 	 * \todo should have its own init function for this
 	 */
-	atomic_set(&bc->bc_deferred_wait_busy.bc_defer_gennum, 0);
-	init_waitqueue_head(&bc->bc_deferred_wait_busy.bc_defer_wait);
 	spin_lock_init(&bc->bc_deferred_wait_busy.bc_defer_lock);
 	bio_list_init(&bc->bc_deferred_wait_busy.bc_defer_list);
-	atomic_set(&bc->bc_deferred_wait_page.bc_defer_gennum, 0);
-	init_waitqueue_head(&bc->bc_deferred_wait_page.bc_defer_wait);
+	bc->bc_deferred_wait_busy.bc_defer_wq = alloc_workqueue("dfr_bwkq:%s",
+					WQ_UNBOUND,
+					1,
+					bc->bc_name);
+	if (bc->bc_deferred_wait_busy.bc_defer_wq == NULL) {
+		ti->error = "cannot allocate dfr_bwkq workqueue";
+		printk_err("%s: cannot allocate dfr_bwkq workqueue\n",
+			   bc->bc_name);
+		goto bad_1;
+	}
+	INIT_WORK(&bc->bc_deferred_wait_busy.bc_defer_work, cache_deferred_worker);
+	bc->bc_deferred_wait_busy.bc_bc = bc;
+
 	spin_lock_init(&bc->bc_deferred_wait_page.bc_defer_lock);
 	bio_list_init(&bc->bc_deferred_wait_page.bc_defer_list);
+	bc->bc_deferred_wait_page.bc_defer_wq = alloc_workqueue("dfr_pwkq:%s",
+					WQ_UNBOUND,
+					1,
+					bc->bc_name);
+	if (bc->bc_deferred_wait_page.bc_defer_wq == NULL) {
+		ti->error = "cannot allocate dfr_pwkq workqueue";
+		printk_err("%s: cannot allocate dfr_pwkq workqueue\n",
+			   bc->bc_name);
+		goto bad_1;
+	}
+	INIT_WORK(&bc->bc_deferred_wait_page.bc_defer_work, cache_deferred_worker);
+	bc->bc_deferred_wait_busy.bc_bc = bc;
 
 	/*
 	 * we do a header restore no matter what.
@@ -1323,26 +1344,6 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	printk_info("verifier instantiated, task=%p\n", bc->bc_verifier_task);
 	wake_up_process(bc->bc_verifier_task);
 
-	bc->bc_deferred_wait_busy.bc_defer_task = kthread_create(
-					cache_deferred_busy_kthread,
-					bc,
-					"b_dfb/%s",
-					bc->bc_name);
-	M_ASSERT_FIXME(bc->bc_deferred_wait_busy.bc_defer_task != NULL);
-	printk_info("bc_deferred_wait_busy.bc_defer_task task=%p\n",
-		    bc->bc_deferred_wait_busy.bc_defer_task);
-	wake_up_process(bc->bc_deferred_wait_busy.bc_defer_task);
-
-	bc->bc_deferred_wait_page.bc_defer_task = kthread_create(
-					cache_deferred_page_kthread,
-					bc,
-					"b_dfp/%s",
-					bc->bc_name);
-	M_ASSERT_FIXME(bc->bc_deferred_wait_page.bc_defer_task != NULL);
-	printk_info("bc_deferred_wait_page.bc_defer_task task=%p\n",
-		    bc->bc_deferred_wait_page.bc_defer_task);
-	wake_up_process(bc->bc_deferred_wait_page.bc_defer_task);
-
 	bc->bc_bgwriter_task = kthread_create(cache_bgwriter_kthread,
 					      bc,
 					      "b_bgw/%s",
@@ -1381,6 +1382,17 @@ bad_1:
 		kmem_cache_destroy(bc->bc_kmem_map);
 	if (bc->bc_kmem_threads != NULL)
 		kmem_cache_destroy(bc->bc_kmem_threads);
+
+	if (bc->bc_deferred_wait_busy.bc_defer_wq != NULL) {
+		flush_workqueue(bc->bc_deferred_wait_busy.bc_defer_wq);
+		printk_info("destroying deferred_wait_busy workqueue\n");
+		destroy_workqueue(bc->bc_deferred_wait_busy.bc_defer_wq);
+	}
+	if (bc->bc_deferred_wait_page.bc_defer_wq != NULL) {
+		flush_workqueue(bc->bc_deferred_wait_page.bc_defer_wq);
+		printk_info("destroying deferred_wait_page workqueue\n");
+		destroy_workqueue(bc->bc_deferred_wait_page.bc_defer_wq);
+	}
 
 	pmem_deallocate(bc);
 	printk_info("mem_info_deinitialize()\n");

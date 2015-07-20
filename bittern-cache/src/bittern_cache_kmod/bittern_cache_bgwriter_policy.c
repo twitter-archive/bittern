@@ -114,7 +114,6 @@ void cache_bgwriter_compute_policy_old_default(struct bittern_cache *bc)
 void cache_bgwriter_compute_policy_classic(struct bittern_cache *bc)
 {
 	int dirty_pct;
-	int queue_depth_pct, min_age_s;
 	unsigned int valid_entries_dirty, total_entries;
 
 	/* writeback queue_depth indexed by percent dirty */

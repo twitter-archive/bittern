@@ -387,17 +387,15 @@ struct seq_io_bypass {
 
 /*! holds queue of deferred requests */
 struct deferred_queue {
-	struct bio_list bc_defer_list;
-
-	volatile unsigned int bc_defer_curr_count;
-	unsigned int bc_defer_requeue_count;
-	unsigned int bc_defer_max_count;
-	unsigned int bc_defer_no_work_count;
-	unsigned int bc_defer_work_count;
-	unsigned int bc_defer_loop_count;
-	/*! timer to record sampled latency */
-	struct cache_timer bc_defer_timer;
-	uint64_t bc_defer_tstamp;
+	struct bio_list list;
+	volatile unsigned int curr_count;
+	unsigned int requeue_count;
+	unsigned int max_count;
+	unsigned int no_work_count;
+	unsigned int work_count;
+	unsigned int loop_count;
+	struct cache_timer timer;
+	uint64_t tstamp;
 };
 
 struct pmem_api {
@@ -744,9 +742,9 @@ struct bittern_cache {
 	/*! synchronizes access to both deferred queues */
 	spinlock_t defer_lock;
 	/*! deferred queue, cases 1 and 2. see @ref (doxy_deferredqueues.md) */
-	struct deferred_queue bc_deferred_wait_busy;
+	struct deferred_queue defer_wait_busy;
 	/*! deferred queue, cases 3 and 4. see @ref (doxy_deferredqueues.md) */
-	struct deferred_queue bc_deferred_wait_page;
+	struct deferred_queue defer_wait_page;
 	/*! deferred queue workqueue */
 	struct workqueue_struct *defer_wq;
 	struct work_struct defer_work;

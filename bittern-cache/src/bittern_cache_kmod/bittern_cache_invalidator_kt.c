@@ -54,7 +54,7 @@ void cache_invalidate_block_io_end(struct bittern_cache *bc,
 	/*
 	 * wakeup possible waiters
 	 */
-	cache_wakeup_deferred(bc);
+	wakeup_deferred(bc);
 	wake_up_interruptible(&bc->bc_invalidator_wait);
 }
 

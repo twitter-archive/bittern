@@ -1413,8 +1413,8 @@ ssize_t cache_op_show_timers(struct bittern_cache *bc, char *result)
 	       T_FMT_ARGS(bc, bc_timer_writebacks),
 	       T_FMT_ARGS(bc, bc_timer_invalidations),
 	       T_FMT_ARGS(bc, bc_timer_pending_queue),
-	       T_FMT_ARGS(bc, bc_deferred_wait_busy.bc_defer_timer),
-	       T_FMT_ARGS(bc, bc_deferred_wait_page.bc_defer_timer));
+	       T_FMT_ARGS(bc, defer_wait_busy.timer),
+	       T_FMT_ARGS(bc, defer_wait_page.timer));
 	DMEMIT("%s: timers: "
 	       T_FMT_STRING("cached_device_reads") " "
 	       T_FMT_STRING("cached_device_writes") " "

@@ -74,12 +74,12 @@ void cache_dtr_pre(struct dm_target *ti)
 	destroy_workqueue(bc->defer_wq);
 
 	printk_info("deferred_queues(%u/%u)\n",
-		    bc->bc_deferred_wait_busy.bc_defer_curr_count,
-		    bc->bc_deferred_wait_page.bc_defer_curr_count);
-	M_ASSERT(bc->bc_deferred_wait_busy.bc_defer_curr_count == 0);
-	M_ASSERT(bio_list_empty(&bc->bc_deferred_wait_busy.bc_defer_list));
-	M_ASSERT(bc->bc_deferred_wait_page.bc_defer_curr_count == 0);
-	M_ASSERT(bio_list_empty(&bc->bc_deferred_wait_page.bc_defer_list));
+		    bc->defer_wait_busy.curr_count,
+		    bc->defer_wait_page.curr_count);
+	M_ASSERT(bc->defer_wait_busy.curr_count == 0);
+	M_ASSERT(bio_list_empty(&bc->defer_wait_busy.list));
+	M_ASSERT(bc->defer_wait_page.curr_count == 0);
+	M_ASSERT(bio_list_empty(&bc->defer_wait_page.list));
 	printk_info("deferred_requests=%u\n",
 		    atomic_read(&bc->bc_deferred_requests));
 	M_ASSERT(atomic_read(&bc->bc_deferred_requests) == 0);

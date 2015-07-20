@@ -939,8 +939,8 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	cache_timer_init(&bc->bc_timer_pending_queue);
 	cache_timer_init(&bc->bc_timer_resource_alloc_reads);
 	cache_timer_init(&bc->bc_timer_resource_alloc_writes);
-	cache_timer_init(&bc->bc_deferred_wait_busy.bc_defer_timer);
-	cache_timer_init(&bc->bc_deferred_wait_page.bc_defer_timer);
+	cache_timer_init(&bc->defer_wait_busy.timer);
+	cache_timer_init(&bc->defer_wait_page.timer);
 
 	bc->devio.conf_worker_delay = CACHED_DEV_WORKER_DELAY_DEFAULT;
 	bc->devio.conf_fua_insert = CACHED_DEV_FUA_INSERT_DEFAULT;
@@ -1075,8 +1075,8 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	 * \todo should have its own init function for this
 	 */
 	spin_lock_init(&bc->defer_lock);
-	bio_list_init(&bc->bc_deferred_wait_busy.bc_defer_list);
-	bio_list_init(&bc->bc_deferred_wait_page.bc_defer_list);
+	bio_list_init(&bc->defer_wait_busy.list);
+	bio_list_init(&bc->defer_wait_page.list);
 	bc->defer_wq = alloc_workqueue("dfr_wk:%s", WQ_UNBOUND, 1, bc->bc_name);
 	if (bc->defer_wq == NULL) {
 		ti->error = "cannot allocate dfr_wk workqueue";

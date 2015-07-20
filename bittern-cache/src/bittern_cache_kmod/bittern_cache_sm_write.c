@@ -172,7 +172,7 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	/*
 	 * wakeup possible waiters
 	 */
-	cache_wakeup_deferred(bc);
+	wakeup_deferred(bc);
 	bio_endio(bio, 0);
 }
 
@@ -474,7 +474,7 @@ void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	/*
 	 * wakeup possible waiters
 	 */
-	cache_wakeup_deferred(bc);
+	wakeup_deferred(bc);
 
 	if (original_state == S_CLEAN_WRITE_MISS_CPT_CACHE_END) {
 		ASSERT(original_cache_block == NULL);
@@ -846,7 +846,7 @@ void sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 	/*
 	 * wakeup possible waiters
 	 */
-	cache_wakeup_deferred(bc);
+	wakeup_deferred(bc);
 
 	/*
 	 * STEP #2 -- now start an async metadata invalidation

@@ -51,16 +51,16 @@ Waiting conditions and wakeup strategy for threads
   when a pending request completes.
   So in this case we need to wait for a change in the number of
   completed requests. this condition is signalled by
-  calling @ref cache_wakeup_deferred.
+  calling @ref wakeup_deferred.
 * For cases 3 and 4: We wait for the deferred generation number to be bumped up.
   In this case requests are deferred due to being unable to allocate resources
   in the entry point functions, but they can be scheduled immediately if
   resources are available in the thread context (the page buffer for instance).
   So in this case we want the thread to wake up in two cases:
   each time a request is queued, done implicitly when the request is
-  queued by @ref cache_queue_to_deferred, and each time a pending
+  queued by @ref queue_to_deferred, and each time a pending
   request completes thus freeing up a resource.
-  The latter is signalled by calling @ref cache_wakeup_deferred.
+  The latter is signalled by calling @ref wakeup_deferred.
   In either case we bump up the generation number of the thread,
   so the wait condition is simply "has the gen num changed?".
 
@@ -70,7 +70,7 @@ The reasons why a request can be deferred are multiple,
 and can also change dynamically.
 A request deferred for, say, lack of a buffer, could have be deferred again
 if all cache blocks are busy (no free blocks), or if the specified cache block
-is busy. Because of this, @ref cache_handle_deferred will potentially
+is busy. Because of this, @ref handle_deferred will potentially
 defer requests again.
 This implies that the deferred thread needs to wait on conditions other than
 just the deferred thread queue being non-empty. If we waited on the latter,
@@ -92,25 +92,25 @@ starvation is not possbile.
 
 A deferred queue is described by struct deferred_queue.
 There are two instances two instances of said structure in bittern_cache:
-* bc_deferred_wait_busy: this queue handles cases 1 and 2.
-* bc_deferred_wait_page: this queue handles cases 3 and 4.
+* defer_wait_busy: this queue handles cases 1 and 2.
+* defer_wait_page: this queue handles cases 3 and 4.
 
 ## Code Paths
 
 ### deferral path
 
-* @ref cache_map --> @ref cache_queue_to_deferred
+* @ref cache_map --> @ref queue_to_deferred
 * @ref cache_map -->
   @ref cache_map_workfunc -->
-  @ref cache_queue_to_deferred
-* @ref cache_handle_deferred -->
+  @ref queue_to_deferred
+* @ref handle_deferred -->
   @ref cache_map_workfunc -->
-  @ref cache_queue_to_deferred
+  @ref queue_to_deferred
 
 ### wakeup path
 
-* Request complete --> @ref cache_wakeup_deferred
-* Writeback request complete --> @ref cache_wakeup_deferred
+* Request complete --> @ref wakeup_deferred
+* Writeback request complete --> @ref wakeup_deferred
 
 ### threads path
 

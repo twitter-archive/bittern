@@ -192,6 +192,16 @@ $0 --set writethrough
 $0 --set trace --value tracemask
 	Set tracing options. For debugging purposes.
 
+$0 --set dump_devio_pending --value dump_offset
+$0 --set dump_blocks_clean --value dump_offset
+$0 --set dump_blocks_dirty --value dump_offset
+$0 --set dump_blocks_busy --value dump_offset
+$0 --set dump_blocks_pending --value dump_offset
+$0 --set dump_blocks_deferred --value dump_offset
+$0 --set dump_blocks_deferred_busy --value dump_offset
+$0 --set dump_blocks_deferred_page --value dump_offset
+	Dump content of various queues. For debugging purposes.
+
 EOF
 }
 
@@ -603,6 +613,14 @@ do_set() {
 		do_set_check_value
 		set_cache_conf trace $VALUE_OPTION
 		;;
+	"dump_devio_pending")
+		do_set_check_value
+		set_cache_conf trace $VALUE_OPTION
+                ;;
+	dump_blocks_*)
+		do_set_check_value
+		set_cache_conf $__set_option $VALUE_OPTION
+                ;;
 	*)
 		echo $0: unrecognized "--set" option
 		exit 1

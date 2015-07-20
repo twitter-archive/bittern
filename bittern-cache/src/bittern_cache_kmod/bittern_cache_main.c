@@ -2306,12 +2306,9 @@ void cache_wakeup_deferred(struct bittern_cache *bc)
 		 atomic_read(&bc->bc_deferred_requests),
 		 bc->bc_deferred_wait_busy.bc_defer_curr_count,
 		 bc->bc_deferred_wait_page.bc_defer_curr_count);
-	if (bc->bc_deferred_wait_busy.bc_defer_curr_count != 0)
-		queue_work(bc->bc_deferred_wait_busy.bc_defer_wq,
-			   &bc->bc_deferred_wait_busy.bc_defer_work);
-	if (bc->bc_deferred_wait_page.bc_defer_curr_count != 0)
-		queue_work(bc->bc_deferred_wait_page.bc_defer_wq,
-			   &bc->bc_deferred_wait_page.bc_defer_work);
+	if (bc->bc_deferred_wait_busy.bc_defer_curr_count != 0 ||
+	    bc->bc_deferred_wait_page.bc_defer_curr_count != 0)
+		queue_work(bc->defer_wq, &bc->defer_work);
 }
 
 /*! queue a request for deferred execution */
@@ -2331,6 +2328,8 @@ void cache_queue_to_deferred(struct bittern_cache *bc,
 
 	ASSERT(queue == &bc->bc_deferred_wait_busy ||
 	       queue == &bc->bc_deferred_wait_page);
+
+	queue->bc_defer_tstamp = current_kernel_time_nsec();
 
 	spin_lock_irqsave(&queue->bc_defer_lock, flags);
 	/* bio_list_add adds to tail */
@@ -2442,6 +2441,11 @@ void cache_handle_deferred(struct bittern_cache *bc,
 {
 	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
+
+	if (queue->bc_defer_tstamp != 0) {
+		cache_timer_add(&queue->bc_defer_timer, queue->bc_defer_tstamp);
+		queue->bc_defer_tstamp = 0;
+	}
 	/*
 	 * for as long as we have queued deferred requests and
 	 * we can requeue, then we need to do this
@@ -2472,17 +2476,16 @@ void cache_handle_deferred(struct bittern_cache *bc,
 
 void cache_deferred_worker(struct work_struct *work)
 {
-	struct deferred_queue *queue;
 	struct bittern_cache *bc;
 
 	ASSERT(!in_irq());
 	ASSERT(!in_softirq());
 
-	queue = container_of(work, struct deferred_queue, bc_defer_work);
-	bc = queue->bc_bc;
+	bc = container_of(work, struct bittern_cache, defer_work);
 	ASSERT_BITTERN_CACHE(bc);
 
-	cache_timer_add(&queue->bc_defer_timer, queue->bc_defer_tstamp);
+	/* handle both deferred queues */
 
-	cache_handle_deferred(bc, queue);
+	cache_handle_deferred(bc, &bc->bc_deferred_wait_busy);
+	cache_handle_deferred(bc, &bc->bc_deferred_wait_page);
 }

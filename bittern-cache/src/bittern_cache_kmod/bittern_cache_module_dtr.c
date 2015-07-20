@@ -68,15 +68,10 @@ void cache_dtr_pre(struct dm_target *ti)
 	/* there can be no pending deferred requests anymore */
 	M_ASSERT(atomic_read(&bc->bc_deferred_requests) == 0);
 
-	M_ASSERT(bc->bc_deferred_wait_busy.bc_defer_wq != NULL);
-	flush_workqueue(bc->bc_deferred_wait_busy.bc_defer_wq);
-	printk_info("destroying deferred_wait_busy workqueue\n");
-	destroy_workqueue(bc->bc_deferred_wait_busy.bc_defer_wq);
-
-	M_ASSERT(bc->bc_deferred_wait_busy.bc_defer_wq != NULL);
-	flush_workqueue(bc->bc_deferred_wait_page.bc_defer_wq);
-	printk_info("destroying deferred_wait_page workqueue\n");
-	destroy_workqueue(bc->bc_deferred_wait_page.bc_defer_wq);
+	M_ASSERT(bc->defer_wq != NULL);
+	flush_workqueue(bc->defer_wq);
+	printk_info("destroying deferred workqueue\n");
+	destroy_workqueue(bc->defer_wq);
 
 	printk_info("deferred_queues(%u/%u)\n",
 		    bc->bc_deferred_wait_busy.bc_defer_curr_count,

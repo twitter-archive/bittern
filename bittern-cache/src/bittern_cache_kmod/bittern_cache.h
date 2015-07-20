@@ -385,10 +385,9 @@ struct seq_io_bypass {
 	uint64_t lru_hit_depth_count;
 };
 
+/*! holds queue of deferred requests */
 struct deferred_queue {
-	/*
-	 * protects all struct members except the fields above
-	 */
+	/*! protects all struct members */
 	spinlock_t bc_defer_lock;
 	struct bio_list bc_defer_list;
 
@@ -398,16 +397,9 @@ struct deferred_queue {
 	unsigned int bc_defer_no_work_count;
 	unsigned int bc_defer_work_count;
 	unsigned int bc_defer_loop_count;
-	/* timer */
+	/*! timer to record sampled latency */
 	struct cache_timer bc_defer_timer;
 	uint64_t bc_defer_tstamp;
-	/*
-	 * workqueue
-	 */
-	struct workqueue_struct *bc_defer_wq;
-	struct work_struct bc_defer_work;
-	/* backpointer */
-	struct bittern_cache *bc_bc;
 };
 
 struct pmem_api {
@@ -755,6 +747,9 @@ struct bittern_cache {
 	struct deferred_queue bc_deferred_wait_busy;
 	/*! deferred queue, cases 3 and 4. see @ref (doxy_deferredqueues.md) */
 	struct deferred_queue bc_deferred_wait_page;
+	/*! deferred queue workqueue */
+	struct workqueue_struct *defer_wq;
+	struct work_struct defer_work;
 
 	/*
 	 * background writer kernel thread to writeback dirty blocks

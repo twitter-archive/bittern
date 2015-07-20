@@ -1076,33 +1076,16 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	 */
 	spin_lock_init(&bc->bc_deferred_wait_busy.bc_defer_lock);
 	bio_list_init(&bc->bc_deferred_wait_busy.bc_defer_list);
-	bc->bc_deferred_wait_busy.bc_defer_wq = alloc_workqueue("dfr_bwkq:%s",
-					WQ_UNBOUND,
-					1,
-					bc->bc_name);
-	if (bc->bc_deferred_wait_busy.bc_defer_wq == NULL) {
-		ti->error = "cannot allocate dfr_bwkq workqueue";
-		printk_err("%s: cannot allocate dfr_bwkq workqueue\n",
-			   bc->bc_name);
-		goto bad_1;
-	}
-	INIT_WORK(&bc->bc_deferred_wait_busy.bc_defer_work, cache_deferred_worker);
-	bc->bc_deferred_wait_busy.bc_bc = bc;
-
 	spin_lock_init(&bc->bc_deferred_wait_page.bc_defer_lock);
 	bio_list_init(&bc->bc_deferred_wait_page.bc_defer_list);
-	bc->bc_deferred_wait_page.bc_defer_wq = alloc_workqueue("dfr_pwkq:%s",
-					WQ_UNBOUND,
-					1,
-					bc->bc_name);
-	if (bc->bc_deferred_wait_page.bc_defer_wq == NULL) {
-		ti->error = "cannot allocate dfr_pwkq workqueue";
-		printk_err("%s: cannot allocate dfr_pwkq workqueue\n",
+	bc->defer_wq = alloc_workqueue("dfr_wk:%s", WQ_UNBOUND, 1, bc->bc_name);
+	if (bc->defer_wq == NULL) {
+		ti->error = "cannot allocate dfr_wk workqueue";
+		printk_err("%s: cannot allocate dfr_wk workqueue\n",
 			   bc->bc_name);
 		goto bad_1;
 	}
-	INIT_WORK(&bc->bc_deferred_wait_page.bc_defer_work, cache_deferred_worker);
-	bc->bc_deferred_wait_busy.bc_bc = bc;
+	INIT_WORK(&bc->defer_work, cache_deferred_worker);
 
 	/*
 	 * we do a header restore no matter what.
@@ -1383,15 +1366,10 @@ bad_1:
 	if (bc->bc_kmem_threads != NULL)
 		kmem_cache_destroy(bc->bc_kmem_threads);
 
-	if (bc->bc_deferred_wait_busy.bc_defer_wq != NULL) {
-		flush_workqueue(bc->bc_deferred_wait_busy.bc_defer_wq);
-		printk_info("destroying deferred_wait_busy workqueue\n");
-		destroy_workqueue(bc->bc_deferred_wait_busy.bc_defer_wq);
-	}
-	if (bc->bc_deferred_wait_page.bc_defer_wq != NULL) {
-		flush_workqueue(bc->bc_deferred_wait_page.bc_defer_wq);
-		printk_info("destroying deferred_wait_page workqueue\n");
-		destroy_workqueue(bc->bc_deferred_wait_page.bc_defer_wq);
+	if (bc->defer_wq != NULL) {
+		flush_workqueue(bc->defer_wq);
+		printk_info("destroying deferred workqueue\n");
+		destroy_workqueue(bc->defer_wq);
 	}
 
 	pmem_deallocate(bc);

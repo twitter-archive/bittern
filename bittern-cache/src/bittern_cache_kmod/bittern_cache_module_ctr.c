@@ -838,6 +838,9 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 
 	cache_xid_set(bc, 1);
 
+	bc->error_state = ES_NOERROR;
+
+	atomic_set(&bc->error_count, 0);
 	atomic_set(&bc->bc_total_deferred_requests, 0);
 	atomic_set(&bc->bc_deferred_requests, 0);
 	atomic_set(&bc->bc_highest_deferred_requests, 0);

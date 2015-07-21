@@ -150,14 +150,10 @@ void cache_bgwriter_compute_policy_classic(struct bittern_cache *bc)
 	dirty_pct = T_PCT(total_entries, valid_entries_dirty);
 	ASSERT(dirty_pct <= 100);
 
-	bc->bc_bgwriter_curr_max_queue_depth =
-	    PERCENT_OF(bc->bc_bgwriter_conf_max_queue_depth_pct,
-			   bc->bc_max_pending_requests);
+	bc->bc_bgwriter_curr_max_queue_depth = (bc->bc_max_pending_requests * bc->bc_bgwriter_conf_max_queue_depth_pct) / 100;
 	bc->bc_bgwriter_curr_rate_per_sec = 0;
 	bc->bc_bgwriter_curr_min_age_secs = 0;
-	bc->bc_bgwriter_curr_queue_depth =
-			PERCENT_OF(queue_depth[dirty_pct / 5],
-				   bc->bc_bgwriter_curr_max_queue_depth);
+	bc->bc_bgwriter_curr_queue_depth = (queue_depth[dirty_pct / 5] * bc->bc_bgwriter_curr_max_queue_depth) / 100;
 	bc->bc_bgwriter_curr_min_age_secs = 4;
 }
 
@@ -200,13 +196,10 @@ void cache_bgwriter_compute_policy_aggressive(struct bittern_cache *bc)
 	dirty_pct = T_PCT(total_entries, valid_entries_dirty);
 	ASSERT(dirty_pct <= 100);
 
-	bc->bc_bgwriter_curr_max_queue_depth =
-	    PERCENT_OF(bc->bc_bgwriter_conf_max_queue_depth_pct,
-			   bc->bc_max_pending_requests);
+	bc->bc_bgwriter_curr_max_queue_depth = (bc->bc_max_pending_requests * bc->bc_bgwriter_conf_max_queue_depth_pct) / 100;
 	bc->bc_bgwriter_curr_rate_per_sec = 0;
-	bc->bc_bgwriter_curr_queue_depth =
-			PERCENT_OF(queue_depth[dirty_pct / 5],
-				   bc->bc_bgwriter_curr_max_queue_depth);
+	bc->bc_bgwriter_curr_min_age_secs = 0;
+	bc->bc_bgwriter_curr_queue_depth = (queue_depth[dirty_pct / 5] * bc->bc_bgwriter_curr_max_queue_depth) / 100;
 	bc->bc_bgwriter_curr_min_age_secs = 4;
 }
 
@@ -252,13 +245,10 @@ void cache_bgwriter_compute_policy_dirty_ratio(struct bittern_cache *bc)
 	dirty_pct = T_PCT(total_entries, valid_entries_dirty);
 	ASSERT(dirty_pct <= 100);
 
-	bc->bc_bgwriter_curr_max_queue_depth =
-	    PERCENT_OF(bc->bc_bgwriter_conf_max_queue_depth_pct,
-			   bc->bc_max_pending_requests);
+	bc->bc_bgwriter_curr_max_queue_depth = (bc->bc_max_pending_requests * bc->bc_bgwriter_conf_max_queue_depth_pct) / 100;
 	bc->bc_bgwriter_curr_rate_per_sec = 0;
-	bc->bc_bgwriter_curr_queue_depth =
-			PERCENT_OF(queue_depth[dirty_pct / 5],
-				   bc->bc_bgwriter_curr_max_queue_depth);
+	bc->bc_bgwriter_curr_min_age_secs = 0;
+	bc->bc_bgwriter_curr_queue_depth = (queue_depth[dirty_pct / 5] * bc->bc_bgwriter_curr_max_queue_depth) / 100;
 	bc->bc_bgwriter_curr_min_age_secs = 4;
 }
 

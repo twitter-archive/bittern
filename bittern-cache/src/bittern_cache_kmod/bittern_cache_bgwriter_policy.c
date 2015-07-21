@@ -136,10 +136,10 @@ void cache_bgwriter_compute_policy_classic(struct bittern_cache *bc)
 		50,	/* 75% */
 		60,	/* 80% */
 		70,	/* 85% */
-		80,	/* 90% */
-		90,	/* 95% */
-		100,	/* 100% */
-                110,    /* 105% */
+		100,	/* 90% */
+		150,	/* 95% */
+		200,	/* 100% */
+                250,    /* 105% */
 	};
 
 	ASSERT(bc != NULL);
@@ -186,10 +186,10 @@ void cache_bgwriter_compute_policy_aggressive(struct bittern_cache *bc)
 		50,	/* 75% */
 		75,	/* 80% */
 		100,	/* 85% */
-		125,	/* 90% */
-		150,	/* 95% */
-		200,	/* 100% */
-                225,    /* 105% */
+		150,	/* 90% */
+		200,	/* 95% */
+		250,	/* 100% */
+                300,    /* 105% */
 	};
 
 	ASSERT(bc != NULL);
@@ -239,9 +239,9 @@ void cache_bgwriter_compute_policy_dirty_ratio(struct bittern_cache *bc)
 		10,	/* 80% */
 		20,	/* 85% */
 		100,	/* 90% */
-		150,	/* 95% */
-		200,	/* 100% */
-                250,    /* 105% */
+		200,	/* 95% */
+		250,	/* 100% */
+                300,    /* 105% */
 	};
 
 	ASSERT(bc != NULL);

@@ -1012,7 +1012,7 @@ static inline bool can_schedule_map_request(struct bittern_cache *bc)
 	unsigned int avail_reserved;
 	bool avail, can_queue;
 
-	avail_reserved = bc->bc_max_pending_requests + INVALIDATOR_MIN_INVALID_COUNT;
+	avail_reserved = bc->bc_max_pending_requests;
 	avail = atomic_read(&bc->bc_invalid_entries) > avail_reserved;
 	can_queue = atomic_read(&bc->bc_pending_requests) < bc->bc_max_pending_requests;
 	return avail && can_queue;

@@ -537,18 +537,11 @@ void cache_bgwriter_flush_dirty_blocks(struct bittern_cache *bc)
 	 * this function is only meant to be called by the _dtr() code,
 	 * as it changes the writeback state.
 	 */
-
 	bc->bc_cache_mode_writeback = 0;
-
-	bc->bc_max_pending_requests = CACHE_MAX_MAX_PENDING_REQUESTS;
-
+	bc->bc_max_pending_requests = CACHE_MAX_PENDING_REQUESTS_MAX;
 	bc->bc_bgwriter_conf_greedyness = 0;
-	bc->bc_bgwriter_conf_cluster_size =
-	    CACHE_BGWRITER_MAX_CLUSTER_SIZE;
-	bc->bc_bgwriter_conf_max_queue_depth_pct =
-	    CACHE_BGWRITER_MAX_QUEUE_DEPTH_PCT;
-
-	bc->bc_cache_mode_writeback = 0;
+	bc->bc_bgwriter_conf_cluster_size = CACHE_BGWRITER_MAX_CLUSTER_SIZE;
+	bc->bc_bgwriter_conf_max_queue_depth_pct = CACHE_BGWRITER_MAX_QUEUE_DEPTH_PCT;
 
 	/* FIXME: probably need to add memory barrier here */
 

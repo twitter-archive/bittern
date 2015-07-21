@@ -149,7 +149,7 @@ static inline int cache_invalidator_has_work(struct bittern_cache *bc)
 	unsigned int min_count;
 
 	min_count = bc->bc_invalidator_conf_min_invalid_count;
-	min_count += atomic_read(&bc->bc_max_pending_requests);
+	min_count += bc->bc_max_pending_requests;
 	ASSERT(min_count > 0);
 
 	/* bail out if there are no clean entries to invalidate */
@@ -172,7 +172,7 @@ int cache_invalidator_has_work_schmitt(struct bittern_cache *bc)
 	unsigned int min_count_s;
 
 	min_count_s = bc->bc_invalidator_conf_min_invalid_count;
-	min_count_s += atomic_read(&bc->bc_max_pending_requests);
+	min_count_s += bc->bc_max_pending_requests;
 	ASSERT(min_count_s > 0);
 
 	/* bail out if there are no clean entries to invalidate */

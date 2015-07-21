@@ -1181,9 +1181,9 @@ static void pmem_header_update_worker(struct work_struct *work)
 		BT_TRACE(BT_LEVEL_TRACE2, bc, NULL, NULL, NULL, NULL, "bc=%p", bc);
 		ret = pmem_header_update(bc, 0);
 
-		/* should make this a common function */
 		if (ret != 0) {
-			printk_err("%s: cannot update header: %d. will fail all future requests\n",
+			/*! \todo should make this a common function */
+			printk_err("%s: cannot update header, ret=%d\n",
 				   bc->bc_name,
 				   ret);
 			bc->error_state = ES_ERROR_FAIL_ALL;

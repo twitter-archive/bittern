@@ -462,8 +462,8 @@ struct bittern_cache {
 	/*! size of cached device in mbytes */
 	uint64_t bc_cached_device_size_mbytes;
 
-	/*! error state */
-	enum error_state error_state;
+	/*! actual error state */
+	int error_state;
 	/*! error count */
 	atomic_t error_count;
 

@@ -227,11 +227,13 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 				 WI_FLAG_XID_USE_CACHE_BLOCK));
 	/*! \todo: error injection */
 	if (wi == NULL) {
-		cache_put(bc, cache_block, 1);
+		/*! \todo should make this a common function */
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		cache_state_transition_final(bc,
 					     cache_block,
 					     TS_NONE,
 					     S_DIRTY);
+		cache_put(bc, cache_block, 1);
 		printk_err("%s: cannot allocate work_item for bgwriter, ret=%d\n",
 			   bc->bc_name,
 			   -ENOMEM);
@@ -252,11 +254,13 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 				 &wi->wi_pmem_ctx);
 	/*! \todo: error injection */
 	if (ret != 0) {
-		cache_put(bc, cache_block, 1);
+		/*! \todo should make this a common function */
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		cache_state_transition_final(bc,
 					     cache_block,
 					     TS_NONE,
 					     S_DIRTY);
+		cache_put(bc, cache_block, 1);
 		work_item_free(bc, wi);
 		printk_err("%s: cannot setup pmem_context for bgwriter, ret=%d\n",
 			   bc->bc_name,
@@ -369,10 +373,9 @@ int cache_bgwriter_io_start_batch(struct bittern_cache *bc)
 	ASSERT(ret == 0);
 
 	/* printk_debug("bgwriter: hint[0]=%lu\n", sector_hint); */
-	ret =
-	    cache_bgwriter_io_start_one(bc, sector_hint, &sector_hint);
-	ASSERT(ret == 0 || ret == 1);
-	if (ret == 0)
+	ret = cache_bgwriter_io_start_one(bc, sector_hint, &sector_hint);
+	/* error is already handled in @ref cache_bgwriter_io_start_one */
+	if (ret <= 0)
 		return 0;
 	count = 1;
 

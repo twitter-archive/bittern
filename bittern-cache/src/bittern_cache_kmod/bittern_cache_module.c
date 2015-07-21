@@ -897,23 +897,21 @@ ssize_t cache_op_show_stats_extra(struct bittern_cache *bc,
 	       bc->bc_name,
 	       bc->devio.gennum,
 	       bc->devio.gennum_flush);
-	DMEMIT("%s: stats_extra: defer_busy_curr_count=%u defer_busy_requeue_count=%u defer_busy_max_count=%u defer_busy_loop_count=%u\n",
+	DMEMIT("%s: stats_extra: defer_busy_curr_count=%u defer_busy_requeue_count=%u defer_busy_max_count=%u\n",
 	       bc->bc_name,
 	       bc->defer_busy.curr_count,
 	       bc->defer_busy.requeue_count,
-	       bc->defer_busy.max_count,
-	       bc->defer_busy.loop_count);
+	       bc->defer_busy.max_count);
 	DMEMIT("%s: stats_extra: defer_busy_work_count=%u defer_busy_no_work_count=%u " T_FMT_STRING("defer_busy_timer") "\n",
 	       bc->bc_name,
 	       bc->defer_busy.work_count,
 	       bc->defer_busy.no_work_count,
 	       T_FMT_ARGS(bc, defer_busy.timer));
-	DMEMIT("%s: stats_extra: defer_page_curr_count=%u defer_page_requeue_count=%u defer_page_max_count=%u defer_page_loop_count=%u\n",
+	DMEMIT("%s: stats_extra: defer_page_curr_count=%u defer_page_requeue_count=%u defer_page_max_count=%u\n",
 	       bc->bc_name,
 	       bc->defer_page.curr_count,
 	       bc->defer_page.requeue_count,
-	       bc->defer_page.max_count,
-	       bc->defer_page.loop_count);
+	       bc->defer_page.max_count);
 	DMEMIT("%s: stats_extra: defer_page_work_count=%u defer_page_no_work_count=%u " T_FMT_STRING("defer_page_timer") "\n",
 	       bc->bc_name,
 	       bc->defer_page.work_count,

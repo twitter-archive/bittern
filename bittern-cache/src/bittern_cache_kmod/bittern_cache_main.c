@@ -818,14 +818,14 @@ void cache_state_machine(struct bittern_cache *bc,
 
 		/*
 		 * clean invalidation (wt/wb):  VALID_CLEAN -->
-		 *                              VALID_CLEAN_INVALIDATE_START,
-		 *                              VALID_CLEAN_INVALIDATE_END,
-		 *                              INVALID
+		 *			      VALID_CLEAN_INVALIDATE_START,
+		 *			      VALID_CLEAN_INVALIDATE_END,
+		 *			      INVALID
 		 *
 		 * dirty invalidation (wb):     VALID_DIRTY -->
-		 *                              VALID_DIRTY_INVALIDATE_START,
-		 *                              VALID_DIRTY_INVALIDATE_END,
-		 *                              INVALID
+		 *			      VALID_DIRTY_INVALIDATE_START,
+		 *			      VALID_DIRTY_INVALIDATE_END,
+		 *			      INVALID
 		 *
 		 * VALID_CLEAN -->
 		 * VALID_CLEAN_INVALIDATE_START
@@ -2340,15 +2340,14 @@ void wakeup_deferred(struct bittern_cache *bc)
  * needs to be passed as parameter.
  */
 void queue_to_deferred(struct bittern_cache *bc,
-			     struct deferred_queue *queue,
-			     struct bio *bio,
-			     struct deferred_queue *old_queue)
+		       struct deferred_queue *queue,
+		       struct bio *bio,
+		       struct deferred_queue *old_queue)
 {
 	unsigned long flags;
 	int val;
 
-	ASSERT(queue == &bc->defer_busy ||
-	       queue == &bc->defer_page);
+	ASSERT(queue == &bc->defer_busy || queue == &bc->defer_page);
 	ASSERT(old_queue == &bc->defer_busy ||
 	       old_queue == &bc->defer_page ||
 	       old_queue == NULL);
@@ -2376,7 +2375,7 @@ void queue_to_deferred(struct bittern_cache *bc,
 }
 
 struct bio *dequeue_from_deferred(struct bittern_cache *bc,
-					struct deferred_queue *queue)
+				  struct deferred_queue *queue)
 {
 	unsigned long flags;
 	struct bio *bio = NULL;
@@ -2411,7 +2410,7 @@ struct bio *dequeue_from_deferred(struct bittern_cache *bc,
  * to queue work from this queue.
  */
 bool deferred_has_work(struct bittern_cache *bc,
-			     struct deferred_queue *queue)
+		       struct deferred_queue *queue)
 {
 	bool has_requests = queue->curr_count != 0;
 	return has_requests && can_schedule_map_request(bc);
@@ -2420,11 +2419,10 @@ bool deferred_has_work(struct bittern_cache *bc,
 /*! handle one or more deferred requests on a given queue */
 int __handle_deferred(struct bittern_cache *bc, struct deferred_queue *queue)
 {
-	int ret, count;
-	struct bio *bio = NULL;
+	int ret;
+	struct bio *bio;
 
-	ASSERT(queue == &bc->defer_busy ||
-	       queue == &bc->defer_page);
+	ASSERT(queue == &bc->defer_busy || queue == &bc->defer_page);
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
 		 "wait_%s: curr_c=%u, max_c=%u",
@@ -2445,30 +2443,28 @@ int __handle_deferred(struct bittern_cache *bc, struct deferred_queue *queue)
 	 */
 	ret = cache_map_workfunc(bc, bio, queue);
 
-	if (ret == 0) {
-		queue->requeue_count++;
-		count = 0;
-	} else {
-		queue->work_count++;
-		count = 1;
-	}
-
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
 		 "wait_%s: curr_c=%u, max_c=%u, ret=%d, count=%d",
 		 (queue == &bc->defer_busy ? "busy" : "pp"),
 		 queue->curr_count,
 		 queue->max_count,
-		 ret,
-		 count);
+		 ret);
 
-	return count;
+	if (ret == 0) {
+		queue->requeue_count++;
+		return 0;
+	} else {
+		queue->work_count++;
+		return 1;
+	}
 }
 
 /*! deferred io handler */
-void handle_deferred(struct bittern_cache *bc,
-			   struct deferred_queue *queue)
+int handle_deferred(struct bittern_cache *bc, struct deferred_queue *queue)
 {
 	unsigned long flags;
+	int cc, count = 0;
+
 	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
 
@@ -2484,27 +2480,27 @@ void handle_deferred(struct bittern_cache *bc,
 	 * we can requeue, then we need to do this
 	 */
 	while (deferred_has_work(bc, queue)) {
-		int count;
 
 		ASSERT(bc != NULL);
 		ASSERT_BITTERN_CACHE(bc);
 
-		count = __handle_deferred(bc, queue);
-
-		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-			 "%d: completed=%u, pending=%u, deferred=%u",
-			 count,
-			 atomic_read(&bc->bc_completed_requests),
-			 atomic_read(&bc->bc_pending_requests),
-			 atomic_read(&bc->bc_deferred_requests));
-		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-			 "%d: io_curr_count=%u",
-			 count, queue->curr_count);
-
-		if (count == 0)
+		cc = __handle_deferred(bc, queue);
+		count += cc;
+		if (cc == 0)
 			break;
 	}
-	queue->loop_count++;
+
+	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
+		 "%d: completed=%u, pending=%u, deferred=%u",
+		 count,
+		 atomic_read(&bc->bc_completed_requests),
+		 atomic_read(&bc->bc_pending_requests),
+		 atomic_read(&bc->bc_deferred_requests));
+	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
+		 "%d: io_curr_count=%u",
+		 count, queue->curr_count);
+
+	return count;
 }
 
 void cache_deferred_worker(struct work_struct *work)

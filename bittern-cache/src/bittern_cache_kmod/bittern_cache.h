@@ -393,7 +393,6 @@ struct deferred_queue {
 	unsigned int max_count;
 	unsigned int no_work_count;
 	unsigned int work_count;
-	unsigned int loop_count;
 	struct cache_timer timer;
 	uint64_t tstamp;
 };

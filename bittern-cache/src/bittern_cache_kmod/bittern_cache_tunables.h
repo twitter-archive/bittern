@@ -135,9 +135,9 @@
  * maximum pending requests - we will never have more than max pending requests
  * queued the max is the lowest of the two numbers below
  */
-#define CACHE_MIN_MAX_PENDING_REQUESTS 10
-#define CACHE_DEFAULT_MAX_PENDING_REQUESTS 500
-#define CACHE_MAX_MAX_PENDING_REQUESTS 2000
+#define CACHE_MAX_PENDING_REQUESTS_MIN 10
+#define CACHE_MAX_PENDING_REQUESTS_DEFAULT 500
+#define CACHE_MAX_PENDING_REQUESTS_MAX 2000
 
 /* expressed as percentage of max pending requests */
 #define CACHE_BGWRITER_MIN_QUEUE_DEPTH_PCT 5
@@ -167,10 +167,14 @@
 #define CACHE_BGWRITER_DEFAULT_POLICY	"classic"
 /* #define CACHE_BGWRITER_DEFAULT_POLICY	"default" */
 
-/*! lowest minimum number of invalid blocks allowed */
-#define INVALIDATOR_MIN_INVALID_COUNT CACHE_MIN_MAX_PENDING_REQUESTS
-#define INVALIDATOR_DEFAULT_INVALID_COUNT CACHE_DEFAULT_MAX_PENDING_REQUESTS
-#define INVALIDATOR_MAX_INVALID_COUNT (CACHE_MAX_MAX_PENDING_REQUESTS * 5)
+/*!
+ * Lowest minimum number of invalid blocks allowed.
+ * Note that the invalidator thread also adds @ref bc_max_pending_requests to this value
+ * to avoid invalid block starvation due to setting @ref bc_max_pending_requests too high.
+ */
+#define INVALIDATOR_MIN_INVALID_COUNT 10
+#define INVALIDATOR_DEFAULT_INVALID_COUNT 1000
+#define INVALIDATOR_MAX_INVALID_COUNT 2000
 
 /*
  * we need a minimal amount of allocatable page pool buffers.

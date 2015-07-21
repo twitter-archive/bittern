@@ -589,7 +589,7 @@ void cache_bgwriter_flush_dirty_blocks(struct bittern_cache *bc)
 
 		/* cannot flush if in error state */
 		if (bc->error_state != ES_NOERROR) {
-			printk_warn("will not flush dirty blocks due to error state\n");
+			printk_warning("will not flush dirty blocks due to error state\n");
 			return;
 		}
 

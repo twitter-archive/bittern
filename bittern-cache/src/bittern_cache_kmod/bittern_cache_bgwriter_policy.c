@@ -583,15 +583,16 @@ void cache_bgwriter_compute_policy_common(struct bittern_cache *bc)
 
 	/* override parameters and flush out quickly if in write-thru */
 	if (is_cache_mode_writethru(bc)) {
-		bc->bc_bgwriter_curr_max_queue_depth =
-		    PERCENT_OF(bc->bc_bgwriter_conf_max_queue_depth_pct,
-				   bc->bc_max_pending_requests);
+		bc->bc_bgwriter_conf_cluster_size =
+			CACHE_BGWRITER_MAX_CLUSTER_SIZE;
+		bc->bc_bgwriter_conf_greedyness = 0;
+		bc->bc_bgwriter_conf_max_queue_depth_pct =
+			CACHE_BGWRITER_MAX_QUEUE_DEPTH_PCT;
 		bc->bc_bgwriter_curr_queue_depth =
-		    PERCENT_OF
-		    (CACHE_BGWRITER_DEFAULT_QUEUE_DEPTH_PCT,
-		     bc->bc_bgwriter_curr_max_queue_depth);
-		if (bc->bc_bgwriter_curr_queue_depth == 0)
-			bc->bc_bgwriter_curr_queue_depth = 1;
+			PERCENT_OF(bc->bc_bgwriter_conf_max_queue_depth_pct,
+				   bc->bc_max_pending_requests);
+		bc->bc_bgwriter_curr_max_queue_depth =
+			bc->bc_max_pending_requests;
 		bc->bc_bgwriter_curr_rate_per_sec = 0;
 		bc->bc_bgwriter_curr_min_age_secs = 0;
 	}

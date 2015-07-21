@@ -80,7 +80,7 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 					sector_t *o_sector_hint)
 {
 	unsigned long flags, cache_flags;
-	struct work_item *wi;
+	struct work_item *wi = NULL;
 	struct cache_block *cache_block = NULL;
 	int ret;
 	enum cache_state update_state;
@@ -225,7 +225,19 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 				NULL,
 				(WI_FLAG_BIO_NOT_CLONED |
 				 WI_FLAG_XID_USE_CACHE_BLOCK));
-	M_ASSERT_FIXME(wi != NULL);
+	/*! \todo: error injection */
+	if (wi == NULL) {
+		cache_put(bc, cache_block, 1);
+		cache_state_transition_final(bc,
+					     cache_block,
+					     TS_NONE,
+					     S_DIRTY);
+		printk_err("%s: cannot allocate work_item for bgwriter, ret=%d\n",
+			   bc->bc_name,
+			   -ENOMEM);
+		return -ENOMEM;
+	}
+
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_io_xid != 0);
 	ASSERT(wi->wi_io_xid == cache_block->bcb_xid);
@@ -238,7 +250,19 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 				 cache_block,
 				 NULL,
 				 &wi->wi_pmem_ctx);
-	M_ASSERT_FIXME(ret == 0);
+	/*! \todo: error injection */
+	if (ret != 0) {
+		cache_put(bc, cache_block, 1);
+		cache_state_transition_final(bc,
+					     cache_block,
+					     TS_NONE,
+					     S_DIRTY);
+		work_item_free(bc, wi);
+		printk_err("%s: cannot setup pmem_context for bgwriter, ret=%d\n",
+			   bc->bc_name,
+			   ret);
+		return ret;
+	}
 
 	wi->wi_ts_started = current_kernel_time_nsec();
 
@@ -591,6 +615,12 @@ int cache_bgwriter_kthread(void *__bc)
 
 		ASSERT(bc != NULL);
 		ASSERT_BITTERN_CACHE(bc);
+
+		if (bc->error_state != ES_NOERROR) {
+			/* if an error has been detected, do nothing */
+			msleep(5);
+			continue;
+		}
 
 		/*
 		 * we get woken up at each cache fill or completed writeback

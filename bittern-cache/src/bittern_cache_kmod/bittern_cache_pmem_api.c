@@ -165,8 +165,6 @@ void pmem_context_destroy(struct bittern_cache *bc,
 
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT(ctx != NULL);
-	M_ASSERT(ctx->magic1 == PMEM_CONTEXT_MAGIC1);
-	M_ASSERT(ctx->magic2 == PMEM_CONTEXT_MAGIC2);
 	dbi = &ctx->dbi;
 	/*
 	 * this code copied from pagebuf_free_dbi()

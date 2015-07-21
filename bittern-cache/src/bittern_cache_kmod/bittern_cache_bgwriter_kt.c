@@ -553,6 +553,8 @@ void cache_bgwriter_wait_io(struct bittern_cache *bc)
  */
 void cache_bgwriter_flush_dirty_blocks(struct bittern_cache *bc)
 {
+	ASSERT_BITTERN_CACHE(bc);
+
 	/*
 	 * set writethrough mode
 	 * this will start flushing all the buffers very aggressively
@@ -584,6 +586,13 @@ void cache_bgwriter_flush_dirty_blocks(struct bittern_cache *bc)
 	while (atomic_read(&bc->bc_valid_entries_dirty) > 0) {
 		/* accuracy of ops/sec estimation depends on msleep() jitter */
 		unsigned int d = atomic_read(&bc->bc_valid_entries_dirty);
+
+		/* cannot flush if in error state */
+		if (bc->error_state != ES_NOERROR) {
+			printk_warn("will not flush dirty blocks due to error state\n");
+			return;
+		}
+
 		/*
 		 * FIXME: change msleep to event_wait on &bc->bc_bgwriter_wait
 		 */

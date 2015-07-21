@@ -603,7 +603,7 @@ int cache_bgwriter_kthread(void *__bc)
 			 */
 			ASSERT(bc->bc_bgwriter_curr_queue_depth >= 1 &&
 			       bc->bc_bgwriter_curr_queue_depth <=
-			       CACHE_MAX_MAX_PENDING_REQUESTS);
+			       CACHE_MAX_PENDING_REQUESTS_MAX);
 			ASSERT(bc->bc_bgwriter_curr_rate_per_sec >= 0
 			       && bc->bc_bgwriter_curr_rate_per_sec <= 300);
 			ASSERT(bc->bc_bgwriter_curr_min_age_secs >= 0

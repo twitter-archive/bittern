@@ -450,8 +450,7 @@ int cache_ctr_restore_or_init_block(struct bittern_cache *bc,
  * requests. Once the throughput of the cache device is saturated, there is no
  * further reason to increase parallelism.
  */
-#define RESTORE_WORKQUEUES		32
-#define RESTORE_WORKQUEUES_MODULO	RESTORE_WORKQUEUES
+#define RESTORE_WORKQUEUES		128
 #define RESTORE_WORKQUEUE_MAGIC	0xf10c7c34
 struct restore_workqueue {
 	unsigned int magic;
@@ -485,7 +484,7 @@ void cache_ctr_restore_or_init(struct bittern_cache *bc,
 
 	for (mod_base = 1;
 	     mod_base <= bc->bc_papi.papi_hdr.lm_cache_blocks;
-	     mod_base += RESTORE_WORKQUEUES_MODULO) {
+	     mod_base += RESTORE_WORKQUEUES) {
 		unsigned int block_id = mod_base + r_wq->modulo_offset;
 
 		if (block_id > bc->bc_papi.papi_hdr.lm_cache_blocks) {

@@ -463,7 +463,7 @@ struct bittern_cache {
 	uint64_t bc_cached_device_size_mbytes;
 
 	/*! actual error state */
-	int error_state;
+	volatile int error_state;
 	/*! error count */
 	atomic_t error_count;
 

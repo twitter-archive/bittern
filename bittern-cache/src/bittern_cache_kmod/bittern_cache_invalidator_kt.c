@@ -67,6 +67,7 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 	struct work_item *wi;
 	int val;
 	int ret;
+	enum cache_state cache_block_state;
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL, "enter");
 	ASSERT_BITTERN_CACHE(bc);
@@ -74,11 +75,12 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 
 	ASSERT(cache_block->bcb_state == S_CLEAN ||
 	       cache_block->bcb_state == S_DIRTY);
-	ASSERT(cache_block->bcb_cache_transition ==
-	       TS_NONE);
+	ASSERT(cache_block->bcb_cache_transition == TS_NONE);
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
 		 "invalidating clean block id #%d", cache_block->bcb_block_id);
+
+	cache_block_state = cache_block->bcb_state;
 
 	spin_lock_irqsave(&bc->bc_entries_lock, flags);
 	spin_lock_irqsave(&cache_block->bcb_spinlock, cache_flags);
@@ -86,7 +88,7 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 	/*
 	 * VALID_CLEAN -> CLEAN_INVALIDATE_START
 	 */
-	if (cache_block->bcb_state == S_CLEAN)
+	if (cache_block_state == S_CLEAN)
 		cache_state_transition_initial(bc, cache_block,
 				TS_CLEAN_INVALIDATION_WTWB,
 				S_CLEAN_INVALIDATE_START);
@@ -106,7 +108,27 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 				NULL,
 				(WI_FLAG_BIO_NOT_CLONED |
 				 WI_FLAG_XID_USE_CACHE_BLOCK));
-	M_ASSERT_FIXME(wi != NULL);
+	/*! \todo: error injection */
+	if (wi == NULL) {
+		/*! \todo should make this a common function */
+		bc->error_state = ES_ERROR_FAIL_ALL;
+		if (cache_block_state == S_CLEAN)
+			cache_state_transition_final(bc,
+						     cache_block,
+						     TS_NONE,
+						     S_CLEAN);
+		else
+			cache_state_transition_final(bc,
+						     cache_block,
+						     TS_NONE,
+						     S_DIRTY);
+		cache_put(bc, cache_block, 1);
+		printk_err("%s: cannot allocate work_item for invalidator, ret=%d\n",
+			   bc->bc_name,
+			   -ENOMEM);
+		return;
+	}
+
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_io_xid != 0);
 	ASSERT(wi->wi_io_xid == cache_block->bcb_xid);
@@ -119,7 +141,27 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 				 cache_block,
 				 NULL,
 				 &wi->wi_pmem_ctx);
-	M_ASSERT_FIXME(ret == 0);
+	/*! \todo: error injection */
+	if (ret != 0) {
+		/*! \todo should make this a common function */
+		bc->error_state = ES_ERROR_FAIL_ALL;
+		if (cache_block_state == S_CLEAN)
+			cache_state_transition_final(bc,
+						     cache_block,
+						     TS_NONE,
+						     S_CLEAN);
+		else
+			cache_state_transition_final(bc,
+						     cache_block,
+						     TS_NONE,
+						     S_DIRTY);
+		cache_put(bc, cache_block, 1);
+		work_item_free(bc, wi);
+		printk_err("%s: cannot setup pmem_context for bgwriter, ret=%d\n",
+			   bc->bc_name,
+			   ret);
+		return;
+	}
 
 	wi->wi_ts_started = current_kernel_time_nsec();
 
@@ -203,6 +245,9 @@ void cache_invalidate_clean_blocks(struct bittern_cache *bc)
 		struct cache_block *cache_block;
 		int ret;
 
+		if (bc->error_state != ES_NOERROR)
+			break;
+
 		/*
 		 * Don't queue more invalidations than the number of
 		 * pending requests.
@@ -255,6 +300,17 @@ int cache_invalidator_kthread(void *__bc)
 
 		ASSERT(bc != NULL);
 		ASSERT_BITTERN_CACHE(bc);
+
+		if (bc->error_state != ES_NOERROR) {
+			/*
+			 * Don't quit just yet in case of error, just continue
+			 * in case error is reset from userland. Also, Bittern
+			 * threading assumes the thread will keep running until
+			 * removal.
+			 */
+			msleep(5);
+			continue;
+		}
 
 		ret = wait_event_interruptible(bc->bc_invalidator_wait,
 					       (cache_invalidator_has_work

@@ -392,17 +392,14 @@ int cache_bgwriter_io_start_batch(struct bittern_cache *bc)
 			 * wait for resources
 			 * FIXME: wait flag should be policy controlled
 			 */
-			ret =
-			    cache_bgwriter_wait_for_resources(bc,
-							      false);
+			ret = cache_bgwriter_wait_for_resources(bc, false);
 			if (ret < 0)
 				break;
 			ASSERT(sector_hint != SECTOR_NUMBER_INVALID);
 			ret = cache_bgwriter_io_start_one(bc,
 							  sector_hint,
 							  &sector_hint);
-			ASSERT(ret == 0 || ret == 1);
-			if (ret == 0) {
+			if (ret <= 0) {
 				ASSERT(sector_hint == SECTOR_NUMBER_INVALID);
 				break;
 			}
@@ -555,6 +552,12 @@ void cache_bgwriter_flush_dirty_blocks(struct bittern_cache *bc)
 {
 	ASSERT_BITTERN_CACHE(bc);
 
+	/* cannot flush if in error state */
+	if (bc->error_state != ES_NOERROR) {
+		printk_warning("will not flush dirty blocks due to error state\n");
+		return;
+	}
+
 	/*
 	 * set writethrough mode
 	 * this will start flushing all the buffers very aggressively
@@ -629,7 +632,12 @@ int cache_bgwriter_kthread(void *__bc)
 		ASSERT_BITTERN_CACHE(bc);
 
 		if (bc->error_state != ES_NOERROR) {
-			/* if an error has been detected, do nothing */
+			/*
+			 * Don't quit just yet in case of error, just continue
+			 * in case error is reset from userland. Also, Bittern
+			 * threading assumes the thread will keep running until
+			 * removal.
+			 */
 			msleep(5);
 			continue;
 		}

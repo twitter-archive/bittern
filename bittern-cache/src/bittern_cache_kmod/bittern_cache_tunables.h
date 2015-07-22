@@ -164,8 +164,8 @@
 #define CACHE_BGWRITER_MAX_CLUSTER_SIZE 512 /* 2048 mbytes */
 
 /*! bgwriter policy */
-#define CACHE_BGWRITER_DEFAULT_POLICY	"classic"
-/* #define CACHE_BGWRITER_DEFAULT_POLICY	"default" */
+#define CACHE_BGWRITER_DEFAULT_POLICY	"dirty-ratio"
+/* #define CACHE_BGWRITER_DEFAULT_POLICY	"classic" */
 
 /*!
  * Lowest minimum number of invalid blocks allowed.

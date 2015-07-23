@@ -146,16 +146,16 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
  */
 static inline int cache_invalidator_has_work(struct bittern_cache *bc)
 {
-	unsigned int min_count = bc->bc_invalidator_conf_min_invalid_count;
+	unsigned int min_count;
 
-	ASSERT(min_count != 0);
-	/* bail out if there are too many pending requests */
-	if (atomic_read(&bc->bc_pending_invalidate_requests) >=
-	    bc->bc_max_pending_requests)
-		return 0;
+	min_count = bc->bc_invalidator_conf_min_invalid_count;
+	min_count += bc->bc_max_pending_requests;
+	ASSERT(min_count > 0);
+
 	/* bail out if there are no clean entries to invalidate */
 	if (atomic_read(&bc->bc_valid_entries_clean) == 0)
 		return 0;
+
 	/*
 	 * There is work to do if number of invalid entries
 	 * is below the minimum threshold.
@@ -170,18 +170,21 @@ static inline int cache_invalidator_has_work(struct bittern_cache *bc)
 int cache_invalidator_has_work_schmitt(struct bittern_cache *bc)
 {
 	unsigned int min_count_s;
-	unsigned int min_count = bc->bc_invalidator_conf_min_invalid_count;
 
-	ASSERT(min_count != 0);
+	min_count_s = bc->bc_invalidator_conf_min_invalid_count;
+	min_count_s += bc->bc_max_pending_requests;
+	ASSERT(min_count_s > 0);
+
 	/* bail out if there are no clean entries to invalidate */
 	if (atomic_read(&bc->bc_valid_entries_clean) == 0)
 		return 0;
+
 	/*
 	 * There is work to do if number of invalid entries
 	 * is below the minimum threshold.
 	 * This is the Schmitt's trigger version of the above.
 	 */
-	min_count_s = min_count + min_count / 4;
+	min_count_s = min_count_s + min_count_s / 4;
 	return atomic_read(&bc->bc_invalid_entries) < min_count_s;
 }
 
@@ -202,14 +205,6 @@ void cache_invalidate_clean_blocks(struct bittern_cache *bc)
 	while (cache_invalidator_has_work_schmitt(bc)) {
 		struct cache_block *cache_block;
 		int ret;
-
-		/*
-		 * Don't queue more invalidations than the number of
-		 * pending requests.
-		 */
-		if (atomic_read(&bc->bc_pending_invalidate_requests) >=
-		    bc->bc_max_pending_requests)
-			break;
 
 		ret = cache_get_clean(bc, &cache_block);
 		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,

@@ -51,7 +51,7 @@
 
 #include "bittern_cache_linux.h"
 
-#define BITTERN_CACHE_VERSION "0.28.7"
+#define BITTERN_CACHE_VERSION "0.9.2"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -1008,11 +1008,15 @@ struct bittern_cache {
  */
 static inline bool can_schedule_map_request(struct bittern_cache *bc)
 {
-	unsigned int avail_reserved;
 	bool avail, can_queue;
 
+#if 0
+	unsigned int avail_reserved;
 	avail_reserved = bc->bc_max_pending_requests;
 	avail = atomic_read(&bc->bc_invalid_entries) > avail_reserved;
+#else
+	avail = atomic_read(&bc->bc_invalid_entries) > 0;
+#endif
 	can_queue = atomic_read(&bc->bc_pending_requests) < bc->bc_max_pending_requests;
 	return avail && can_queue;
 }

@@ -99,6 +99,10 @@ $0: --set bgwriter_conf_cluster_size --value [1 .. 32] (default 1)
 	A higher value will decrease the overall seek penalty for writebacks,
 	while at the possible expense of the cache block replacement.
 
+$0: --set bgwriter_conf_policy --value [classic|aggressive] (default classic)
+	Set bgwriter policy used to determine queue depth and other writeback
+	parameters.
+
 $0: --set read_bypass_enabled --value [0,1] (default 0 : enabled)
 $0: --set write_bypass_enabled --value [0,1] (default 0 : enabled)
 	To enable sequential read_bypass or write_bypass, set value to 1.
@@ -371,6 +375,7 @@ do_get() {
 	echo "	 bgwriter_conf_greedyness = $(get_cache_conf bgwriter_conf_greedyness)"
 	echo "	 bgwriter_conf_max_queue_depth_pct = $(get_cache_conf bgwriter_conf_max_queue_depth_pct)"
 	echo "	 bgwriter_conf_cluster_size = $(get_cache_conf bgwriter_conf_cluster_size)"
+	echo "	 bgwriter_policy = $(get_cache_conf bgwriter_conf_policy)"
 	echo "	 invalidator_conf_min_invalid_count = $(get_cache_conf invalidator_conf_min_invalid_count)"
 	echo "	 enable_extra_checksum_check = $(get_cache_conf enable_extra_checksum_check)"
 	echo "debug parameters:"
@@ -562,6 +567,10 @@ do_set() {
 	"bgwriter_conf_cluster_size")
 		do_set_check_value
 		set_cache_conf bgwriter_conf_cluster_size $VALUE_OPTION
+		;;
+	"bgwriter_conf_policy")
+		do_set_check_value
+		set_cache_conf bgwriter_conf_policy $VALUE_OPTION
 		;;
 	"devio_worker_delay")
 		do_set_check_value

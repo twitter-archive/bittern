@@ -418,8 +418,8 @@ struct cache_conf_param_entry cache_conf_param_list[] = {
 	{
 		.cache_conf_name = "max_pending_requests",
 		.cache_conf_type = CONF_TYPE_INT,
-		.cache_conf_min = CACHE_MIN_MAX_PENDING_REQUESTS,
-		.cache_conf_max = CACHE_MAX_MAX_PENDING_REQUESTS,
+		.cache_conf_min = CACHE_MAX_PENDING_REQUESTS_MIN,
+		.cache_conf_max = CACHE_MAX_PENDING_REQUESTS_MAX,
 		.cache_conf_setup_function = cache_calculate_max_pending,
 		.cache_conf_show_function = show_max_pending,
 	},

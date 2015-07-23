@@ -2424,13 +2424,14 @@ int __handle_deferred(struct bittern_cache *bc, struct deferred_queue *queue)
 
 	ASSERT(queue == &bc->defer_busy || queue == &bc->defer_page);
 
+	bio = dequeue_from_deferred(bc, queue);
+
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
 		 "wait_%s: curr_c=%u, max_c=%u",
 		 (queue == &bc->defer_busy ? "busy" : "page"),
 		 queue->curr_count,
 		 queue->max_count);
 
-	bio = dequeue_from_deferred(bc, queue);
 	if (bio == NULL) {
 		queue->no_work_count++;
 		return 0;
@@ -2444,7 +2445,7 @@ int __handle_deferred(struct bittern_cache *bc, struct deferred_queue *queue)
 	ret = cache_map_workfunc(bc, bio, queue);
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-		 "wait_%s: curr_c=%u, max_c=%u, ret=%d, count=%d",
+		 "wait_%s: curr_c=%u, max_c=%u, ret=%d",
 		 (queue == &bc->defer_busy ? "busy" : "pp"),
 		 queue->curr_count,
 		 queue->max_count,

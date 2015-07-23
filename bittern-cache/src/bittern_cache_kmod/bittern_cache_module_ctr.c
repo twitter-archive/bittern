@@ -22,24 +22,20 @@
 int cache_calculate_max_pending(struct bittern_cache *bc, int max_requests)
 {
 	bc->bc_max_pending_requests = max_requests;
-	if (bc->bc_max_pending_requests <
-	    CACHE_MIN_MAX_PENDING_REQUESTS)
-		bc->bc_max_pending_requests =
-		    CACHE_MIN_MAX_PENDING_REQUESTS;
-	if (bc->bc_max_pending_requests >
-	    CACHE_MAX_MAX_PENDING_REQUESTS)
-		bc->bc_max_pending_requests = CACHE_MAX_MAX_PENDING_REQUESTS;
+	if (bc->bc_max_pending_requests < CACHE_MAX_PENDING_REQUESTS_MIN)
+		bc->bc_max_pending_requests = CACHE_MAX_PENDING_REQUESTS_MIN;
+	if (bc->bc_max_pending_requests > CACHE_MAX_PENDING_REQUESTS_MAX)
+		bc->bc_max_pending_requests = CACHE_MAX_PENDING_REQUESTS_MAX;
 	/*
 	 * this should not really happen in production, but it's useful for
 	 * test runs when we have a very small cache
 	 */
-	if (bc->bc_max_pending_requests >
-	    (bc->bc_papi.papi_hdr.lm_cache_blocks / 10))
-		bc->bc_max_pending_requests =
-		    bc->bc_papi.papi_hdr.lm_cache_blocks / 10;
+	if (bc->bc_max_pending_requests > (bc->bc_papi.papi_hdr.lm_cache_blocks / 10))
+		bc->bc_max_pending_requests = bc->bc_papi.papi_hdr.lm_cache_blocks / 10;
 	printk_info("max_requests=%u, minmax(%u,%u), lm_cache_blocks_slash_10=%u\n",
-		    max_requests, CACHE_MIN_MAX_PENDING_REQUESTS,
-		    CACHE_MAX_MAX_PENDING_REQUESTS,
+		    max_requests,
+		    CACHE_MAX_PENDING_REQUESTS_MIN,
+		    CACHE_MAX_PENDING_REQUESTS_MAX,
 		    (unsigned int)(bc->bc_papi.papi_hdr.lm_cache_blocks / 10));
 	ASSERT(bc->bc_max_pending_requests > 0);
 	return 0;
@@ -454,8 +450,7 @@ int cache_ctr_restore_or_init_block(struct bittern_cache *bc,
  * requests. Once the throughput of the cache device is saturated, there is no
  * further reason to increase parallelism.
  */
-#define RESTORE_WORKQUEUES		32
-#define RESTORE_WORKQUEUES_MODULO	RESTORE_WORKQUEUES
+#define RESTORE_WORKQUEUES		128
 #define RESTORE_WORKQUEUE_MAGIC	0xf10c7c34
 struct restore_workqueue {
 	unsigned int magic;
@@ -489,7 +484,7 @@ void cache_ctr_restore_or_init(struct bittern_cache *bc,
 
 	for (mod_base = 1;
 	     mod_base <= bc->bc_papi.papi_hdr.lm_cache_blocks;
-	     mod_base += RESTORE_WORKQUEUES_MODULO) {
+	     mod_base += RESTORE_WORKQUEUES) {
 		unsigned int block_id = mod_base + r_wq->modulo_offset;
 
 		if (block_id > bc->bc_papi.papi_hdr.lm_cache_blocks) {
@@ -1139,7 +1134,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto bad_1;
 	}
 
-	cache_calculate_max_pending(bc, CACHE_DEFAULT_MAX_PENDING_REQUESTS);
+	cache_calculate_max_pending(bc, CACHE_MAX_PENDING_REQUESTS_DEFAULT);
 	M_ASSERT(bc->bc_max_pending_requests > 0);
 
 	printk_info("bc_empty_root=%d\n", RB_EMPTY_ROOT(&bc->bc_rb_root));

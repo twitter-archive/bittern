@@ -1157,25 +1157,10 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 		return;
 	}
 
-	if (datadir == WRITE) {
-#if 0
-		/*
-		 * Turn off issuing of REQ_FUA until hang problem is fixed.
-		 */
-		/*
-		 * Always set REQ_FUA unless disabled for all writes,
-		 * writeback, invalidation and write-through operations.
-		 */
-		M_ASSERT(bc->bc_enable_req_fua == false ||
-			 bc->bc_enable_req_fua == true);
-		if (bc->bc_enable_req_fua)
-			bio->bi_rw |= REQ_FUA;
-#endif
+	if (datadir == WRITE)
 		bio_set_data_dir_write(bio);
-	} else {
+	else
 		bio_set_data_dir_read(bio);
-	}
-
 	bio->bi_iter.bi_sector = cache_block->bcb_sector;
 	bio->bi_iter.bi_size = PAGE_SIZE;
 	bio->bi_bdev = bc->bc_dev->bdev;

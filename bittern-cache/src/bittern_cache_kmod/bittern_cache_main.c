@@ -28,7 +28,6 @@ void cached_dev_bypass_endio(struct bio *cloned_bio, int err)
 	struct bio *original_bio;
 	struct work_item *wi;
 
-	M_ASSERT_FIXME(err == 0);
 	ASSERT(cloned_bio != NULL);
 	wi = cloned_bio->bi_private;
 	ASSERT(wi != NULL);
@@ -42,8 +41,8 @@ void cached_dev_bypass_endio(struct bio *cloned_bio, int err)
 	ASSERT(cloned_bio == wi->wi_cloned_bio);
 	ASSERT(original_bio == wi->wi_original_bio);
 
-	ASSERT(bio_data_dir(cloned_bio) == READ
-	       || bio_data_dir(cloned_bio) == WRITE);
+	ASSERT(bio_data_dir(cloned_bio) == READ ||
+	       bio_data_dir(cloned_bio) == WRITE);
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, NULL, cloned_bio, NULL,
 		 "bypass_complete");
@@ -76,13 +75,29 @@ void cached_dev_bypass_endio(struct bio *cloned_bio, int err)
 	/* wakeup possible waiters */
 	cache_wakeup_deferred(bc);
 
-	cache_timer_add(&bc->bc_timer_cached_device_reads,
-				wi->wi_ts_physio);
+	cache_timer_add(&bc->bc_timer_cached_device_reads, wi->wi_ts_physio);
 
 	work_item_free(bc, wi);
 
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (err != 0) {
+		ASSERT(err < 0);
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "bypass %s failed, err=%d",
+			     (bio_data_dir(original_bio) == WRITE ?
+			     				"write" : "read"),
+
+			     err);
+		printk_err("%s: bypass %s failed, err=%d\n",
+			   bc->bc_name,
+			   (bio_data_dir(original_bio) == WRITE ?
+			     				"write" : "read"),
+			   err);
+		bc->error_state = ES_ERROR_FAIL_ALL;
+	}
+
 	/* all done */
-	bio_endio(original_bio, 0);
+	bio_endio(original_bio, err);
 }
 
 /*!
@@ -1659,9 +1674,20 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 	wi = work_item_allocate(bc,
 				NULL,
 				bio,
-				(WI_FLAG_BIO_CLONED |
-				 WI_FLAG_XID_NEW));
-	M_ASSERT_FIXME(wi != NULL);
+				(WI_FLAG_BIO_CLONED | WI_FLAG_XID_NEW));
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (wi == NULL) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot allocate work_item for %s bypass",
+			     (bio_data_dir(bio) == WRITE ?  "write" : "read"));
+		printk_err("%s: cannot allocate work_item for %s bypass\n",
+			   bc->bc_name,
+			   (bio_data_dir(bio) == WRITE ?  "write" : "read"));
+		bc->error_state = ES_ERROR_FAIL_ALL;
+		bio_endio(bio, -ENOMEM);
+		return;
+	}
+
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_io_xid != 0);
 	ASSERT(wi->wi_original_bio == bio);
@@ -1686,7 +1712,20 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 	 * clone bio
 	 */
 	cloned_bio = bio_clone(bio, GFP_NOIO);
-	M_ASSERT_FIXME(cloned_bio != NULL);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (cloned_bio == NULL) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot clone bio for %s bypass",
+			     (bio_data_dir(bio) == WRITE ? "write" : "read"));
+		printk_err("%s: cannot clone bio for %s bypass\n",
+			   bc->bc_name,
+			   (bio_data_dir(bio) == WRITE ? "write" : "read"));
+		bc->error_state = ES_ERROR_FAIL_ALL;
+		work_item_free(bc, wi);
+		bio_endio(bio, -ENOMEM);
+		return;
+	}
+
 	cloned_bio->bi_bdev = bc->bc_dev->bdev;
 	cloned_bio->bi_end_io = cached_dev_bypass_endio;
 	cloned_bio->bi_private = wi;
@@ -1696,23 +1735,6 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 		atomic_inc(&bc->bc_pending_read_bypass_requests);
 		cache_timer_add(&bc->bc_timer_resource_alloc_reads, tstamp);
 	} else {
-#if 0
-		/*
-		 * Turn off issuing of REQ_FUA until hang problem is fixed.
-		 */
-		/*
-		 * Always set REQ_FUA unless disabled.
-		 *
-		 * Bittern gives the same guarantees that HW RAID does, every
-		 * committed write is on stable storage. Sequential access
-		 * bypass is transparent to the caller, so REQ_FUA must be
-		 * set here as well.
-		 */
-		M_ASSERT(bc->bc_enable_req_fua == false ||
-			 bc->bc_enable_req_fua == true);
-		if (bc->bc_enable_req_fua)
-			cloned_bio->bi_rw |= REQ_FUA;
-#endif
 		atomic_inc(&bc->bc_seq_write.bypass_count);
 		atomic_inc(&bc->bc_pending_write_bypass_requests);
 		cache_timer_add(&bc->bc_timer_resource_alloc_writes, tstamp);

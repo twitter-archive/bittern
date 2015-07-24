@@ -438,7 +438,27 @@ void cache_state_machine(struct bittern_cache *bc,
 		 bc, wi, cache_block, wi->wi_original_bio, wi->wi_cloned_bio,
 		 "enter, err=%d",
 		 err);
-	M_ASSERT_FIXME(err == 0);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (err != 0) {
+		/*
+		 * This is generic state machine code, so the actual error
+		 * handling is need in the state specific code.
+		 */
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "state_machine: block=%ld, cache_block=%d, state=%d(%s), err=%d",
+			     cache_block->bcb_sector,
+			     cache_block->bcb_block_id,
+			     cache_block->bcb_state,
+			     cache_state_to_str(cache_block->bcb_state),
+			     err);
+		printk_err("%s: state_machine: block=%ld, cache_block=%d, state=%d(%s), err=%d\n",
+			   bc->bc_name,
+			   cache_block->bcb_sector,
+			   cache_block->bcb_block_id,
+			   cache_block->bcb_state,
+			   cache_state_to_str(cache_block->bcb_state),
+			   err);
+	}
 
 	switch (cache_block->bcb_state) {
 		/*
@@ -1831,7 +1851,20 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 				bio,
 				(WI_FLAG_BIO_CLONED |
 				 WI_FLAG_XID_NEW));
-	M_ASSERT_FIXME(wi != NULL);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (wi == NULL) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot allocate work_item for %s hit",
+			     (bio_data_dir(bio) == WRITE ?  "write" : "read"));
+		printk_err("%s: cannot allocate work_item for %s hit\n",
+			   bc->bc_name,
+			   (bio_data_dir(bio) == WRITE ?  "write" : "read"));
+		cache_put_update_age(bc, cache_block, 1);
+		bc->error_state = ES_ERROR_FAIL_ALL;
+		bio_endio(bio, -ENOMEM);
+		return 1;
+	}
+
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_io_xid != 0);
 	ASSERT(wi->wi_original_bio == bio);
@@ -1849,7 +1882,20 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 				 cache_block,
 				 cloned_cache_block,
 				 &wi->wi_pmem_ctx);
-	M_ASSERT_FIXME(ret == 0);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (ret != 0) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot setup pmem_context for %s hit",
+			     (bio_data_dir(bio) == WRITE ? "write" : "read"));
+		printk_err("%s: cannot setup pmem_context for %s hit\n",
+			   bc->bc_name,
+			   (bio_data_dir(bio) == WRITE ? "write" : "read"));
+		cache_put_update_age(bc, cache_block, 1);
+		bc->error_state = ES_ERROR_FAIL_ALL;
+		work_item_free(bc, wi);
+		bio_endio(bio, -ENOMEM);
+		return 1;
+	}
 
 	if (bio_data_dir(bio) == READ)
 		cache_timer_add(&bc->bc_timer_resource_alloc_reads, tstamp);
@@ -1982,7 +2028,20 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 				bio,
 				(WI_FLAG_BIO_CLONED |
 				 WI_FLAG_XID_NEW));
-	M_ASSERT_FIXME(wi != NULL);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (wi == NULL) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot allocate work_item for %s miss",
+			     (bio_data_dir(bio) == WRITE ?  "write" : "read"));
+		printk_err("%s: cannot allocate work_item for %s miss\n",
+			   bc->bc_name,
+			   (bio_data_dir(bio) == WRITE ?  "write" : "read"));
+		cache_put_update_age(bc, cache_block, 1);
+		bc->error_state = ES_ERROR_FAIL_ALL;
+		bio_endio(bio, -ENOMEM);
+		return;
+	}
+
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT(wi->wi_io_xid != 0);
 	ASSERT(wi->wi_original_bio == bio);
@@ -2000,7 +2059,20 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 				 cache_block,
 				 NULL,
 				 &wi->wi_pmem_ctx);
-	M_ASSERT_FIXME(ret == 0);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (ret != 0) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot setup pmem_context for %s miss",
+			     (bio_data_dir(bio) == WRITE ? "write" : "read"));
+		printk_err("%s: cannot setup pmem_context for %s miss\n",
+			   bc->bc_name,
+			   (bio_data_dir(bio) == WRITE ? "write" : "read"));
+		cache_put_update_age(bc, cache_block, 1);
+		bc->error_state = ES_ERROR_FAIL_ALL;
+		work_item_free(bc, wi);
+		bio_endio(bio, -ENOMEM);
+		return;
+	}
 
 	if (bio_data_dir(bio) == READ)
 		cache_timer_add(&bc->bc_timer_resource_alloc_reads, tstamp);
@@ -2196,8 +2268,7 @@ int cache_map_workfunc(struct bittern_cache *bc, struct bio *bio)
 		ASSERT_CACHE_BLOCK(cache_block, bc);
 		ASSERT(cache_block->bcb_state == S_CLEAN ||
 		       cache_block->bcb_state == S_DIRTY);
-		ASSERT(cache_block->bcb_cache_transition ==
-		       TS_NONE);
+		ASSERT(cache_block->bcb_cache_transition == TS_NONE);
 
 		return cache_map_workfunc_hit(bc,
 					      cache_block,

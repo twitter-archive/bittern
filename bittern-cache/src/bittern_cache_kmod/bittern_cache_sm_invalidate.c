@@ -64,8 +64,6 @@ void sm_invalidate_end(struct bittern_cache *bc,
 {
 	struct cache_block *cache_block = wi->wi_cache_block;
 
-	M_ASSERT_FIXME(err == 0);
-
 	M_ASSERT(wi->wi_original_bio == NULL);
 	M_ASSERT(wi->wi_cloned_bio == NULL);
 	M_ASSERT(wi->wi_original_cache_block == NULL);
@@ -73,11 +71,12 @@ void sm_invalidate_end(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_state == S_CLEAN_INVALIDATE_END ||
 	       cache_block->bcb_state == S_DIRTY_INVALIDATE_END);
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, NULL, NULL,
-		 "invalidate-end");
+		 "invalidate-end, err=%d",
+		 err);
 
 	/*
 	 * The invalidator's endio function is responsible for
 	 * deallocating the work_item.
 	 */
-	cache_invalidate_block_io_end(bc, wi, cache_block);
+	cache_invalidate_block_io_end(bc, wi, cache_block, err);
 }

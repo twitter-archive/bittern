@@ -525,7 +525,8 @@ sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
  */
 extern void cache_invalidate_block_io_end(struct bittern_cache *bc,
 					  struct work_item *wi,
-					  struct cache_block *cache_block);
+					  struct cache_block *cache_block,
+					  int err);
 /*
  * invalidate path
  */

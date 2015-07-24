@@ -1086,7 +1086,8 @@ extern void cache_invalidate_blocks(struct bittern_cache *bc);
 /* \todo should this be in cache_getput? */
 extern void cache_invalidate_block_io_end(struct bittern_cache *bc,
 					  struct work_item *wi,
-					  struct cache_block *cache_block);
+					  struct cache_block *cache_block,
+					  int err);
 /* \todo should this be in cache_getput? */
 extern void cache_invalidate_block_io_start(struct bittern_cache *bc,
 					    struct cache_block *cache_block);

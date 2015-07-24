@@ -21,7 +21,8 @@
 /*! \todo does this really belong here and not in cache_getput ? */
 void cache_invalidate_block_io_end(struct bittern_cache *bc,
 				   struct work_item *wi,
-				   struct cache_block *cache_block)
+				   struct cache_block *cache_block,
+				   int err)
 {
 	ASSERT(cache_block != NULL);
 	ASSERT_BITTERN_CACHE(bc);
@@ -38,10 +39,30 @@ void cache_invalidate_block_io_end(struct bittern_cache *bc,
 	       cache_block->bcb_state == S_DIRTY_INVALIDATE_END);
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 
-	if (cache_block->bcb_state == S_DIRTY_INVALIDATE_END)
-		cache_move_to_invalid(bc, cache_block, 1);
-	else
-		cache_move_to_invalid(bc, cache_block, 0);
+	/*TODO_ERROR_INJECTION*/
+	if (err == 0) {
+		if (cache_block->bcb_state == S_DIRTY_INVALIDATE_END)
+			cache_move_to_invalid(bc, cache_block, 1);
+		else
+			cache_move_to_invalid(bc, cache_block, 0);
+	} else {
+		/*
+		 * Undo invalidation, so it won't be possible attempting
+		 * to read from it (even if possible) in order to avoid
+		 * potential data corruption.
+		 */
+		if (cache_block->bcb_state == S_DIRTY_INVALIDATE_END)
+			cache_state_transition_final(bc,
+						     cache_block,
+						     TS_NONE,
+						     S_DIRTY);
+		else
+			cache_state_transition_final(bc,
+						     cache_block,
+						     TS_NONE,
+						     S_CLEAN);
+		cache_put(bc, cache_block, 1);
+	}
 
 	cache_timer_add(&bc->bc_timer_invalidations, wi->wi_ts_started);
 

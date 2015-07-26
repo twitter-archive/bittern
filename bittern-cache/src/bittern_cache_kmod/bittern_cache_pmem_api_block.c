@@ -1328,6 +1328,40 @@ void pmem_data_put_page_write_block(struct bittern_cache *bc,
 	cache_timer_add(&pa->papi_stats.data_put_page_write_timer, ts_started);
 }
 
+void pmem_data_release_page_write_block(struct bittern_cache *bc,
+				        struct cache_block *cache_block,
+				        struct pmem_context *pmem_ctx)
+{
+	struct async_context *ctx;
+	struct data_buffer_info *dbi_data;
+	struct pmem_api *pa;
+
+	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
+	dbi_data = &pmem_ctx->dbi;
+	ctx = &pmem_ctx->async_ctx;
+
+	M_ASSERT(ctx->ma_magic1 == ASYNC_CONTEXT_MAGIC1);
+	ASSERT(ctx->ma_magic2 == ASYNC_CONTEXT_MAGIC2);
+	pa = &bc->bc_papi;
+	cache_block = ctx->ma_cache_block;
+	ASSERT(cache_block != NULL);
+
+	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL, "enter");
+
+	ASSERT_BITTERN_CACHE(bc);
+	ASSERT_CACHE_BLOCK(cache_block, bc);
+	ASSERT((dbi_data->di_flags & CACHE_DI_FLAGS_DOUBLE_BUFFERING) != 0);
+	ASSERT((dbi_data->di_flags & CACHE_DI_FLAGS_PMEM_WRITE) != 0);
+
+	ASSERT_PMEM_DBI_DOUBLE_BUFFERING(dbi_data);
+
+	/*
+	 * mark async context as free
+	 */
+	pmem_clear_dbi(dbi_data);
+}
+
 const struct cache_papi_interface cache_papi_block = {
 	"block",
 	true,
@@ -1343,5 +1377,6 @@ const struct cache_papi_interface cache_papi_block = {
 	pmem_data_clone_read_to_write_block,
 	pmem_data_get_page_write_block,
 	pmem_data_put_page_write_block,
+	pmem_data_release_page_write_block,
 	PAPI_MAGIC,
 };

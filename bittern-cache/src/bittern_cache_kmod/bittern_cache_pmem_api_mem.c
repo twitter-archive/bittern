@@ -771,6 +771,54 @@ void pmem_data_put_page_write_mem(struct bittern_cache *bc,
 	cache_timer_add(&pa->papi_stats.data_put_page_write_timer, start_timer);
 }
 
+void pmem_data_release_page_write_mem(struct bittern_cache *bc,
+				      struct cache_block *cache_block,
+				      struct pmem_context *pmem_ctx)
+{
+	struct pmem_api *pa = &bc->bc_papi;
+	struct data_buffer_info *dbi_data;
+	struct async_context *ctx;
+
+	M_ASSERT(pmem_ctx != NULL);
+	M_ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
+	M_ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
+	dbi_data = &pmem_ctx->dbi;
+	ctx = &pmem_ctx->async_ctx;
+
+	ASSERT(bc != NULL);
+	ASSERT_BITTERN_CACHE(bc);
+	ASSERT_CACHE_BLOCK(cache_block, bc);
+	ASSERT(pa->papi_hdr.lm_cache_blocks != 0);
+	ASSERT(cache_block->bcb_state != S_INVALID);
+
+	ASSERT_PMEM_DBI(dbi_data);
+
+	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
+		     "enter");
+
+	ASSERT(dbi_data->di_buffer_vmalloc_buffer != NULL);
+	ASSERT(dbi_data->di_buffer_vmalloc_page != NULL);
+
+	atomic_dec(&pa->papi_stats.data_get_put_page_pending_count);
+	atomic_inc(&pa->papi_stats.data_put_page_write_count);
+	BT_DEV_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL,
+		     "data_get_put_page_pending_count=%u",
+		     atomic_read(&pa->papi_stats.
+				 data_get_put_page_pending_count));
+
+	/*
+	 * regular transfer
+	 */
+	ASSERT(dbi_data->di_buffer != NULL);
+	ASSERT(dbi_data->di_page != NULL);
+	ASSERT((dbi_data->di_flags & CACHE_DI_FLAGS_PMEM_WRITE) != 0);
+
+	pmem_clear_dbi(dbi_data);
+
+	BT_DEV_TRACE(BT_LEVEL_TRACE2, bc, NULL, cache_block, NULL, NULL,
+		     "after clear page");
+}
+
 const struct cache_papi_interface cache_papi_mem = {
 	"mem",
 	false,
@@ -786,5 +834,6 @@ const struct cache_papi_interface cache_papi_mem = {
 	pmem_data_clone_read_to_write_mem,
 	pmem_data_get_page_write_mem,
 	pmem_data_put_page_write_mem,
+	pmem_data_release_page_write_mem,
 	PAPI_MAGIC,
 };

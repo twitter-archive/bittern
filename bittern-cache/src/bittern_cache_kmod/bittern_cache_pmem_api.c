@@ -1507,3 +1507,18 @@ void pmem_data_put_page_write(struct bittern_cache *bc,
 					 callback_function,
 					 metadata_update_state);
 }
+
+void pmem_data_release_page_write(struct bittern_cache *bc,
+			          struct cache_block *cache_block,
+			          struct pmem_context *pmem_ctx)
+{
+	struct pmem_api *pa = &bc->bc_papi;
+	const struct cache_papi_interface *pp = __pmem_api_interface(pa);
+
+	ASSERT(pa->papi_bdev_size_bytes > 0);
+	ASSERT(pa->papi_bdev != NULL);
+
+	(*pp->data_cache_release_page_write)(bc,
+					     cache_block,
+					     pmem_ctx);
+}

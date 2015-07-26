@@ -324,6 +324,10 @@ extern void pmem_data_put_page_write(struct bittern_cache *bc,
 				     void *callback_context,
 				     pmem_callback_t callback_function,
 				     enum cache_state metadata_update_state);
+/*! release page without writing it. used for error handling */
+extern void pmem_data_release_page_write(struct bittern_cache *bc,
+					 struct cache_block *cache_block,
+					 struct pmem_context *pmem_ctx);
 
 struct pmem_info {
 	uint32_t restore_header_valid;

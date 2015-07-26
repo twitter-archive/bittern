@@ -79,6 +79,10 @@ typedef void
 				    void *callback_context,
 				    pmem_callback_t callback_function,
 				    enum cache_state metadata_update_state);
+typedef void
+(*pmem_data_cache_release_page_write_f)(struct bittern_cache *bc,
+				        struct cache_block *cache_block,
+				        struct pmem_context *pmem_ctx);
 
 /*!
  * papi interface callbacks
@@ -108,10 +112,10 @@ struct cache_papi_interface {
 	pmem_data_cache_put_page_read_f data_cache_put_page_read;
 	pmem_data_cache_convert_read_to_write_f
 				data_cache_convert_read_to_write;
-	pmem_data_cache_clone_read_to_write_f
-				data_cache_clone_read_to_write;
+	pmem_data_cache_clone_read_to_write_f data_cache_clone_read_to_write;
 	pmem_data_cache_get_page_write_f data_cache_get_page_write;
 	pmem_data_cache_put_page_write_f data_cache_put_page_write;
+	pmem_data_cache_release_page_write_f data_cache_release_page_write;
 
 	uint64_t magic;
 };

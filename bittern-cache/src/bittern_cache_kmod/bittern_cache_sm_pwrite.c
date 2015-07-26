@@ -91,21 +91,19 @@ void sm_pwrite_miss_copy_from_device_end(struct bittern_cache *bc,
 	char *cache_vaddr;
 	struct page *cache_page;
 
-	M_ASSERT_FIXME(err == 0);
-
 	M_ASSERT(bio != NULL);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_original_bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(cache_block->bcb_state ==
-	       S_CLEAN_P_WRITE_MISS_CPF_DEVICE_END ||
-	       cache_block->bcb_state ==
-	       S_DIRTY_P_WRITE_MISS_CPF_DEVICE_END);
+	ASSERT(cache_block->bcb_state == S_CLEAN_P_WRITE_MISS_CPF_DEVICE_END ||
+	       cache_block->bcb_state == S_DIRTY_P_WRITE_MISS_CPF_DEVICE_END);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
-	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL, "endio");
+	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
+		 "endio, err=%d",
+		 err);
 
 	cache_vaddr = pmem_context_data_vaddr(&wi->wi_pmem_ctx);
 	cache_page = pmem_context_data_page(&wi->wi_pmem_ctx);
@@ -132,12 +130,14 @@ void sm_pwrite_miss_copy_from_device_end(struct bittern_cache *bc,
 
 	ASSERT(wi->wi_original_cache_block == NULL);
 
-	if (cache_block->bcb_state ==
-	    S_CLEAN_P_WRITE_MISS_CPF_DEVICE_END) {
+	if (cache_block->bcb_state == S_CLEAN_P_WRITE_MISS_CPF_DEVICE_END) {
 		int val;
 
-		BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio,
-			 wi->wi_cloned_bio, "copy-to-device");
+		M_ASSERT_FIXME(err == 0);
+		BT_TRACE(BT_LEVEL_TRACE2,
+			 bc, wi, cache_block, bio, wi->wi_cloned_bio,
+			 "copy-to-device, err=%d",
+			 err);
 
 		atomic_inc(&bc->bc_write_cached_device_requests);
 		val = atomic_inc_return(&bc->bc_pending_cached_device_requests);
@@ -167,8 +167,12 @@ void sm_pwrite_miss_copy_from_device_end(struct bittern_cache *bc,
 
 	} else {
 
-		BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio,
-			 wi->wi_cloned_bio, "copy-to-cache");
+		M_ASSERT_FIXME(err == 0);
+		BT_TRACE(BT_LEVEL_TRACE2,
+			 bc, wi, cache_block, bio, wi->wi_cloned_bio,
+			 "copy-to-cache, err=%d",
+			 err);
+
 		/*
 		 * for writeback we commit to cache and then we are done
 		 */
@@ -202,8 +206,7 @@ void sm_pwrite_miss_copy_to_device_end(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
-	ASSERT(cache_block->bcb_state ==
-	       S_CLEAN_P_WRITE_MISS_CPT_DEVICE_END);
+	ASSERT(cache_block->bcb_state == S_CLEAN_P_WRITE_MISS_CPT_DEVICE_END);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
@@ -237,8 +240,6 @@ void sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 	enum cache_state original_state = cache_block->bcb_state;
 	unsigned long cache_flags;
 
-	M_ASSERT_FIXME(err == 0);
-
 	M_ASSERT(bio != NULL);
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
@@ -250,21 +251,32 @@ void sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
-	ASSERT(cache_block->bcb_state ==
-	       S_CLEAN_P_WRITE_MISS_CPT_CACHE_END ||
-	       cache_block->bcb_state ==
-	       S_DIRTY_P_WRITE_MISS_CPT_CACHE_END);
+	ASSERT(cache_block->bcb_state == S_CLEAN_P_WRITE_MISS_CPT_CACHE_END ||
+	       cache_block->bcb_state == S_DIRTY_P_WRITE_MISS_CPT_CACHE_END);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
-		 "copy-to-cache-end");
-
-	ASSERT(wi->wi_original_cache_block == NULL);
+		 "copy-to-cache-end, err=%d",
+		 err);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (err != 0) {
+		/*
+		 * Simply set error state, nothing special needs to handle
+		 * this error.
+		 */
+		bc->error_state = ES_ERROR_FAIL_ALL;
+	}
 
 	ASSERT_CACHE_STATE(cache_block);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 
 	if (cache_block->bcb_state == S_CLEAN_P_WRITE_MISS_CPT_CACHE_END) {
+		/*!
+		 * \todo if we want to allow reading from errored cache,
+		 * we would need to prevent reading from this specific block,
+		 * for instance by marking it as errored-out.
+		 * there are a few other places like this in the code.
+		 */
 		spin_lock_irqsave(&cache_block->bcb_spinlock, cache_flags);
 		cache_state_transition_final(bc,
 					     cache_block,
@@ -306,9 +318,13 @@ void sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 		atomic_inc(&bc->bc_completed_read_requests);
 	}
 	atomic_inc(&bc->bc_completed_requests);
+
 	/*
 	 * wakeup possible waiters
 	 */
 	cache_wakeup_deferred(bc);
-	bio_endio(bio, 0);
+	/*
+	 * complete request
+	 */
+	bio_endio(bio, err);
 }

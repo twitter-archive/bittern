@@ -130,10 +130,21 @@ void sm_pwrite_miss_copy_from_device_end(struct bittern_cache *bc,
 
 	ASSERT(wi->wi_original_cache_block == NULL);
 
+	if (err != 0) {
+		/*
+		 * Easiest way to handle error is to just release
+		 * the page and call the end state directly.
+		 */
+		pmem_data_release_page_write(bc,
+					     cache_block,
+					     &wi->wi_pmem_ctx);
+		sm_pwrite_miss_copy_to_cache_end(bc, wi, err);
+		return;
+	}
+
 	if (cache_block->bcb_state == S_CLEAN_P_WRITE_MISS_CPF_DEVICE_END) {
 		int val;
 
-		M_ASSERT_FIXME(err == 0);
 		BT_TRACE(BT_LEVEL_TRACE2,
 			 bc, wi, cache_block, bio, wi->wi_cloned_bio,
 			 "copy-to-device, err=%d",
@@ -167,7 +178,6 @@ void sm_pwrite_miss_copy_from_device_end(struct bittern_cache *bc,
 
 	} else {
 
-		M_ASSERT_FIXME(err == 0);
 		BT_TRACE(BT_LEVEL_TRACE2,
 			 bc, wi, cache_block, bio, wi->wi_cloned_bio,
 			 "copy-to-cache, err=%d",
@@ -262,8 +272,6 @@ void sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
 	ASSERT(bio == wi->wi_original_bio);
-	ASSERT(cache_block->bcb_state == S_CLEAN_P_WRITE_MISS_CPT_CACHE_END ||
-	       cache_block->bcb_state == S_DIRTY_P_WRITE_MISS_CPT_CACHE_END);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
@@ -281,13 +289,22 @@ void sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 	ASSERT_CACHE_STATE(cache_block);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 
-	if (cache_block->bcb_state == S_CLEAN_P_WRITE_MISS_CPT_CACHE_END) {
+	if (err != 0) {
 		/*!
-		 * \todo if we want to allow reading from errored cache,
-		 * we would need to prevent reading from this specific block,
-		 * for instance by marking it as errored-out.
-		 * there are a few other places like this in the code.
+		 * \todo to prevent block from ever being read,
+		 * leave it in a dirty state (because the block is dirty and
+		 * it's an error condition, the bgwriter won't do anything with
+		 * it).
+		 * should consider adding an error state to the block.
 		 */
+		spin_lock_irqsave(&cache_block->bcb_spinlock, cache_flags);
+		cache_state_transition_final(bc,
+					     cache_block,
+					     TS_NONE,
+					     S_DIRTY);
+		spin_unlock_irqrestore(&cache_block->bcb_spinlock, cache_flags);
+	} else if (cache_block->bcb_state ==
+		   S_CLEAN_P_WRITE_MISS_CPT_CACHE_END) {
 		spin_lock_irqsave(&cache_block->bcb_spinlock, cache_flags);
 		cache_state_transition_final(bc,
 					     cache_block,

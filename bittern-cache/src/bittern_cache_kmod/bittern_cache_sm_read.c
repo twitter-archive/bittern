@@ -72,7 +72,6 @@ void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
 	unsigned long cache_flags;
 
 	M_ASSERT(bio != NULL);
-	M_ASSERT_FIXME(err == 0);
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_original_bio != NULL);
@@ -86,7 +85,10 @@ void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
 	ASSERT(wi->wi_original_cache_block == NULL);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
-		 "bio_copy_from_cache");
+		 "bio_copy_from_cache, err=%d",
+		 err);
+
+	/*TODO_ADD_ERROR_INJECTION*/
 
 	ASSERT(bc->bc_enable_extra_checksum_check == 0 ||
 	       bc->bc_enable_extra_checksum_check == 1);
@@ -128,15 +130,17 @@ void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
 
 	spin_lock_irqsave(&cache_block->bcb_spinlock, cache_flags);
 	if (cache_block->bcb_state == S_DIRTY_READ_HIT_CPF_CACHE_END) {
-		cache_state_transition_final(bc, cache_block,
-						     TS_NONE,
-						     S_DIRTY);
+		cache_state_transition_final(bc,
+					     cache_block,
+					     TS_NONE,
+					     S_DIRTY);
 	} else {
 		ASSERT(cache_block->bcb_state ==
 		       S_CLEAN_READ_HIT_CPF_CACHE_END);
-		cache_state_transition_final(bc, cache_block,
-						     TS_NONE,
-						     S_CLEAN);
+		cache_state_transition_final(bc,
+					     cache_block,
+					     TS_NONE,
+					     S_CLEAN);
 	}
 	spin_unlock_irqrestore(&cache_block->bcb_spinlock, cache_flags);
 
@@ -171,9 +175,10 @@ void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
 	 * wakeup possible waiters
 	 */
 	cache_wakeup_deferred(bc);
-	bio_endio(bio, 0);
-
-	ASSERT_BITTERN_CACHE(bc);
+	/*
+	 * ack original request
+	 */
+	bio_endio(bio, err);
 }
 
 void sm_read_miss_copy_from_device_start(struct bittern_cache *bc,
@@ -239,7 +244,6 @@ void sm_read_miss_copy_from_device_end(struct bittern_cache *bc,
 	struct cache_block *cache_block = wi->wi_cache_block;
 	uint128_t hash_data;
 
-	M_ASSERT_FIXME(err == 0);
 	M_ASSERT(bio != NULL);
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
@@ -252,9 +256,30 @@ void sm_read_miss_copy_from_device_end(struct bittern_cache *bc,
 	ASSERT(wi->wi_original_cache_block == NULL);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
-		 "endio - copy to userland");
+		 "endio - copy to userland, err=%d",
+		 err);
 
 	atomic_dec(&bc->bc_pending_cached_device_requests);
+
+	/*
+	 * Advance state immediately so err handling will have the
+	 * correct state.
+	 */
+	cache_state_transition3(bc,
+				cache_block,
+				TS_READ_MISS_WTWB_CLEAN,
+				S_CLEAN_READ_MISS_CPF_DEVICE_END,
+				S_CLEAN_READ_MISS_CPT_CACHE_END);
+
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (err != 0) {
+		/*
+		 * Easiest way to handle this error is in the final state
+		 * where the block is released.
+		 */
+		sm_read_miss_copy_to_cache_end(bc, wi, err);
+		return;
+	}
 
 	/*
 	 * copy bio from cache, aka userland reads
@@ -278,12 +303,6 @@ void sm_read_miss_copy_from_device_end(struct bittern_cache *bc,
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
 		 "endio - release cache page");
 
-	cache_state_transition3(bc,
-				cache_block,
-				TS_READ_MISS_WTWB_CLEAN,
-				S_CLEAN_READ_MISS_CPF_DEVICE_END,
-				S_CLEAN_READ_MISS_CPT_CACHE_END);
-
 	/*
 	 * release cache page
 	 */
@@ -297,8 +316,6 @@ void sm_read_miss_copy_from_device_end(struct bittern_cache *bc,
 				 wi, /*callback context */
 				 cache_put_page_write_callback,
 				 S_CLEAN);
-
-	ASSERT_BITTERN_CACHE(bc);
 }
 
 void sm_read_miss_copy_to_cache_end(struct bittern_cache *bc,
@@ -308,8 +325,6 @@ void sm_read_miss_copy_to_cache_end(struct bittern_cache *bc,
 	struct bio *bio = wi->wi_original_bio;
 	struct cache_block *cache_block = wi->wi_cache_block;
 	unsigned long cache_flags;
-
-	M_ASSERT_FIXME(err == 0);
 
 	M_ASSERT(bio != NULL);
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
@@ -321,15 +336,15 @@ void sm_read_miss_copy_to_cache_end(struct bittern_cache *bc,
 	ASSERT(cache_block->bcb_state == S_CLEAN_READ_MISS_CPT_CACHE_END);
 	ASSERT(wi->wi_original_cache_block == NULL);
 
-	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
-		 "end");
+	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, bio, wi->wi_cloned_bio,
+		 "end, err=%d",
+		 err);
+
+	/*TODO_ADD_ERROR_INJECTION*/
 
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
-
-	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, bio, wi->wi_cloned_bio,
-		 "io-done");
 
 	spin_lock_irqsave(&cache_block->bcb_spinlock, cache_flags);
 	cache_state_transition_final(bc,
@@ -353,11 +368,13 @@ void sm_read_miss_copy_to_cache_end(struct bittern_cache *bc,
 		atomic_inc(&bc->bc_completed_read_requests);
 	}
 	atomic_inc(&bc->bc_completed_requests);
+
 	/*
 	 * wakeup possible waiters
 	 */
 	cache_wakeup_deferred(bc);
-	bio_endio(bio, 0);
-
-	ASSERT_BITTERN_CACHE(bc);
+	/*
+	 * ack the original request
+	 */
+	bio_endio(bio, err);
 }

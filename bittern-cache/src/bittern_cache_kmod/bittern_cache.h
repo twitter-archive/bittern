@@ -51,7 +51,7 @@
 
 #include "bittern_cache_linux.h"
 
-#define BITTERN_CACHE_VERSION "0.9.3"
+#define BITTERN_CACHE_VERSION "0.9.4"
 #define BITTERN_CACHE_CODENAME "klamath"
 
 #include "bittern_cache_todo.h"
@@ -429,14 +429,15 @@ struct pmem_api {
 	const struct cache_papi_interface *papi_interface;
 };
 
-/*! error state */
+/*!
+ * error state: for now, we can only fail all requests.
+ * later on we can allow read requests only.
+ */
 enum error_state {
 	/*! all is good */
 	ES_NOERROR = 0,
 	/*! error state - fail all requests */
 	ES_ERROR_FAIL_ALL,
-	/*! error state - fail all read requests */
-	ES_ERROR_FAIL_READS,
 };
 
 /*!
@@ -991,8 +992,7 @@ static inline const char *cache_mode_to_str(struct bittern_cache *bc)
 	ASSERT((__bc)->bc_enable_req_fua == false ||			\
 	       (__bc)->bc_enable_req_fua == true);			\
 	ASSERT((__bc)->error_state == ES_NOERROR ||			\
-	       (__bc)->error_state == ES_ERROR_FAIL_ALL ||		\
-	       (__bc)->error_state == ES_ERROR_FAIL_READS);		\
+	       (__bc)->error_state == ES_ERROR_FAIL_ALL);		\
 })
 
 #define ASSERT_BITTERN_CACHE(__bc) ({                                                               \

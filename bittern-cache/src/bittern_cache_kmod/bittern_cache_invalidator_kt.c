@@ -47,9 +47,10 @@ void cache_invalidate_block_io_end(struct bittern_cache *bc,
 			cache_move_to_invalid(bc, cache_block, 0);
 	} else {
 		/*
-		 * Undo invalidation, so it won't be possible attempting
-		 * to read from it (even if possible) in order to avoid
-		 * potential data corruption.
+		 * Undo invalidation to disallow every further access.
+		 * Allowing read access to a dirty block which may fail
+		 * writeback will lead to data corruption if data access
+		 * continues later.
 		 */
 		if (cache_block->bcb_state == S_DIRTY_INVALIDATE_END)
 			cache_state_transition_final(bc,
@@ -62,6 +63,7 @@ void cache_invalidate_block_io_end(struct bittern_cache *bc,
 						     TS_NONE,
 						     S_CLEAN);
 		cache_put(bc, cache_block, 1);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 	}
 
 	cache_timer_add(&bc->bc_timer_invalidations, wi->wi_ts_started);
@@ -328,6 +330,9 @@ int cache_invalidator_kthread(void *__bc)
 			 * in case error is reset from userland. Also, Bittern
 			 * threading assumes the thread will keep running until
 			 * removal.
+			 * There is no particular reason to try improve on this,
+			 * as this code will most likely be replaced by a
+			 * workqueue.
 			 */
 			msleep(5);
 			continue;

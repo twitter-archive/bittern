@@ -60,8 +60,6 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 	struct page *cache_page;
 	int val;
 
-	M_ASSERT_FIXME(err == 0);
-
 	M_ASSERT(wi->wi_original_bio == NULL);
 	M_ASSERT(wi->wi_cloned_bio == NULL);
 	M_ASSERT(wi->wi_original_cache_block == NULL);
@@ -84,11 +82,11 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 	/*
 	 * check crc32c
 	 */
-	cache_track_hash_check(bc, cache_block,
-					 cache_block->bcb_hash_data);
+	cache_track_hash_check(bc, cache_block, cache_block->bcb_hash_data);
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, NULL, NULL,
-		 "writeback-to-device");
+		 "writeback-to-device, err=%d",
+		 err);
 
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
@@ -112,13 +110,22 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 	atomic_set_if_higher(&bc->bc_highest_pending_cached_device_requests,
 			     val);
 
-	/*
-	 * potentially in a softirq
-	 */
-	cached_dev_make_request_defer(bc,
-				      wi,
-				      WRITE, /* datadir */
-				      true); /* set original bio */
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (err != 0) {
+		/*
+		 * Easiest thing to do is to just call the end state
+		 * with error indication.
+		 */
+		sm_writeback_copy_to_device_end(bc, wi, err);
+	} else {
+		/*
+		 * potentially in a softirq so defer
+		 */
+		cached_dev_make_request_defer(bc,
+					      wi,
+					      WRITE, /* datadir */
+					      true); /* set original bio */
+	}
 }
 
 void sm_writeback_copy_to_device_end(struct bittern_cache *bc,
@@ -127,8 +134,6 @@ void sm_writeback_copy_to_device_end(struct bittern_cache *bc,
 {
 	struct cache_block *cache_block = wi->wi_cache_block;
 	enum cache_state metadata_state;
-
-	M_ASSERT_FIXME(err == 0);
 
 	M_ASSERT(wi->wi_original_bio == NULL);
 	M_ASSERT(wi->wi_cloned_bio == NULL);
@@ -153,6 +158,13 @@ void sm_writeback_copy_to_device_end(struct bittern_cache *bc,
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT_WORK_ITEM(wi, bc);
+
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (err != 0) {
+		bc->error_state = ES_ERROR_FAIL_ALL;
+		cache_bgwriter_io_end(bc, wi, cache_block, err);
+		return;
+	}
 
 	if (cache_block->bcb_state == S_DIRTY_WRITEBACK_CPT_DEVICE_END)
 		metadata_state = S_CLEAN;
@@ -190,7 +202,7 @@ void sm_writeback_update_metadata_end(struct bittern_cache *bc,
 	struct bio *bio = wi->wi_original_bio;
 	struct cache_block *cache_block = wi->wi_cache_block;
 
-	M_ASSERT_FIXME(err == 0);
+	/*TODO_ADD_ERROR_INJECTION*/
 
 	M_ASSERT(wi->wi_original_bio == NULL);
 	M_ASSERT(wi->wi_cloned_bio == NULL);
@@ -202,11 +214,12 @@ void sm_writeback_update_metadata_end(struct bittern_cache *bc,
 	       cache_block->bcb_state ==
 	       S_DIRTY_WRITEBACK_INV_UPD_METADATA_END);
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, wi->wi_cloned_bio,
-		 "writeback-update-metadata-end");
+		 "writeback-update-metadata-end, err=%d",
+		 err);
 
 	/*
 	 * The bgwriter's endio function is responsible for
 	 * deallocating the work_item.
 	 */
-	cache_bgwriter_io_end(bc, wi, cache_block);
+	cache_bgwriter_io_end(bc, wi, cache_block, err);
 }

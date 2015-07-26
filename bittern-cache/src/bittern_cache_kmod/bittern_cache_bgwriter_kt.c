@@ -20,7 +20,8 @@
 
 void cache_bgwriter_io_end(struct bittern_cache *bc,
 			   struct work_item *wi,
-			   struct cache_block *cache_block)
+			   struct cache_block *cache_block,
+			   int err)
 {
 	ASSERT(cache_block != NULL);
 	ASSERT_BITTERN_CACHE(bc);
@@ -30,29 +31,45 @@ void cache_bgwriter_io_end(struct bittern_cache *bc,
 	ASSERT(wi->wi_original_bio == NULL);
 	ASSERT(wi->wi_cloned_bio == NULL);
 	ASSERT(wi->wi_io_xid != 0);
-
-	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, NULL, NULL,
-		 "writeback-done");
-	ASSERT(cache_block->bcb_state ==
-	       S_DIRTY_WRITEBACK_UPD_METADATA_END ||
-	       cache_block->bcb_state ==
-	       S_DIRTY_WRITEBACK_INV_UPD_METADATA_END);
-
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_NOT_CLONED) != 0);
 	ASSERT(cache_block_is_held(bc, cache_block));
 
-	if (cache_block->bcb_state ==
-	    S_DIRTY_WRITEBACK_INV_UPD_METADATA_END) {
+	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, NULL, NULL,
+		 "writeback-done, err=%d",
+		 err);
+
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (err == 0) {
 		/*
-		 * move to invalid list
+		 * Normal IO path.
 		 */
-		cache_move_to_invalid(bc, cache_block, 1);
-		atomic_dec(&bc->bc_pending_invalidate_requests);
+		ASSERT(cache_block->bcb_state ==
+		       S_DIRTY_WRITEBACK_UPD_METADATA_END ||
+		       cache_block->bcb_state ==
+		       S_DIRTY_WRITEBACK_INV_UPD_METADATA_END);
+
+		if (cache_block->bcb_state ==
+		    S_DIRTY_WRITEBACK_INV_UPD_METADATA_END) {
+			/*
+			 * move to invalid list
+			 */
+			cache_move_to_invalid(bc, cache_block, 1);
+			atomic_dec(&bc->bc_pending_invalidate_requests);
+		} else {
+			/*
+			 * move to clean list
+			 */
+			cache_move_to_clean(bc, cache_block);
+		}
 	} else {
 		/*
-		 * move to clean list
+		 * IO error, keep the block as dirty.
 		 */
-		cache_move_to_clean(bc, cache_block);
+		cache_state_transition_final(bc,
+					     cache_block,
+					     TS_NONE,
+					     S_DIRTY);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 	}
 
 	cache_timer_add(&bc->bc_timer_writebacks, wi->wi_ts_started);

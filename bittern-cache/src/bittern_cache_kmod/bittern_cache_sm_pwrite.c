@@ -199,8 +199,6 @@ void sm_pwrite_miss_copy_to_device_end(struct bittern_cache *bc,
 	struct bio *bio = wi->wi_original_bio;
 	struct cache_block *cache_block = wi->wi_cache_block;
 
-	M_ASSERT_FIXME(err == 0);
-
 	M_ASSERT(bio != NULL);
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
@@ -210,7 +208,8 @@ void sm_pwrite_miss_copy_to_device_end(struct bittern_cache *bc,
 	ASSERT(wi->wi_original_cache_block == NULL);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
-		 "copy-to-device-endio");
+		 "copy-to-device-endio, err=%d",
+		 err);
 
 	atomic_dec(&bc->bc_pending_cached_device_requests);
 
@@ -223,12 +222,24 @@ void sm_pwrite_miss_copy_to_device_end(struct bittern_cache *bc,
 				S_DIRTY_P_WRITE_MISS_CPF_DEVICE_END,
 				S_DIRTY_P_WRITE_MISS_CPT_CACHE_END);
 
-	pmem_data_put_page_write(bc,
-				 cache_block,
-				 &wi->wi_pmem_ctx,
-				 wi, /*callback context */
-				 cache_put_page_write_callback,
-				 S_CLEAN);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (err != 0) {
+		/*
+		 * Easiest way to handle error is to just release
+		 * the page and call the end state directly.
+		 */
+		pmem_data_release_page_write(bc,
+					     cache_block,
+					     &wi->wi_pmem_ctx);
+		sm_pwrite_miss_copy_to_cache_end(bc, wi, err);
+	} else {
+		pmem_data_put_page_write(bc,
+					 cache_block,
+					 &wi->wi_pmem_ctx,
+					 wi, /*callback context */
+					 cache_put_page_write_callback,
+					 S_CLEAN);
+	}
 }
 
 void sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,

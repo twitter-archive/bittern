@@ -126,13 +126,23 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	struct cache_block *cache_block = wi->wi_cache_block;
 	unsigned long cache_flags;
 
-	M_ASSERT_FIXME(err == 0);
-
 	M_ASSERT(bio != NULL);
 
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
-		 "wi=%p, bc=%p, cache_block=%p, bio=%p", wi, bc, cache_block,
-		 bio);
+		 "wi=%p, bc=%p, cache_block=%p, bio=%p, err=%d",
+		 wi,
+		 bc,
+		 cache_block,
+		 bio,
+		 err);
+
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (err != 0) {
+		/*
+		 * simply set error state and let request terminate
+		 */
+		bc->error_state = ES_ERROR_FAIL_ALL;
+	}
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_original_bio != NULL);
@@ -169,11 +179,16 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 		atomic_inc(&bc->bc_completed_read_requests);
 	}
 	atomic_inc(&bc->bc_completed_requests);
+
 	/*
 	 * wakeup possible waiters
+	 *
 	 */
 	cache_wakeup_deferred(bc);
-	bio_endio(bio, 0);
+	/*
+	 * complete original request
+	 */
+	bio_endio(bio, err);
 }
 
 void sm_clean_write_miss_copy_to_device_start(struct bittern_cache *bc,
@@ -336,8 +351,6 @@ void sm_clean_write_miss_copy_to_device_end(struct bittern_cache *bc,
 	struct bio *bio = wi->wi_original_bio;
 	struct cache_block *cache_block = wi->wi_cache_block;
 
-	M_ASSERT_FIXME(err == 0);
-
 	M_ASSERT(bio != NULL);
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
@@ -351,7 +364,16 @@ void sm_clean_write_miss_copy_to_device_end(struct bittern_cache *bc,
 		ASSERT(wi->wi_original_cache_block != NULL);
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, bio, NULL,
-		 "copy-to-device-io-done");
+		 "copy-to-device-io-done, err=%d",
+		 err);
+
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (err != 0) {
+		/*
+		 * simply set error state and let request terminate
+		 */
+		bc->error_state = ES_ERROR_FAIL_ALL;
+	}
 
 	ASSERT_CACHE_STATE(cache_block);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
@@ -379,6 +401,17 @@ void sm_clean_write_miss_copy_to_device_end(struct bittern_cache *bc,
 					TS_P_WRITE_HIT_WT,
 					S_CLEAN_P_WRITE_HIT_CPT_DEVICE_END,
 					S_CLEAN_P_WRITE_HIT_CPT_CACHE_END);
+	}
+
+	if (err != 0) {
+		/*
+		 * just release page and call final state handler
+		 */
+		pmem_data_release_page_write(bc,
+					     cache_block,
+					     &wi->wi_pmem_ctx);
+		sm_clean_write_miss_copy_to_cache_end(bc, wi, err);
+		return;
 	}
 
 	/*
@@ -409,8 +442,6 @@ void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	unsigned long cache_flags;
 	int val;
 
-	M_ASSERT_FIXME(err == 0);
-
 	M_ASSERT(bio != NULL);
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
@@ -428,7 +459,16 @@ void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 	ASSERT_CACHE_BLOCK(original_cache_block, bc);
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, bio, NULL,
-		 "copy-to-cache-end");
+		 "copy-to-cache-end, err=%d",
+		 err);
+
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (err != 0) {
+		/*
+		 * simply set error state and let request terminate
+		 */
+		bc->error_state = ES_ERROR_FAIL_ALL;
+	}
 
 	/*
 	 * STEP #1 -- complete new cache_block write request
@@ -469,15 +509,19 @@ void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 
 	work_item_del_pending_io(bc, wi);
 
-	bio_endio(bio, 0);
+	bio_endio(bio, err);
 
 	/*
 	 * wakeup possible waiters
 	 */
 	cache_wakeup_deferred(bc);
 
-	if (original_state == S_CLEAN_WRITE_MISS_CPT_CACHE_END) {
-		ASSERT(original_cache_block == NULL);
+	/*
+	 * do not start metadata invalidate if
+	 * a: error condition
+	 * b: write miss
+	 */
+	if (err != 0 || original_state == S_CLEAN_WRITE_MISS_CPT_CACHE_END) {
 		/*
 		 * write miss does not do cloning.
 		 */
@@ -585,8 +629,6 @@ sm_dirty_pwrite_hit_copy_to_cache_start(struct bittern_cache *bc,
 	uint128_t hash_data;
 	char *cache_vaddr;
 
-	M_ASSERT_FIXME(err == 0);
-
 	M_ASSERT(bio != NULL);
 
 	/*
@@ -611,6 +653,19 @@ sm_dirty_pwrite_hit_copy_to_cache_start(struct bittern_cache *bc,
 	else
 		ASSERT(original_cache_block->bcb_state ==
 		       S_CLEAN_INVALIDATE_START);
+
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (err != 0) {
+		bc->error_state = ES_ERROR_FAIL_ALL;
+		/*
+		 * just release page and call final state handler
+		 */
+		pmem_data_release_page_write(bc,
+					     cache_block,
+					     &wi->wi_pmem_ctx);
+		sm_dirty_write_hit_copy_to_cache_end(bc, wi, err);
+		return;
+	}
 
 	ASSERT(bc->bc_enable_extra_checksum_check == 0 ||
 	       bc->bc_enable_extra_checksum_check == 1);
@@ -666,7 +721,7 @@ sm_dirty_pwrite_hit_copy_to_cache_start(struct bittern_cache *bc,
 	}
 
 	/*
-	 * release page
+	 * write out page
 	 */
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 		 "start_async_write (put_page_write): callback_context/wi=%p, bc=%p, cache_block=%p, bio=%p",
@@ -785,6 +840,14 @@ void sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 		 "copy_to_cache_end, err=%d",
 		 err);
 
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (err != 0) {
+		/*
+		 * simply set error state and let request terminate
+		 */
+		bc->error_state = ES_ERROR_FAIL_ALL;
+	}
+
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_original_bio != NULL);
 	ASSERT(wi->wi_original_cache_block != NULL);
@@ -827,14 +890,6 @@ void sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 		atomic_inc(&bc->bc_completed_read_requests);
 	}
 	atomic_inc(&bc->bc_completed_requests);
-
-	/*TODO_ADD_ERROR_INJECTION*/
-	if (err != 0) {
-		/*
-		 * Set error state.
-		 */
-		bc->error_state = ES_ERROR_FAIL_ALL;
-	}
 
 	work_item_del_pending_io(bc, wi);
 

@@ -131,6 +131,7 @@ void sm_pwrite_miss_copy_from_device_end(struct bittern_cache *bc,
 	ASSERT(wi->wi_original_cache_block == NULL);
 
 	if (err != 0) {
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		/*
 		 * Easiest way to handle error is to just release
 		 * the page and call the end state directly.
@@ -234,6 +235,7 @@ void sm_pwrite_miss_copy_to_device_end(struct bittern_cache *bc,
 
 	/*TODO_ADD_ERROR_INJECTION*/
 	if (err != 0) {
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		/*
 		 * Easiest way to handle error is to just release
 		 * the page and call the end state directly.

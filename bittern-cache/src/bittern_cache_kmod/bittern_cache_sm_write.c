@@ -775,16 +775,15 @@ void sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 	unsigned long cache_flags;
 	int val;
 
-	M_ASSERT_FIXME(err == 0);
-
 	M_ASSERT(bio != NULL);
 
 	/*
 	 * for dirty write hit case, cache_block here is cloned cache block
 	 */
 
-	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
-		 "copy_to_cache_end");
+	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, bio, NULL,
+		 "copy_to_cache_end, err=%d",
+		 err);
 
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 	ASSERT(wi->wi_original_bio != NULL);
@@ -792,25 +791,16 @@ void sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 	ASSERT(bio_is_request_single_cache_block(bio));
 	ASSERT(cache_block->bcb_sector ==
 	       bio_sector_to_cache_block_sector(bio));
-	ASSERT(cache_block->bcb_state ==
-	       S_DIRTY_WRITE_HIT_CPT_CACHE_END ||
-	       cache_block->bcb_state ==
-	       S_C2_DIRTY_WRITE_HIT_CPT_CACHE_END ||
-	       cache_block->bcb_state ==
-	       S_DIRTY_P_WRITE_HIT_CPT_CACHE_END ||
-	       cache_block->bcb_state ==
-	       S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_END);
+	ASSERT(cache_block->bcb_state == S_DIRTY_WRITE_HIT_CPT_CACHE_END ||
+	       cache_block->bcb_state == S_C2_DIRTY_WRITE_HIT_CPT_CACHE_END ||
+	       cache_block->bcb_state == S_DIRTY_P_WRITE_HIT_CPT_CACHE_END ||
+	       cache_block->bcb_state == S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_END);
 	ASSERT(wi->wi_original_cache_block != NULL);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT_CACHE_BLOCK(original_cache_block, bc);
-	ASSERT(original_cache_block->bcb_state ==
-	       S_DIRTY_INVALIDATE_START ||
-	       original_cache_block->bcb_state ==
-	       S_CLEAN_INVALIDATE_START);
+	ASSERT(original_cache_block->bcb_state == S_DIRTY_INVALIDATE_START ||
+	       original_cache_block->bcb_state == S_CLEAN_INVALIDATE_START);
 	ASSERT(original_cache_block->bcb_sector == cache_block->bcb_sector);
-
-	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
-		 "copy_to_cache_end-1");
 
 	/*
 	 * STEP #1 -- complete new cache_block write request
@@ -826,8 +816,7 @@ void sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 
 	cache_timer_add(&bc->bc_timer_writes, wi->wi_ts_started);
 	cache_timer_add(&bc->bc_timer_write_hits, wi->wi_ts_started);
-	cache_timer_add(&bc->bc_timer_write_dirty_hits,
-				wi->wi_ts_started);
+	cache_timer_add(&bc->bc_timer_write_dirty_hits, wi->wi_ts_started);
 
 	atomic_dec(&bc->bc_pending_requests);
 	if (bio_data_dir(bio) == WRITE) {
@@ -839,9 +828,25 @@ void sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 	}
 	atomic_inc(&bc->bc_completed_requests);
 
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (err != 0) {
+		/*
+		 * Set error state.
+		 */
+		bc->error_state = ES_ERROR_FAIL_ALL;
+	}
+
 	work_item_del_pending_io(bc, wi);
 
-	bio_endio(bio, 0);
+	bio_endio(bio, err);
+
+	if (err != 0) {
+		/*
+		 * Don't bother trying to invalidate metadata in case of error.
+		 */
+		work_item_free(bc, wi);
+		return;
+	}
 
 	/*
 	 * wakeup possible waiters

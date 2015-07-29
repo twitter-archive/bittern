@@ -36,65 +36,57 @@ static void cached_devio_flush_end_bio_process(struct bittern_cache *bc,
 					       uint64_t gennum,
 					       int err)
 {
-	bool processed;
+	struct work_item *wi;
+	struct bio *bio;
+	unsigned long flags;
 
+again:
 	ASSERT_BITTERN_CACHE(bc);
 	/*
 	 * ack pending writes upto gennum
 	 */
-	do {
-		struct work_item *wi;
-		struct bio *bio;
-		unsigned long flags;
-		int cc = 0;
+	spin_lock_irqsave(&bc->devio.spinlock, flags);
 
-		processed = false;
+	list_for_each_entry(wi,
+			    &bc->devio.flush_pending_list,
+			    devio_pending_list) {
+		ASSERT_WORK_ITEM(wi, bc);
+		bio = wi->wi_cloned_bio;
+		if (wi->devio_gennum <= gennum) {
+			M_ASSERT(!list_empty(&bc->devio.flush_pending_list));
+			list_del_init(&wi->devio_pending_list);
+			bc->devio.flush_pending_count--;
+			BT_TRACE(BT_LEVEL_TRACE1,
+				 bc, NULL, NULL, bio, NULL,
+				 "bi_sector=%lu, gennum=%llu/%llu, flush wait done, err=%d",
+				 bio->bi_iter.bi_sector,
+				 wi->devio_gennum,
+				 gennum,
+				 err);
 
-		spin_lock_irqsave(&bc->devio.spinlock, flags);
-		list_for_each_entry(wi,
-				    &bc->devio.flush_pending_list,
-				    devio_pending_list) {
-			ASSERT_WORK_ITEM(wi, bc);
-			bio = wi->wi_cloned_bio;
-			if (wi->devio_gennum <= gennum) {
-				M_ASSERT(!list_empty(&bc->devio.flush_pending_list));
-				list_del_init(&wi->devio_pending_list);
-				bc->devio.flush_pending_count--;
-				M_ASSERT(bc->devio.flush_pending_count >= 0);
-				if (bc->devio.flush_pending_count == 0)
-					M_ASSERT(list_empty(&bc->devio.flush_pending_list));
-				else
-					M_ASSERT(!list_empty(&bc->devio.flush_pending_list));
-				BT_TRACE(BT_LEVEL_TRACE1,
-					 bc, NULL, NULL, bio, NULL,
-					 "bi_sector=%lu, gennum=%llu/%llu, flush wait done, err=%d",
-					 bio->bi_iter.bi_sector,
-					 wi->devio_gennum,
-					 gennum,
-					 err);
+			spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 
-				spin_unlock_irqrestore(&bc->devio.spinlock, flags);
+			cache_timer_add(&bc->bc_timer_cached_device_flushes,
+					wi->wi_ts_physio_flush);
+			cached_dev_make_request_endio(wi, bio, err);
 
-				cache_timer_add(&bc->bc_timer_cached_device_flushes, wi->wi_ts_physio_flush);
-				cached_dev_make_request_endio(wi, bio, err);
-
-				processed = true;
-				goto inner_out;
-			} else {
-				BT_TRACE(BT_LEVEL_TRACE1,
-					 bc, NULL, NULL, bio, NULL,
-					 "not processing bi_sector=%lu, gennum=%llu/%llu",
-					     bio->bi_iter.bi_sector,
-					 wi->devio_gennum, gennum);
-			}
-			M_ASSERT(cc++ < 10000);
+			goto again;
+		} else {
+			BT_TRACE(BT_LEVEL_TRACE1,
+				 bc, NULL, NULL, bio, NULL,
+				 "not processing bi_sector=%lu, gennum=%llu/%llu",
+				 bio->bi_iter.bi_sector,
+				 wi->devio_gennum, gennum);
 		}
-		spin_unlock_irqrestore(&bc->devio.spinlock, flags);
+	}
 
-inner_out:
-		;
+	M_ASSERT(bc->devio.flush_pending_count >= 0);
+	if (bc->devio.flush_pending_count == 0)
+		M_ASSERT(list_empty(&bc->devio.flush_pending_list));
+	else
+		M_ASSERT(!list_empty(&bc->devio.flush_pending_list));
 
-	} while (processed);
+	spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 }
 
 /*! handles completion of pureflush request */

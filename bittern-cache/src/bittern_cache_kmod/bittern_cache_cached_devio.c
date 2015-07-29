@@ -18,13 +18,7 @@
 
 #include "bittern_cache.h"
 
-//#define DEBUG_THIS
-#ifdef DEBUG_THIS
-static bool __xxxyyy = true;
-#else
-static bool __xxxyyy = false;
-#endif
-
+/*! used to carry state to delayed worker */
 struct flush_meta {
 	struct bittern_cache *bc;
 	/*! work struct for explicit flushes */
@@ -71,10 +65,13 @@ static void cached_devio_flush_end_bio_process(struct bittern_cache *bc,
 					M_ASSERT(list_empty(&bc->devio.flush_pending_list));
 				else
 					M_ASSERT(!list_empty(&bc->devio.flush_pending_list));
-				if(__xxxyyy)printk_debug("END_BIO_PROCESS: bi_sector=%lu, gennum=%llu/%llu, flush wait done\n",
-					     bio->bi_iter.bi_sector,
-					     wi->devio_gennum,
-					     gennum);
+				BT_TRACE(BT_LEVEL_TRACE1,
+					 bc, NULL, NULL, bio, NULL,
+					 "bi_sector=%lu, gennum=%llu/%llu, flush wait done, err=%d",
+					 bio->bi_iter.bi_sector,
+					 wi->devio_gennum,
+					 gennum,
+					 err);
 
 				spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 
@@ -84,10 +81,11 @@ static void cached_devio_flush_end_bio_process(struct bittern_cache *bc,
 				processed = true;
 				goto inner_out;
 			} else {
-				if(__xxxyyy)printk_debug("END_BIO_PROCESS: not processing bi_sector=%lu, gennum=%llu/%llu, flush still wait\n",
+				BT_TRACE(BT_LEVEL_TRACE1,
+					 bc, NULL, NULL, bio, NULL,
+					 "not processing bi_sector=%lu, gennum=%llu/%llu",
 					     bio->bi_iter.bi_sector,
-					     wi->devio_gennum,
-					     gennum);
+					 wi->devio_gennum, gennum);
 			}
 			M_ASSERT(cc++ < 10000);
 		}

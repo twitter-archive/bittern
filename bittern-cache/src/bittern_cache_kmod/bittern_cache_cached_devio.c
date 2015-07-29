@@ -33,8 +33,14 @@ struct flush_meta {
 	uint64_t gennum;
 };
 
-/*! completes all requests which have gennum <= gennum */
-static void cached_devio_flush_end_bio_process(struct bittern_cache *bc, uint64_t gennum)
+/*!
+ * if err == 0, complete requests which have gennum <= gennum.
+ * if err != 0, complete all requests as it may not be possible to issue
+ * an explicit flush.
+ */
+static void cached_devio_flush_end_bio_process(struct bittern_cache *bc,
+					       uint64_t gennum,
+					       int err)
 {
 	bool processed;
 
@@ -106,11 +112,17 @@ static void cached_devio_flush_end_bio(struct bio *bio, int err)
         M_ASSERT(flush_meta->bc->devio.pure_flush_pending_count >= 0);
 	spin_unlock_irqrestore(&flush_meta->bc->devio.spinlock, flags);
 
-	if(__xxxyyy)printk_debug("FLUSH_END_BIO: ack up to delayed flush gennum = %llu\n", flush_meta->gennum);
+	BT_TRACE(BT_LEVEL_TRACE1, flush_meta->bc, NULL, NULL, bio, NULL,
+		 "ack up to delayed flush gennum = %llu, err=%d",
+		 flush_meta->gennum,
+		 err);
 
 	bio_put(bio);
 
-	cached_devio_flush_end_bio_process(flush_meta->bc, flush_meta->gennum);
+	/*TODO_ADD_ERROR_INJECTION*/
+	cached_devio_flush_end_bio_process(flush_meta->bc,
+					   flush_meta->gennum,
+					   err);
 
 	kmem_free(flush_meta, sizeof(struct flush_meta));
 }
@@ -129,8 +141,10 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 			  devio.flush_delayed_work);
 	ASSERT(bc != NULL);
 
-	if (bc->devio.flush_pending_count == 0 && bc->devio.pending_count == 0) {
-		if(__xxxyyy)printk_debug("DELAYED_WORKER: zero flush_pending count\n");
+	if (bc->devio.flush_pending_count == 0 &&
+	    bc->devio.pending_count == 0) {
+		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
+			 "nothing pending, no work to do");
 		goto out;
 	}
 
@@ -173,14 +187,16 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	bc->devio.pure_flush_total_count++;
 	spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 
-	if(__xxxyyy)printk_debug("DELAYED_WORKER: ISSUE pure flush gennum=%llu\n", flush_meta->gennum);
+	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+		 "delayed_worker: issue pure flush gennum=%llu",
+		 flush_meta->gennum);
 
 	generic_make_request(bio);
 
 out:
 	ret = schedule_delayed_work(&bc->devio.flush_delayed_work,
 				msecs_to_jiffies(bc->devio.conf_worker_delay));
-	ASSERT(ret == 1);
+	M_ASSERT(ret == 1);
 }
 
 /*! end_bio function used by @ref cached_devio_do_make_request */
@@ -243,22 +259,33 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 	 * have a gennum lower that the current flush.
 	 * If not, leave the write in pending_flush state until we get
 	 * the next flush acknowledge.
+	 * In case of error ack every pending request, as there may not be
+	 * another notification.
 	 */
-	M_ASSERT((wi->devio_flags & (REQ_FLUSH|REQ_FUA)) == (REQ_FLUSH|REQ_FUA) ||
-		 (wi->devio_flags & (REQ_FLUSH|REQ_FUA)) == 0);
-	if ((wi->devio_flags & (REQ_FLUSH | REQ_FUA)) != 0) {
+	if (err != 0 || (wi->devio_flags & (REQ_FLUSH | REQ_FUA)) != 0) {
 		/*
 		 * ack previously pending writes, then ack current work_item.
 		 */
-		if(__xxxyyy)printk_debug("ENDBIO: write+flush bi_sector=%lu, gennum=%llu done\n",
+		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+			 "endbio: write+flush bi_sector=%lu, gennum=%llu done, err=%d",
 			     bio->bi_iter.bi_sector,
-			     wi->devio_gennum);
+			 wi->devio_gennum,
+			 err);
 
 		spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 
-		cached_devio_flush_end_bio_process(bc, wi->devio_gennum);
+		/*
+		 * Ack all flush pending requests which have
+		 * @ref devio_gennum <= current flush wi->devio_gennum.
+		 */
+		cached_devio_flush_end_bio_process(bc, wi->devio_gennum, err);
 
-		cache_timer_add(&bc->bc_timer_cached_device_flushes, wi->wi_ts_physio_flush);
+		/*
+		 * note in this case current work_item hasn't been added to
+		 * the pending list, so process separately.
+		 */
+		cache_timer_add(&bc->bc_timer_cached_device_flushes,
+				wi->wi_ts_physio_flush);
 		cached_dev_make_request_endio(wi, bio, err);
 
 		spin_lock_irqsave(&bc->devio.spinlock, flags);
@@ -268,11 +295,13 @@ static void cached_devio_make_request_end_bio(struct bio *bio, int err)
 		 * Just wait until a flush is processed. If this is the only
 		 * write request in the queue, issue an explicit flush.
 		 */
-		if(__xxxyyy)printk_debug("ENDBIO: write bi_sector=%lu, gennum=%llu, done, now waiting for flush\n",
+		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+			 "endbio: write+flush bi_sector=%lu, gennum=%llu, waiting for flush",
 			     bio->bi_iter.bi_sector,
 			     wi->devio_gennum);
 
-		list_add_tail(&wi->devio_pending_list, &bc->devio.flush_pending_list);
+		list_add_tail(&wi->devio_pending_list,
+			      &bc->devio.flush_pending_list);
 		bc->devio.flush_pending_count++;
 
 		M_ASSERT(bc->devio.flush_pending_count >= 1);
@@ -310,11 +339,13 @@ void cached_devio_make_request(struct bittern_cache *bc,
 			 * Issue flush
 			 */
 			bio->bi_rw |= REQ_FLUSH | REQ_FUA;
-			if(__xxxyyy)printk_debug("ISSUE write+flush bi_sector=%lu, gennum=%llu\n",
+			BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+				 "issue write+flush bi_sector=%lu, gennum=%llu",
 				     bio->bi_iter.bi_sector,
 				     wi->devio_gennum);
 		} else {
-			if(__xxxyyy)printk_debug("ISSUE write bi_sector=%lu, gennum=%llu\n",
+			BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+				 "issue write bi_sector=%lu, gennum=%llu",
 				     bio->bi_iter.bi_sector,
 				     wi->devio_gennum);
 		}

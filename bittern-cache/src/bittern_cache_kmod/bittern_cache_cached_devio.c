@@ -76,7 +76,7 @@ static void cached_devio_flush_end_bio_process(struct bittern_cache *bc,
 				spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 
 				cache_timer_add(&bc->bc_timer_cached_device_flushes, wi->wi_ts_physio_flush);
-				cached_dev_make_request_endio(wi, bio, 0);
+				cached_dev_make_request_endio(wi, bio, err);
 
 				processed = true;
 				goto inner_out;
@@ -149,24 +149,40 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	ASSERT_BITTERN_CACHE(bc);
 
 	flush_meta = kmem_alloc(sizeof(struct flush_meta), GFP_NOIO);
-	M_ASSERT_FIXME(flush_meta != NULL);
-	flush_meta->bc = bc;
-
-	bio = bio_alloc(GFP_NOIO, 1);
-#if 0
 	/*TODO_ADD_ERROR_INJECTION*/
-	if (bio == NULL) {
-		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, cache_block, NULL, NULL,
-			     "cannot allocate bio, wi=%p",
-			     wi);
-		printk_err("%s: cannot allocate bio\n", bc->bc_name);
+	if (flush_meta == NULL) {
+#warning "need to add setting of error_state when merging error handling"
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot allocate flush_meta, err=%d",
+			     -ENOMEM);
+		printk_err("%s: cannot flush_meta, err=%d\n",
+			   bc->bc_name,
+			   -ENOMEM);
 		/*
 		 * Allocation failed, bubble up error to state machine.
 		 */
-		cache_state_machine(bc, wi, -ENOMEM);
+		cached_devio_flush_end_bio_process(bc, 0, -ENOMEM);
 		return;
 	}
-#endif
+	flush_meta->bc = bc;
+
+	bio = bio_alloc(GFP_NOIO, 1);
+	/*TODO_ADD_ERROR_INJECTION*/
+	if (bio == NULL) {
+#warning "need to add setting of error_state when merging error handling"
+		kmem_free(flush_meta, sizeof(struct flush_meta));
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot allocate bio, err=%d",
+			     -ENOMEM);
+		printk_err("%s: cannot allocate bio, err=%d\n",
+			   bc->bc_name,
+			   -ENOMEM);
+		/*
+		 * Allocation failed, bubble up error to state machine.
+		 */
+		cached_devio_flush_end_bio_process(bc, 0, -ENOMEM);
+		return;
+	}
 	M_ASSERT_FIXME(bio != NULL);
 
 	bio->bi_rw |= REQ_FLUSH | REQ_FUA;

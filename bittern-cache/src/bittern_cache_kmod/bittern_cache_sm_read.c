@@ -88,7 +88,7 @@ void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
 		 "bio_copy_from_cache, err=%d",
 		 err);
 
-	err = inject_error(bc, EI_SM_3, err);
+	err = inject_error_e(bc, EI_SM_3, err);
 
 	ASSERT(bc->bc_enable_extra_checksum_check == 0 ||
 	       bc->bc_enable_extra_checksum_check == 1);
@@ -268,7 +268,7 @@ void sm_read_miss_copy_from_device_end(struct bittern_cache *bc,
 				S_CLEAN_READ_MISS_CPF_DEVICE_END,
 				S_CLEAN_READ_MISS_CPT_CACHE_END);
 
-	err = inject_error(bc, EI_SM_4, err);
+	err = inject_error_e(bc, EI_SM_4, err);
 	if (err != 0) {
 		/*
 		 * Easiest way to handle this error is in the final state
@@ -337,7 +337,7 @@ void sm_read_miss_copy_to_cache_end(struct bittern_cache *bc,
 		 "end, err=%d",
 		 err);
 
-	err = inject_error(bc, EI_SM_5, err);
+	err = inject_error_e(bc, EI_SM_5, err);
 
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT_BITTERN_CACHE(bc);

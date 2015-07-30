@@ -233,7 +233,7 @@ void sm_pwrite_miss_copy_to_device_end(struct bittern_cache *bc,
 				S_DIRTY_P_WRITE_MISS_CPF_DEVICE_END,
 				S_DIRTY_P_WRITE_MISS_CPT_CACHE_END);
 
-	err = inject_error(bc, EI_SM_1, err);
+	err = inject_error_e(bc, EI_SM_1, err);
 	if (err != 0) {
 		bc->error_state = ES_ERROR_FAIL_ALL;
 		/*
@@ -279,7 +279,7 @@ void sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, bio, NULL,
 		 "copy-to-cache-end, err=%d",
 		 err);
-	err = inject_error(bc, EI_SM_2, err);
+	err = inject_error_e(bc, EI_SM_2, err);
 	if (err != 0) {
 		/*
 		 * Simply set error state, nothing special needs to handle

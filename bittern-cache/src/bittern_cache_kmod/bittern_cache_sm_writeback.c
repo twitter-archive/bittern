@@ -110,7 +110,7 @@ void sm_writeback_copy_from_cache_end(struct bittern_cache *bc,
 	atomic_set_if_higher(&bc->bc_highest_pending_cached_device_requests,
 			     val);
 
-	err = inject_error(bc, EI_SM_6, err);
+	err = inject_error_e(bc, EI_SM_6, err);
 	if (err != 0) {
 		/*
 		 * Easiest thing to do is to just call the end state
@@ -159,7 +159,7 @@ void sm_writeback_copy_to_device_end(struct bittern_cache *bc,
 	ASSERT_CACHE_BLOCK(cache_block, bc);
 	ASSERT_WORK_ITEM(wi, bc);
 
-	err = inject_error(bc, EI_SM_7, err);
+	err = inject_error_e(bc, EI_SM_7, err);
 	if (err != 0) {
 		bc->error_state = ES_ERROR_FAIL_ALL;
 		cache_bgwriter_io_end(bc, wi, cache_block, err);
@@ -202,7 +202,7 @@ void sm_writeback_update_metadata_end(struct bittern_cache *bc,
 	struct bio *bio = wi->wi_original_bio;
 	struct cache_block *cache_block = wi->wi_cache_block;
 
-	err = inject_error(bc, EI_SM_8, err);
+	err = inject_error_e(bc, EI_SM_8, err);
 
 	M_ASSERT(wi->wi_original_bio == NULL);
 	M_ASSERT(wi->wi_cloned_bio == NULL);

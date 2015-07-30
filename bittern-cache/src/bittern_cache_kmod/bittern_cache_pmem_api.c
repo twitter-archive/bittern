@@ -138,8 +138,9 @@ int pmem_context_setup(struct bittern_cache *bc,
 	ASSERT(dbi->di_flags == 0x0);
 	ASSERT(atomic_read(&dbi->di_busy) == 0);
 
-	dbi->di_buffer_vmalloc_buffer = kmem_cache_alloc(kmem_slab, GFP_NOIO);
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (!inject_error(bc, EI_P_1))
+		dbi->di_buffer_vmalloc_buffer = kmem_cache_alloc(kmem_slab,
+								 GFP_NOIO);
 	if (dbi->di_buffer_vmalloc_buffer == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, cache_block, NULL, NULL,
 			     "kmem_cache_alloc kmem_slab failed");
@@ -432,7 +433,7 @@ int __pmem_header_restore(struct bittern_cache *bc,
 			     header_block_offset_bytes,
 			     pm,
 			     sizeof(struct pmem_header));
-	/*TODO_ADD_ERROR_INJECTION*/
+	ret = inject_error_e(bc, EI_P_2, ret);
 	if (ret != 0) {
 		ASSERT(ret < 0);
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
@@ -444,24 +445,22 @@ int __pmem_header_restore(struct bittern_cache *bc,
 		return ret;
 	}
 
-	/*TODO_ADD_ERROR_INJECTION*/
-	if (pm->lm_magic != LM_MAGIC) {
+	if (inject_error(bc, EI_P_17) || pm->lm_magic != LM_MAGIC) {
 		printk_err("[%d]: magic number invalid (0x%x/0x%x)\n",
 			   header_block_number,
 			   pm->lm_magic,
 			   LM_MAGIC);
 		return -EBADMSG;
 	}
-	/*TODO_ADD_ERROR_INJECTION*/
-	if (pm->lm_version != LM_VERSION) {
+	if (inject_error(bc, EI_P_4) || pm->lm_version != LM_VERSION) {
 		printk_err("[%d]: error: version number is incorrect %d/%d\n",
 			   header_block_number, pm->lm_version, LM_VERSION);
 		return -EBADMSG;
 	}
 
 	computed_hash = murmurhash3_128(pm, PMEM_HEADER_HASHING_SIZE);
-	/*TODO_ADD_ERROR_INJECTION*/
-	if (uint128_ne(computed_hash, pm->lm_hash)) {
+	if (inject_error(bc, EI_P_5) ||
+	    uint128_ne(computed_hash, pm->lm_hash)) {
 		printk_err("[%d]: hash mismatch: stored_hash=" UINT128_FMT ", computed_hash" UINT128_FMT "\n",
 			    header_block_number,
 			    UINT128_ARG(pm->lm_hash),
@@ -553,7 +552,7 @@ int pmem_header_restore(struct bittern_cache *bc)
 		cache_xid_set(bc, hdr_1_xid + 1);
 	}
 
-	/*TODO_ADD_ERROR_INJECTION*/
+	ret = inject_error_e(bc, EI_P_6, ret);
 	if (ret != 0) {
 		printk_err("error: header re-read failed, ret=%d\n", ret);
 		return ret;
@@ -581,8 +580,8 @@ int pmem_header_restore(struct bittern_cache *bc)
 	printk_info("pm->lm_cache_size_bytes=%llu\n", pm->lm_cache_size_bytes);
 	printk_info("pm->lm_mcb_size_bytes=%llu\n", pm->lm_mcb_size_bytes);
 
-	/*TODO_ADD_ERROR_INJECTION*/
-	if (pm->lm_header_size_bytes != sizeof(struct pmem_header)) {
+	if (inject_error(bc, EI_P_7) ||
+	    pm->lm_header_size_bytes != sizeof(struct pmem_header)) {
 		printk_err("lm_header_size mismatch %u/%lu\n",
 			   pm->lm_header_size_bytes,
 			   sizeof(struct pmem_header));
@@ -718,10 +717,10 @@ int pmem_header_restore(struct bittern_cache *bc)
 int pmem_block_restore(struct bittern_cache *bc,
 		       struct cache_block *cache_block)
 {
-	struct pmem_block_metadata *pmbm;
+	struct pmem_block_metadata *pmbm = NULL;
 	uint128_t hash_metadata, hash_data;
 	int ret;
-	void *buffer_vaddr;
+	void *buffer_vaddr = NULL;
 	struct page *buffer_page;
 	struct pmem_api *pa = &bc->bc_papi;
 	int block_id;
@@ -738,8 +737,8 @@ int pmem_block_restore(struct bittern_cache *bc,
 	ASSERT(cache_block != NULL);
 	ASSERT(cache_block->bcb_block_id == block_id);
 
-	pmbm = kmem_alloc(sizeof(struct pmem_block_metadata), GFP_NOIO);
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (!inject_error(bc, EI_P_8))
+		pmbm = kmem_alloc(sizeof(struct pmem_block_metadata), GFP_NOIO);
 	if (pmbm == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, cache_block, NULL, NULL,
 			     "kmem_alloc pmem_block_metadata failed");
@@ -752,7 +751,7 @@ int pmem_block_restore(struct bittern_cache *bc,
 			__cache_block_id_2_metadata_pmem_offset(bc, block_id),
 			pmbm,
 			sizeof(struct pmem_block_metadata));
-	/*TODO_ADD_ERROR_INJECTION*/
+	ret = inject_error_e(bc, EI_P_9, ret);
 	if (ret != 0) {
 		ASSERT(ret < 0);
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
@@ -849,8 +848,8 @@ int pmem_block_restore(struct bittern_cache *bc,
 	ASSERT(block_id == pmbm->pmbm_block_id);
 	ASSERT(is_sector_cache_aligned(pmbm->pmbm_device_sector));
 
-	buffer_vaddr = kmem_cache_alloc(bc->bc_kmem_map, GFP_NOIO);
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (!inject_error(bc, EI_P_10))
+		buffer_vaddr = kmem_cache_alloc(bc->bc_kmem_map, GFP_NOIO);
 	if (buffer_vaddr == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, cache_block, NULL, NULL,
 			     "kmem_alloc kmem_map failed");
@@ -867,7 +866,7 @@ int pmem_block_restore(struct bittern_cache *bc,
 			     __cache_block_id_2_data_pmem_offset(bc, block_id),
 			     buffer_vaddr,
 			     PAGE_SIZE);
-	/*TODO_ADD_ERROR_INJECTION*/
+	ret = inject_error_e(bc, EI_P_11, ret);
 	if (ret != 0) {
 		ASSERT(ret < 0);
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
@@ -993,7 +992,7 @@ int pmem_header_initialize(struct bittern_cache *bc)
 			      CACHE_MEM_HEADER_0_OFFSET_BYTES,
 			      pm,
 			      sizeof(struct pmem_header));
-	/*TODO_ADD_ERROR_INJECTION*/
+	ret = inject_error_e(bc, EI_P_1, ret);
 	if (ret != 0) {
 		ASSERT(ret < 0);
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
@@ -1016,7 +1015,7 @@ int pmem_header_initialize(struct bittern_cache *bc)
 			      CACHE_MEM_HEADER_1_OFFSET_BYTES,
 			      pm,
 			      sizeof(struct pmem_header));
-	/*TODO_ADD_ERROR_INJECTION*/
+	ret = inject_error_e(bc, EI_P_2, ret);
 	if (ret != 0) {
 		ASSERT(ret < 0);
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
@@ -1043,7 +1042,7 @@ int pmem_metadata_initialize(struct bittern_cache *bc, unsigned int block_id)
 {
 	int ret;
 	struct pmem_api *pa = &bc->bc_papi;
-	struct pmem_block_metadata *pmbm;
+	struct pmem_block_metadata *pmbm = NULL;
 
 	pa = pa; /* shutoff compiler warning (used in dev build) */
 	ASSERT(bc != NULL);
@@ -1052,8 +1051,9 @@ int pmem_metadata_initialize(struct bittern_cache *bc, unsigned int block_id)
 	ASSERT(pa->papi_bdev_size_bytes > 0);
 	ASSERT(pa->papi_bdev != NULL);
 
-	pmbm = kmem_zalloc(sizeof(struct pmem_block_metadata), GFP_NOIO);
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (!inject_error(bc, EI_P_12))
+		pmbm = kmem_zalloc(sizeof(struct pmem_block_metadata),
+				   GFP_NOIO);
 	if (pmbm == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "kmem_zalloc pmem_block_metadata block_id=%u failed",
@@ -1082,7 +1082,7 @@ int pmem_metadata_initialize(struct bittern_cache *bc, unsigned int block_id)
 			__cache_block_id_2_metadata_pmem_offset(bc, block_id),
 			pmbm,
 			sizeof(struct pmem_block_metadata));
-	/*TODO_ADD_ERROR_INJECTION*/
+	ret = inject_error_e(bc, EI_P_13, ret);
 	if (ret != 0) {
 		ASSERT(ret < 0);
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
@@ -1130,7 +1130,7 @@ int pmem_header_update(struct bittern_cache *bc, int update_both)
 				      CACHE_MEM_HEADER_0_OFFSET_BYTES,
 				      &pa->papi_hdr,
 				      sizeof(struct pmem_header));
-		/*TODO_ADD_ERROR_INJECTION*/
+		ret = inject_error_e(bc, EI_P_14, ret);
 		if (ret != 0) {
 			ASSERT(ret < 0);
 			BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
@@ -1153,7 +1153,7 @@ int pmem_header_update(struct bittern_cache *bc, int update_both)
 				      CACHE_MEM_HEADER_1_OFFSET_BYTES,
 				      &pa->papi_hdr,
 				      sizeof(struct pmem_header));
-		/*TODO_ADD_ERROR_INJECTION*/
+		ret = inject_error_e(bc, EI_P_15, ret);
 		if (ret != 0) {
 			ASSERT(ret < 0);
 			BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
@@ -1370,7 +1370,7 @@ int pmem_metadata_sync_read(struct bittern_cache *bc,
 			__cache_block_id_2_metadata_pmem_offset(bc, block_id),
 			out_pmbm_mem,
 			sizeof(struct pmem_block_metadata));
-	/*TODO_ADD_ERROR_INJECTION*/
+	ret = inject_error_e(bc, EI_P_16, ret);
 	if (ret != 0) {
 		ASSERT(ret < 0);
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,

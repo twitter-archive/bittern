@@ -39,7 +39,7 @@ void cache_invalidate_block_io_end(struct bittern_cache *bc,
 	       cache_block->bcb_state == S_DIRTY_INVALIDATE_END);
 	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 
-	/*TODO_ERROR_INJECTION*/
+	err = inject_error(bc, EI_I_15);
 	if (err == 0) {
 		if (cache_block->bcb_state == S_DIRTY_INVALIDATE_END)
 			cache_move_to_invalid(bc, cache_block, 1);
@@ -87,7 +87,7 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 {
 	unsigned long flags;
 	unsigned long cache_flags;
-	struct work_item *wi;
+	struct work_item *wi = NULL;
 	int val;
 	int ret;
 	enum cache_state cache_block_state;
@@ -126,12 +126,12 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 	/*
 	 * allocate work_item and initialize it
 	 */
-	wi = work_item_allocate(bc,
-				cache_block,
-				NULL,
-				(WI_FLAG_BIO_NOT_CLONED |
-				 WI_FLAG_XID_USE_CACHE_BLOCK));
-	/*! \todo: error injection */
+	if (!inject_error(bc, EI_I_16))
+		wi = work_item_allocate(bc,
+					cache_block,
+					NULL,
+					(WI_FLAG_BIO_NOT_CLONED |
+					 WI_FLAG_XID_USE_CACHE_BLOCK));
 	if (wi == NULL) {
 		/*! \todo should make this a common function */
 		bc->error_state = ES_ERROR_FAIL_ALL;
@@ -164,9 +164,8 @@ void cache_invalidate_block_io_start(struct bittern_cache *bc,
 				 cache_block,
 				 NULL,
 				 &wi->wi_pmem_ctx);
-	/*! \todo: error injection */
+	ret = inject_error_e(bc, EI_I_17, ret);
 	if (ret != 0) {
-		/*! \todo should make this a common function */
 		bc->error_state = ES_ERROR_FAIL_ALL;
 		if (cache_block_state == S_CLEAN)
 			cache_state_transition_final(bc,

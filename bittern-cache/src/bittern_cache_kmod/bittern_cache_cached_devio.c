@@ -36,57 +36,65 @@ static void cached_devio_flush_end_bio_process(struct bittern_cache *bc,
 					       uint64_t gennum,
 					       int err)
 {
-	struct work_item *wi;
-	struct bio *bio;
-	unsigned long flags;
+	bool processed;
 
-again:
 	ASSERT_BITTERN_CACHE(bc);
 	/*
 	 * ack pending writes upto gennum
 	 */
-	spin_lock_irqsave(&bc->devio.spinlock, flags);
+	do {
+		struct work_item *wi;
+		struct bio *bio;
+		unsigned long flags;
+		int cc = 0;
 
-	list_for_each_entry(wi,
-			    &bc->devio.flush_pending_list,
-			    devio_pending_list) {
-		ASSERT_WORK_ITEM(wi, bc);
-		bio = wi->wi_cloned_bio;
-		if (wi->devio_gennum <= gennum) {
-			M_ASSERT(!list_empty(&bc->devio.flush_pending_list));
-			list_del_init(&wi->devio_pending_list);
-			bc->devio.flush_pending_count--;
-			BT_TRACE(BT_LEVEL_TRACE1,
-				 bc, NULL, NULL, bio, NULL,
-				 "bi_sector=%lu, gennum=%llu/%llu, flush wait done, err=%d",
-				 bio->bi_iter.bi_sector,
-				 wi->devio_gennum,
-				 gennum,
-				 err);
+		processed = false;
 
-			spin_unlock_irqrestore(&bc->devio.spinlock, flags);
+		spin_lock_irqsave(&bc->devio.spinlock, flags);
+		list_for_each_entry(wi,
+				    &bc->devio.flush_pending_list,
+				    devio_pending_list) {
+			ASSERT_WORK_ITEM(wi, bc);
+			bio = wi->wi_cloned_bio;
+			if (wi->devio_gennum <= gennum) {
+				M_ASSERT(!list_empty(&bc->devio.flush_pending_list));
+				list_del_init(&wi->devio_pending_list);
+				bc->devio.flush_pending_count--;
+				M_ASSERT(bc->devio.flush_pending_count >= 0);
+				if (bc->devio.flush_pending_count == 0)
+					M_ASSERT(list_empty(&bc->devio.flush_pending_list));
+				else
+					M_ASSERT(!list_empty(&bc->devio.flush_pending_list));
+				BT_TRACE(BT_LEVEL_TRACE1,
+					 bc, NULL, NULL, bio, NULL,
+					 "bi_sector=%lu, gennum=%llu/%llu, flush wait done, err=%d",
+					 bio->bi_iter.bi_sector,
+					 wi->devio_gennum,
+					 gennum,
+					 err);
 
-			cache_timer_add(&bc->bc_timer_cached_device_flushes,
-					wi->wi_ts_physio_flush);
-			cached_dev_make_request_endio(wi, bio, err);
+				spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 
-			goto again;
-		} else {
-			BT_TRACE(BT_LEVEL_TRACE1,
-				 bc, NULL, NULL, bio, NULL,
-				 "not processing bi_sector=%lu, gennum=%llu/%llu",
-				 bio->bi_iter.bi_sector,
-				 wi->devio_gennum, gennum);
+				cache_timer_add(&bc->bc_timer_cached_device_flushes, wi->wi_ts_physio_flush);
+				cached_dev_make_request_endio(wi, bio, 0);
+
+				processed = true;
+				goto inner_out;
+			} else {
+				BT_TRACE(BT_LEVEL_TRACE1,
+					 bc, NULL, NULL, bio, NULL,
+					 "not processing bi_sector=%lu, gennum=%llu/%llu",
+					     bio->bi_iter.bi_sector,
+					 wi->devio_gennum, gennum);
+			}
+			M_ASSERT(cc++ < 10000);
 		}
-	}
+		spin_unlock_irqrestore(&bc->devio.spinlock, flags);
 
-	M_ASSERT(bc->devio.flush_pending_count >= 0);
-	if (bc->devio.flush_pending_count == 0)
-		M_ASSERT(list_empty(&bc->devio.flush_pending_list));
-	else
-		M_ASSERT(!list_empty(&bc->devio.flush_pending_list));
+inner_out:
+		;
 
-	spin_unlock_irqrestore(&bc->devio.spinlock, flags);
+	} while (processed);
 }
 
 /*! handles completion of pureflush request */
@@ -141,40 +149,24 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	ASSERT_BITTERN_CACHE(bc);
 
 	flush_meta = kmem_alloc(sizeof(struct flush_meta), GFP_NOIO);
-	/*TODO_ADD_ERROR_INJECTION*/
-	if (flush_meta == NULL) {
-#warning "need to add setting of error_state when merging error handling"
-		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
-			     "cannot allocate flush_meta, err=%d",
-			     -ENOMEM);
-		printk_err("%s: cannot flush_meta, err=%d\n",
-			   bc->bc_name,
-			   -ENOMEM);
-		/*
-		 * Allocation failed, bubble up error to state machine.
-		 */
-		cached_devio_flush_end_bio_process(bc, 0, -ENOMEM);
-		return;
-	}
+	M_ASSERT_FIXME(flush_meta != NULL);
 	flush_meta->bc = bc;
 
 	bio = bio_alloc(GFP_NOIO, 1);
+#if 0
 	/*TODO_ADD_ERROR_INJECTION*/
 	if (bio == NULL) {
-#warning "need to add setting of error_state when merging error handling"
-		kmem_free(flush_meta, sizeof(struct flush_meta));
-		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
-			     "cannot allocate bio, err=%d",
-			     -ENOMEM);
-		printk_err("%s: cannot allocate bio, err=%d\n",
-			   bc->bc_name,
-			   -ENOMEM);
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, cache_block, NULL, NULL,
+			     "cannot allocate bio, wi=%p",
+			     wi);
+		printk_err("%s: cannot allocate bio\n", bc->bc_name);
 		/*
 		 * Allocation failed, bubble up error to state machine.
 		 */
-		cached_devio_flush_end_bio_process(bc, 0, -ENOMEM);
+		cache_state_machine(bc, wi, -ENOMEM);
 		return;
 	}
+#endif
 	M_ASSERT_FIXME(bio != NULL);
 
 	bio->bi_rw |= REQ_FLUSH | REQ_FUA;

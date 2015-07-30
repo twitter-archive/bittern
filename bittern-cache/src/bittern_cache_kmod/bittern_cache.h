@@ -441,6 +441,25 @@ enum error_state {
 };
 
 /*!
+ * error injection: we can inject an error in nearly any arbitrary point in
+ * the state machine.
+ */
+enum error_injection {
+	/*! no injection */
+	EI_NONE = 0,
+	EI_MAIN_0,
+	EI_MAIN_1,
+	EI_MAIN_2,
+	EI_MAIN_3,
+	EI_MAIN_4,
+	EI_MAIN_5,
+	EI_MAIN_6,
+	EI_MAIN_7,
+	/*! leave this last */
+	EI_MAX,
+};
+
+/*!
  * The mother of all structures.
  * All of Bittern state is declared directly here or pointed by here.
  */
@@ -464,9 +483,12 @@ struct bittern_cache {
 	uint64_t bc_cached_device_size_mbytes;
 
 	/*! actual error state */
-	volatile int error_state;
+	volatile enum error_state error_state;
 	/*! error count */
 	atomic_t error_count;
+
+	/*! error injection point */
+	volatile enum error_injection error_injection;
 
 	/*! cache replacement mode (RANDOM, FIFO, LRU) */
 	int bc_replacement_mode;
@@ -1022,8 +1044,7 @@ int write_bypass_threshold(struct bittern_cache *bc);
 int set_write_bypass_timeout(struct bittern_cache *bc, int value);
 int write_bypass_timeout(struct bittern_cache *bc);
 
-static inline void cache_xid_set(struct bittern_cache *bc,
-				 uint64_t new_xid)
+static inline void cache_xid_set(struct bittern_cache *bc, uint64_t new_xid)
 {
 	atomic64_set(&bc->bc_xid, new_xid);
 }
@@ -1037,6 +1058,36 @@ static inline uint64_t cache_xid_get(struct bittern_cache *bc)
 {
 	return atomic64_read(&bc->bc_xid);
 }
+
+/*!
+ * do error injection if needed:
+ * ei = error injection point
+ * err = current error, if any
+ * errno = error to inject
+ */
+static inline int __inject_error(struct bittern_cache *bc,
+			         enum error_injection ei,
+			         int err,
+			         int errno)
+{
+	M_ASSERT(ei != EI_NONE);
+	M_ASSERT(errno < 0);
+	/* if there is already an error, return actual error */
+	if (err != 0)
+		return err;
+	if (bc->error_injection != ei)
+		return 0;
+	if (ei != bc->error_injection)
+		return 0;
+	bc->error_injection = EI_NONE;
+	printk_err("%s: injecting error ei=%d, errno=%d\n",
+		   bc->bc_name,
+		   ei,
+		   errno);
+	return errno;
+}
+#define inject_error(__bc, __ei, __err) \
+		__inject_error((__bc), (__ei), (__err), -EL2NSYNC)
 
 /*
  * red-black tree operations
@@ -1068,8 +1119,7 @@ extern int cache_invalidator_has_work_schmitt(struct bittern_cache *bc);
 extern const char *cache_bgwriter_policy(struct bittern_cache *bc);
 extern ssize_t cache_bgwriter_op_show_policy(struct bittern_cache *bc,
 					     char *result);
-extern int cache_bgwriter_policy_set(struct bittern_cache *bc,
-				     const char *buf);
+extern int cache_bgwriter_policy_set(struct bittern_cache *bc, const char *buf);
 extern void cache_bgwriter_policy_init(struct bittern_cache *bc);
 
 extern void cache_bgwriter_flush_dirty_blocks(struct bittern_cache *bc);

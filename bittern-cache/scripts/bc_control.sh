@@ -346,8 +346,9 @@ do_get() {
 	__cache_device_size=$(($__cache_device_size / 1024))
 	echo "	cache_device_size = $__cache_device_size mbytes"
 
-	echo "error_state:"
+	echo "error:"
 	echo "	error_state = $(get_cache_conf error_state)"
+	echo "	error_injection = $(get_cache_conf error_injection)"
 
 	echo "cache blocks:"
 	echo "	current_clean_blocks = $(get_cache_stats valid_clean_cache_entries)"
@@ -609,6 +610,10 @@ do_set() {
 		do_set_check_value
 		set_cache_conf error_state $VALUE_OPTION
 		;;
+	"error_injection")
+		do_set_check_value
+		set_cache_conf error_injection $VALUE_OPTION
+		;;
 	*)
 		echo $0: unrecognized "--set" option
 		exit 1
@@ -622,7 +627,7 @@ do_set() {
 check_set_priv() {
 	local __set_option=$*
 	case "$__set_option" in
-	"error_state"|"disable_req_fua")
+	"error_*"|"disable_req_fua")
 		if [ -z "$FORCE_OPTION" ]
 		then
 cat<<EOF

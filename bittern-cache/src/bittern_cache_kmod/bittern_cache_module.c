@@ -379,6 +379,21 @@ static int param_get_error_state(struct bittern_cache *bc)
 	return (int)bc->error_state;
 }
 
+/*! only allow setting of error injection. do not allow reset. */
+static int param_set_error_injection(struct bittern_cache *bc, int value)
+{
+	bc->error_injection = value;
+	printk_info("%s: set error_injection=%d\n",
+		    bc->bc_name,
+		    bc->error_injection);
+	return 0;
+}
+
+static int param_get_error_injection(struct bittern_cache *bc)
+{
+	return (int)bc->error_injection;
+}
+
 static int control_dump_blocks_clean(struct bittern_cache *bc, int value)
 {
 	return cache_dump_blocks(bc, "clean", value);
@@ -630,6 +645,17 @@ struct cache_conf_param_entry cache_conf_param_list[] = {
 		.cache_conf_max = ES_ERROR_FAIL_ALL,
 		.cache_conf_setup_function = param_set_error_state,
 		.cache_conf_show_function = param_get_error_state,
+	},
+	/*
+	 * error injection
+	 */
+	{
+		.cache_conf_name = "error_injection",
+		.cache_conf_type = CONF_TYPE_INT,
+		.cache_conf_min = EI_NONE,
+		.cache_conf_max = EI_MAX,
+		.cache_conf_setup_function = param_set_error_injection,
+		.cache_conf_show_function = param_get_error_injection,
 	},
 	/*
 	 * control function -- invalidate cache blocks.

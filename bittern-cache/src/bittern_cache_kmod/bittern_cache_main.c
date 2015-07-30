@@ -79,7 +79,7 @@ void cached_dev_bypass_endio(struct bio *cloned_bio, int err)
 
 	work_item_free(bc, wi);
 
-	/*TODO_ADD_ERROR_INJECTION*/
+	err = inject_error(bc, EI_MAIN_0, err);
 	if (err != 0) {
 		ASSERT(err < 0);
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
@@ -438,7 +438,7 @@ void cache_state_machine(struct bittern_cache *bc,
 		 bc, wi, cache_block, wi->wi_original_bio, wi->wi_cloned_bio,
 		 "enter, err=%d",
 		 err);
-	/*TODO_ADD_ERROR_INJECTION*/
+	err = inject_error(bc, EI_MAIN_1, err);
 	if (err != 0) {
 		/*
 		 * This is generic state machine code, so the actual error
@@ -1695,7 +1695,8 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 				NULL,
 				bio,
 				(WI_FLAG_BIO_CLONED | WI_FLAG_XID_NEW));
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (inject_error(bc, EI_MAIN_2, 0))
+		wi = NULL;
 	if (wi == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot allocate work_item for %s bypass",
@@ -1732,7 +1733,8 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 	 * clone bio
 	 */
 	cloned_bio = bio_clone(bio, GFP_NOIO);
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (inject_error(bc, EI_MAIN_3, 0))
+		cloned_bio = NULL;
 	if (cloned_bio == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot clone bio for %s bypass",
@@ -1851,7 +1853,8 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 				bio,
 				(WI_FLAG_BIO_CLONED |
 				 WI_FLAG_XID_NEW));
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (inject_error(bc, EI_MAIN_4, 0))
+		wi = NULL;
 	if (wi == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot allocate work_item for %s hit",
@@ -1882,7 +1885,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 				 cache_block,
 				 cloned_cache_block,
 				 &wi->wi_pmem_ctx);
-	/*TODO_ADD_ERROR_INJECTION*/
+	ret = inject_error(bc, EI_MAIN_5, ret);
 	if (ret != 0) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot setup pmem_context for %s hit",
@@ -2028,7 +2031,8 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 				bio,
 				(WI_FLAG_BIO_CLONED |
 				 WI_FLAG_XID_NEW));
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (inject_error(bc, EI_MAIN_6, 0))
+		wi = NULL;
 	if (wi == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot allocate work_item for %s miss",
@@ -2059,7 +2063,7 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 				 cache_block,
 				 NULL,
 				 &wi->wi_pmem_ctx);
-	/*TODO_ADD_ERROR_INJECTION*/
+	ret = inject_error(bc, EI_MAIN_7, ret);
 	if (ret != 0) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot setup pmem_context for %s miss",

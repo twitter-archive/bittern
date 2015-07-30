@@ -455,6 +455,20 @@ enum error_injection {
 	EI_MAIN_5,
 	EI_MAIN_6,
 	EI_MAIN_7,
+	EI_SM_1,
+	EI_SM_2,
+	EI_SM_3,
+	EI_SM_4,
+	EI_SM_5,
+	EI_SM_6,
+	EI_SM_7,
+	EI_SM_8,
+	EI_SM_9,
+	EI_SM_10,
+	EI_SM_11,
+	EI_SM_12,
+	EI_SM_13,
+	EI_SM_14, /*X*/
 	/*! leave this last */
 	EI_MAX,
 };

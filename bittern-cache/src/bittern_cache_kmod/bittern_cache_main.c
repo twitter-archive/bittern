@@ -438,7 +438,47 @@ void cache_state_machine(struct bittern_cache *bc,
 		 bc, wi, cache_block, wi->wi_original_bio, wi->wi_cloned_bio,
 		 "enter, err=%d",
 		 err);
-	err = inject_error_e(bc, EI_MAIN_1, err);
+
+	/*
+	 * only do error injection for non-initial states
+	 */
+	switch (cache_block->bcb_state) {
+	case S_CLEAN_READ_HIT_CPF_CACHE_END:
+	case S_DIRTY_READ_HIT_CPF_CACHE_END:
+	case S_CLEAN_READ_MISS_CPF_DEVICE_END:
+	case S_CLEAN_READ_MISS_CPT_CACHE_END:
+	case S_DIRTY_WRITE_MISS_CPT_CACHE_END:
+	case S_CLEAN_WRITE_MISS_CPT_DEVICE_END:
+	case S_CLEAN_WRITE_HIT_CPT_DEVICE_END:
+	case S_CLEAN_WRITE_MISS_CPT_CACHE_END:
+	case S_CLEAN_WRITE_HIT_CPT_CACHE_END:
+	case S_CLEAN_P_WRITE_HIT_CPT_DEVICE_END:
+	case S_CLEAN_P_WRITE_HIT_CPT_CACHE_END:
+	case S_DIRTY_P_WRITE_HIT_CPT_CACHE_START: /* not an initial state */
+	case S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_START: /* not an initial state */
+	case S_DIRTY_WRITE_HIT_CPT_CACHE_END:
+	case S_C2_DIRTY_WRITE_HIT_CPT_CACHE_END:
+	case S_DIRTY_P_WRITE_HIT_CPT_CACHE_END:
+	case S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_END:
+	case S_CLEAN_P_WRITE_MISS_CPF_DEVICE_END:
+	case S_DIRTY_P_WRITE_MISS_CPF_DEVICE_END:
+	case S_CLEAN_P_WRITE_MISS_CPT_DEVICE_END:
+	case S_CLEAN_P_WRITE_MISS_CPT_CACHE_END:
+	case S_DIRTY_P_WRITE_MISS_CPT_CACHE_END:
+	case S_DIRTY_WRITEBACK_CPF_CACHE_END:
+	case S_DIRTY_WRITEBACK_INV_CPF_CACHE_END:
+	case S_DIRTY_WRITEBACK_CPT_DEVICE_END:
+	case S_DIRTY_WRITEBACK_INV_CPT_DEVICE_END:
+	case S_DIRTY_WRITEBACK_UPD_METADATA_END:
+	case S_DIRTY_WRITEBACK_INV_UPD_METADATA_END:
+	case S_CLEAN_INVALIDATE_END:
+	case S_DIRTY_INVALIDATE_END:
+		err = inject_error_e(bc, EI_MAIN_1, err);
+		break;
+	default:
+		break;
+	}
+
 	if (err != 0) {
 		/*
 		 * This is generic state machine code, so the actual error

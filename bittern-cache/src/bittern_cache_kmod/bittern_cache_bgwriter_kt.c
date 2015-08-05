@@ -328,22 +328,16 @@ int cache_bgwriter_wait_for_resources(struct bittern_cache *bc, bool do_wait)
 
 	if (pending == 0)
 		return 0;
-	if (pending >= bc->bc_bgwriter_curr_queue_depth) {
-		/*
-		 * writeback queue busy
-		 */
+	if (pending >= bc->bc_bgwriter_curr_queue_depth)
+		/*! writeback queue busy */
 		bc->bc_bgwriter_queue_full_count++;
-		needs_to_wait = true;
-	}
 	if (!do_wait) {
 		bc->bc_bgwriter_stalls_nowait_count++;
 		return -EWOULDBLOCK;
 	}
 	atomic_inc(&bc->bc_writebacks_stalls);
 	bc->bc_bgwriter_stalls_count++;
-	/*
-	 * wait for at least one writeback to complete
-	 */
+	/*! wait for at least one writeback to complete */
 	wait_event_interruptible(bc->bc_bgwriter_wait,
 		 pending != atomic_read(&bc->bc_pending_writeback_requests));
 	if (signal_pending(current))
@@ -600,7 +594,11 @@ int cache_bgwriter_kthread(void *__bc)
 		ASSERT_BITTERN_CACHE(bc);
 
 		if (bc->error_state != ES_NOERROR) {
-			/* if an error has been detected, do nothing */
+			/*!
+			 * this msleep is very confusing, reason being this
+			 * code really should be a worker thread.
+			 * once that is done, the msleep will disappear.
+			 */
 			msleep(5);
 			continue;
 		}
@@ -650,8 +648,10 @@ int cache_bgwriter_kthread(void *__bc)
 			cache_bgwriter_wait_for_resources(bc, true);
 
 		} else {
-			/*
-			 * there is nothing dirty -- not a writeback stall
+			/*!
+			 * this msleep is very confusing, reason being this
+			 * code really should be a worker thread.
+			 * once that is done, the msleep will disappear.
 			 */
 			bc->bc_bgwriter_no_work_count++;
 			msleep(5);

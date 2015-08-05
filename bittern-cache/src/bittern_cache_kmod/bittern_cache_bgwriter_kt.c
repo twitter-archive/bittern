@@ -315,18 +315,16 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 	return 1;
 }
 
-/*
+/*!
  * wait for needed writeback resources (queue and buffers).
+ * @param bc @ref bittern_cache.
+ * @param do_wait indicates if caller is willing to wait.
  * return -EWOULDBLOCK if waiting would be needed and we indicated we do not
- * want to wait, 0 otherwise.
+ * want to wait, 0 for success.
  */
-int cache_bgwriter_wait_for_resources(struct bittern_cache *bc,
-					      bool do_wait)
+int cache_bgwriter_wait_for_resources(struct bittern_cache *bc, bool do_wait)
 {
 	unsigned int pending = atomic_read(&bc->bc_pending_writeback_requests);
-	int needs_to_wait = false;
-
-	ASSERT(do_wait == false || do_wait == true);
 
 	if (pending == 0)
 		return 0;
@@ -337,27 +335,23 @@ int cache_bgwriter_wait_for_resources(struct bittern_cache *bc,
 		bc->bc_bgwriter_queue_full_count++;
 		needs_to_wait = true;
 	}
-	if (needs_to_wait) {
-		if (!do_wait) {
-			bc->bc_bgwriter_stalls_nowait_count++;
-			return -EWOULDBLOCK;
-		}
-		atomic_inc(&bc->bc_writebacks_stalls);
-		bc->bc_bgwriter_stalls_count++;
-		/*
-		 * wait for at least one writeback to complete
-		 */
-		wait_event_interruptible(bc->bc_bgwriter_wait,
-					 pending !=
-					 atomic_read(&bc->
-						     bc_pending_writeback_requests));
-		if (signal_pending(current))
-			flush_signals(current);
+	if (!do_wait) {
+		bc->bc_bgwriter_stalls_nowait_count++;
+		return -EWOULDBLOCK;
 	}
+	atomic_inc(&bc->bc_writebacks_stalls);
+	bc->bc_bgwriter_stalls_count++;
+	/*
+	 * wait for at least one writeback to complete
+	 */
+	wait_event_interruptible(bc->bc_bgwriter_wait,
+		 pending != atomic_read(&bc->bc_pending_writeback_requests));
+	if (signal_pending(current))
+		flush_signals(current);
 	return 0;
 }
 
-/*
+/*!
  * start a batch of sequential writebacks.
  * returns count of started writebacks.
  */
@@ -366,37 +360,23 @@ int cache_bgwriter_io_start_batch(struct bittern_cache *bc)
 	int ret, count;
 	sector_t sector_hint = SECTOR_NUMBER_INVALID;
 
-	/*
-	 * wait for resources
-	 */
-	ret = cache_bgwriter_wait_for_resources(bc, true);
-	ASSERT(ret == 0);
+	/*! wait for resources */
+	cache_bgwriter_wait_for_resources(bc, true);
 
-	/* printk_debug("bgwriter: hint[0]=%lu\n", sector_hint); */
-	ret = cache_bgwriter_io_start_one(bc, sector_hint, &sector_hint);
-	/* error is already handled in @ref cache_bgwriter_io_start_one */
-	if (ret <= 0)
+	if (cache_bgwriter_io_start_one(bc, sector_hint, &sector_hint) <= 0)
 		return 0;
 	count = 1;
 
-	/*
-	 * FIXME: should take max queue depth into account?
-	 */
+	/*! should this take max queue depth into account? */
 	if (sector_hint != SECTOR_NUMBER_INVALID) {
 		while (count < bc->bc_bgwriter_conf_cluster_size) {
 			sector_t last_hint = sector_hint;
 
-			/* shutoff compiler warning (used in dev build) */
+			/*! shutoff compiler warning (used in dev build) */
 			last_hint = last_hint;
-			/*
-			 * wait for resources
-			 * FIXME: wait flag should be policy controlled
-			 */
-			ret =
-			    cache_bgwriter_wait_for_resources(bc,
-							      false);
-			if (ret < 0)
-				break;
+			/*! wait flag should be policy controlled */
+			if (cache_bgwriter_wait_for_resources(bc, false) < 0)
+				return count;
 			ASSERT(sector_hint != SECTOR_NUMBER_INVALID);
 			ret = cache_bgwriter_io_start_one(bc,
 							  sector_hint,
@@ -663,14 +643,10 @@ int cache_bgwriter_kthread(void *__bc)
 
 			bc->bc_bgwriter_work_count++;
 
-			/*
-			 * still work to do, but pause a bit
-			 */
+			/*! still work to do, but pause a bit */
 			schedule();
 
-			/*
-			 * wait for resources
-			 */
+			/*! wait for resources */
 			cache_bgwriter_wait_for_resources(bc, true);
 
 		} else {
@@ -686,9 +662,7 @@ int cache_bgwriter_kthread(void *__bc)
 		schedule();
 	}
 
-	/*
-	 * do a sync drain of pending writebacks before exiting
-	 */
+	/*! do a sync drain of pending writebacks before exiting */
 	cache_bgwriter_wait_io(bc);
 
 	BT_TRACE(BT_LEVEL_TRACE0, bc, NULL, NULL, NULL, NULL, "exit");

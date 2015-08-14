@@ -52,11 +52,13 @@ int pmem_allocate_papi_block(struct bittern_cache *bc,
 	 * (testing with WQ_HIGHPRI set shows perf degradation of about 7%).
 	 * NOTE we are no longer using WQ_SYSFS, as the namespace is not unique.
 	 */
-	pa->papi_make_request_wq = alloc_workqueue("b_wkq_blk:%s",
-						   WQ_MEM_RECLAIM,
-						   1,
-						   bc->bc_name);
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (!inject_error(bc, EI_PB_1))
+		pa->papi_make_request_wq = alloc_workqueue("b_wkq_blk:%s",
+							   WQ_MEM_RECLAIM,
+							   1,
+							   bc->bc_name);
+	else
+		pa->papi_make_request_wq = NULL;
 	if (pa->papi_make_request_wq == NULL) {
 		printk_err("%s: alloc workqueue failed\n", bc->bc_name);
 		bc->error_state = ES_ERROR_FAIL_ALL;
@@ -116,12 +118,12 @@ int pmem_read_sync_block(struct bittern_cache *bc,
 			 size_t size)
 {
 	int ret;
+	uint64_t ts_started;
 	struct pmem_rw_sync_block_ctx *ctx = NULL;
 	void *buffer_vaddr = NULL;
 	struct page *buffer_page;
-	uint64_t ts_started;
 	struct pmem_api *pa = &bc->bc_papi;
-	struct bio *bio;
+	struct bio *bio = NULL;
 
 	ASSERT(bc != NULL);
 	ASSERT(size > 0 && size <= PAGE_SIZE);
@@ -146,8 +148,8 @@ int pmem_read_sync_block(struct bittern_cache *bc,
 	 * requester doesn't necessarily have a page aligned buffer (or size),
 	 * so we need to use an intermediate buffer
 	 */
-	buffer_vaddr = kmem_cache_alloc(bc->bc_kmem_map, GFP_NOIO);
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (!inject_error(bc, EI_PB_2))
+		buffer_vaddr = kmem_cache_alloc(bc->bc_kmem_map, GFP_NOIO);
 	if (buffer_vaddr == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot allocate_buffer_vaddr");
@@ -163,8 +165,9 @@ int pmem_read_sync_block(struct bittern_cache *bc,
 	/*
 	 * setup bio context, alloc bio and start io
 	 * */
-	ctx = kmem_alloc(sizeof(struct pmem_rw_sync_block_ctx), GFP_NOIO);
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (!inject_error(bc, EI_PB_3))
+		ctx = kmem_alloc(sizeof(struct pmem_rw_sync_block_ctx),
+				 GFP_NOIO);
 	if (ctx == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot allocate synchronous context");
@@ -177,8 +180,8 @@ int pmem_read_sync_block(struct bittern_cache *bc,
 	ctx->papi_ctx_magic = PMEM_RW_PAPI_CTX_MAGIC;
 	sema_init(&ctx->papi_ctx_sema, 0);
 
-	bio = bio_alloc(GFP_NOIO, 1);
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (!inject_error(bc, EI_PB_4))
+		bio = bio_alloc(GFP_NOIO, 1);
 	if (bio == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot allocate bio struct");
@@ -244,10 +247,10 @@ int pmem_write_sync_block(struct bittern_cache *bc,
 	int ret;
 	struct pmem_rw_sync_block_ctx *ctx = NULL;
 	void *buffer_vaddr = NULL;
+	struct bio *bio = NULL;
 	struct page *buffer_page;
 	uint64_t ts_started;
 	struct pmem_api *pa = &bc->bc_papi;
-	struct bio *bio;
 
 	ASSERT(bc != NULL);
 	ASSERT(size > 0 && size <= PAGE_SIZE);
@@ -272,8 +275,8 @@ int pmem_write_sync_block(struct bittern_cache *bc,
 	 * requester doesn't necessarily have a page aligned buffer (or size),
 	 * so we need to use an intermediate buffer
 	 */
-	buffer_vaddr = kmem_cache_alloc(bc->bc_kmem_map, GFP_NOIO);
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (!inject_error(bc, EI_PB_5))
+		buffer_vaddr = kmem_cache_alloc(bc->bc_kmem_map, GFP_NOIO);
 	if (buffer_vaddr == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot allocate_buffer_vaddr");
@@ -299,8 +302,9 @@ int pmem_write_sync_block(struct bittern_cache *bc,
 	/*
 	 * setup bio context, alloc bio and start io
 	 * */
-	ctx = kmem_alloc(sizeof(struct pmem_rw_sync_block_ctx), GFP_NOIO);
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (!inject_error(bc, EI_PB_6))
+		ctx = kmem_alloc(sizeof(struct pmem_rw_sync_block_ctx),
+				 GFP_NOIO);
 	if (ctx == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot allocate synchronous context");
@@ -313,8 +317,8 @@ int pmem_write_sync_block(struct bittern_cache *bc,
 	ctx->papi_ctx_magic = PMEM_RW_PAPI_CTX_MAGIC;
 	sema_init(&ctx->papi_ctx_sema, 0);
 
-	bio = bio_alloc(GFP_NOIO, 1);
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (!inject_error(bc, EI_PB_7))
+		bio = bio_alloc(GFP_NOIO, 1);
 	if (bio == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot allocate bio struct");
@@ -392,8 +396,8 @@ void pmem_do_make_request_block(struct bittern_cache *bc,
 {
 	struct async_context *ctx = &pmem_ctx->async_ctx;
 	struct data_buffer_info *dbi_data = &pmem_ctx->dbi;
+	struct bio *bio = NULL;
 	struct pmem_api *pa;
-	struct bio *bio;
 
 	ASSERT(pmem_ctx->magic1 == PMEM_CONTEXT_MAGIC1);
 	ASSERT(pmem_ctx->magic2 == PMEM_CONTEXT_MAGIC2);
@@ -420,8 +424,8 @@ void pmem_do_make_request_block(struct bittern_cache *bc,
 	M_ASSERT(!in_irq());
 	M_ASSERT(!in_softirq());
 
-	bio = bio_alloc(GFP_NOIO, 1);
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (!inject_error(bc, EI_PB_8))
+		bio = bio_alloc(GFP_NOIO, 1);
 	if (bio == NULL) {
 		printk_err("%s: failed to allocate bio struct\n", bc->bc_name);
 		bc->error_state = ES_ERROR_FAIL_ALL;

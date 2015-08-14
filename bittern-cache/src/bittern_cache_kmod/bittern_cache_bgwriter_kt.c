@@ -38,7 +38,7 @@ void cache_bgwriter_io_end(struct bittern_cache *bc,
 		 "writeback-done, err=%d",
 		 err);
 
-	/*TODO_ADD_ERROR_INJECTION*/
+	err = inject_error_e(bc, EI_B_1, err);
 	if (err == 0) {
 		/*
 		 * Normal IO path.
@@ -237,14 +237,13 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 	/*
 	 * allocate work_item and initialize it
 	 */
-	wi = work_item_allocate(bc,
-				cache_block,
-				NULL,
-				(WI_FLAG_BIO_NOT_CLONED |
-				 WI_FLAG_XID_USE_CACHE_BLOCK));
-	/*! \todo: error injection */
+	if (!inject_error(bc, EI_B_2))
+		wi = work_item_allocate(bc,
+					cache_block,
+					NULL,
+					(WI_FLAG_BIO_NOT_CLONED |
+					 WI_FLAG_XID_USE_CACHE_BLOCK));
 	if (wi == NULL) {
-		/*! \todo should make this a common function */
 		bc->error_state = ES_ERROR_FAIL_ALL;
 		cache_state_transition_final(bc,
 					     cache_block,
@@ -269,9 +268,8 @@ int cache_bgwriter_io_start_one(struct bittern_cache *bc,
 				 cache_block,
 				 NULL,
 				 &wi->wi_pmem_ctx);
-	/*! \todo: error injection */
+	ret = inject_error_e(bc, EI_B_3, ret);
 	if (ret != 0) {
-		/*! \todo should make this a common function */
 		bc->error_state = ES_ERROR_FAIL_ALL;
 		cache_state_transition_final(bc,
 					     cache_block,

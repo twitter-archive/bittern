@@ -1120,7 +1120,7 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 				int datadir,
 				bool set_original_bio)
 {
-	struct bio *bio;
+	struct bio *bio = NULL;
 	struct cache_block *cache_block;
 
 	ASSERT_BITTERN_CACHE(bc);
@@ -1143,8 +1143,8 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 	ASSERT(wi->wi_cache_block == cache_block);
 	ASSERT(datadir == READ || datadir == WRITE);
 
-	bio = bio_alloc(GFP_NOIO, 1);
-	/*TODO_ADD_ERROR_INJECTION*/
+	if (!inject_error(bc, EI_M_18))
+		bio = bio_alloc(GFP_NOIO, 1);
 	if (bio == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, cache_block, NULL, NULL,
 			     "cannot allocate bio, wi=%p",

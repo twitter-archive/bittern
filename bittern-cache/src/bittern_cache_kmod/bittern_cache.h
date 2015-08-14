@@ -455,6 +455,55 @@ enum error_injection {
 	EI_MAIN_5,
 	EI_MAIN_6,
 	EI_MAIN_7,
+	EI_SM_1,
+	EI_SM_2,
+	EI_SM_3,
+	EI_SM_4,
+	EI_SM_5,
+	EI_SM_6,
+	EI_SM_7,
+	EI_SM_8,
+	EI_SM_9,
+	EI_SM_10,
+	EI_SM_11,
+	EI_SM_12,
+	EI_SM_13,
+	EI_SM_14,
+	EI_I_15,
+	EI_I_16,
+	EI_I_17,
+	EI_M_18,
+	EI_B_1,
+	EI_B_2,
+	EI_B_3,
+	EI_P_1,
+	EI_P_2,
+	EI_P_3,
+	EI_P_4,
+	EI_P_5,
+	EI_P_6,
+	EI_P_7,
+	EI_P_8,
+	EI_P_9,
+	EI_P_10,
+	EI_P_11,
+	EI_P_12,
+	EI_P_13,
+	EI_P_14,
+	EI_P_15,
+	EI_P_16,
+	EI_P_17,
+	EI_P_18,
+	EI_P_19,
+	EI_P_20,
+	EI_PB_1,
+	EI_PB_2,
+	EI_PB_3,
+	EI_PB_4,
+	EI_PB_5,
+	EI_PB_6,
+	EI_PB_7,
+	EI_PB_8,
 	/*! leave this last */
 	EI_MAX,
 };
@@ -1086,8 +1135,10 @@ static inline int __inject_error(struct bittern_cache *bc,
 		   errno);
 	return errno;
 }
-#define inject_error(__bc, __ei, __err) \
+#define inject_error_e(__bc, __ei, __err) \
 		__inject_error((__bc), (__ei), (__err), -EL2NSYNC)
+#define inject_error(__bc, __ei) \
+		__inject_error((__bc), (__ei), 0, -EL2NSYNC)
 
 /*
  * red-black tree operations

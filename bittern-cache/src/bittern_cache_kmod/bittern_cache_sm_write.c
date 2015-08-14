@@ -136,7 +136,7 @@ void sm_dirty_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 		 bio,
 		 err);
 
-	/*TODO_ADD_ERROR_INJECTION*/
+	err = inject_error_e(bc, EI_SM_9, err);
 	if (err != 0) {
 		/*
 		 * simply set error state and let request terminate
@@ -367,7 +367,7 @@ void sm_clean_write_miss_copy_to_device_end(struct bittern_cache *bc,
 		 "copy-to-device-io-done, err=%d",
 		 err);
 
-	/*TODO_ADD_ERROR_INJECTION*/
+	err = inject_error_e(bc, EI_SM_10, err);
 	if (err != 0) {
 		/*
 		 * simply set error state and let request terminate
@@ -462,7 +462,7 @@ void sm_clean_write_miss_copy_to_cache_end(struct bittern_cache *bc,
 		 "copy-to-cache-end, err=%d",
 		 err);
 
-	/*TODO_ADD_ERROR_INJECTION*/
+	err = inject_error_e(bc, EI_SM_11, err);
 	if (err != 0) {
 		/*
 		 * simply set error state and let request terminate
@@ -654,7 +654,7 @@ sm_dirty_pwrite_hit_copy_to_cache_start(struct bittern_cache *bc,
 		ASSERT(original_cache_block->bcb_state ==
 		       S_CLEAN_INVALIDATE_START);
 
-	/*TODO_ADD_ERROR_INJECTION*/
+	err = inject_error_e(bc, EI_SM_12, err);
 	if (err != 0) {
 		bc->error_state = ES_ERROR_FAIL_ALL;
 		/*
@@ -840,7 +840,7 @@ void sm_dirty_write_hit_copy_to_cache_end(struct bittern_cache *bc,
 		 "copy_to_cache_end, err=%d",
 		 err);
 
-	/*TODO_ADD_ERROR_INJECTION*/
+	err = inject_error_e(bc, EI_SM_13, err);
 	if (err != 0) {
 		/*
 		 * simply set error state and let request terminate

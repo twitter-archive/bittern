@@ -88,7 +88,7 @@ void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
 		 "bio_copy_from_cache, err=%d",
 		 err);
 
-	/*TODO_ADD_ERROR_INJECTION*/
+	err = inject_error_e(bc, EI_SM_3, err);
 
 	ASSERT(bc->bc_enable_extra_checksum_check == 0 ||
 	       bc->bc_enable_extra_checksum_check == 1);
@@ -123,9 +123,6 @@ void sm_read_hit_copy_from_cache_end(struct bittern_cache *bc,
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT_BITTERN_CACHE(bc);
 	ASSERT_CACHE_BLOCK(cache_block, bc);
-
-	BT_TRACE(BT_LEVEL_TRACE1, bc, wi, cache_block, bio, wi->wi_cloned_bio,
-		 "io-done");
 	ASSERT((wi->wi_flags & WI_FLAG_BIO_CLONED) != 0);
 
 	spin_lock_irqsave(&cache_block->bcb_spinlock, cache_flags);
@@ -271,7 +268,7 @@ void sm_read_miss_copy_from_device_end(struct bittern_cache *bc,
 				S_CLEAN_READ_MISS_CPF_DEVICE_END,
 				S_CLEAN_READ_MISS_CPT_CACHE_END);
 
-	/*TODO_ADD_ERROR_INJECTION*/
+	err = inject_error_e(bc, EI_SM_4, err);
 	if (err != 0) {
 		/*
 		 * Easiest way to handle this error is in the final state
@@ -340,7 +337,7 @@ void sm_read_miss_copy_to_cache_end(struct bittern_cache *bc,
 		 "end, err=%d",
 		 err);
 
-	/*TODO_ADD_ERROR_INJECTION*/
+	err = inject_error_e(bc, EI_SM_5, err);
 
 	ASSERT_WORK_ITEM(wi, bc);
 	ASSERT_BITTERN_CACHE(bc);

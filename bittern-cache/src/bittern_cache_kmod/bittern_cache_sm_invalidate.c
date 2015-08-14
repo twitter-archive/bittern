@@ -64,10 +64,11 @@ void sm_invalidate_end(struct bittern_cache *bc,
 {
 	struct cache_block *cache_block = wi->wi_cache_block;
 
+	err = inject_error_e(bc, EI_SM_14, err);
+
 	M_ASSERT(wi->wi_original_bio == NULL);
 	M_ASSERT(wi->wi_cloned_bio == NULL);
 	M_ASSERT(wi->wi_original_cache_block == NULL);
-
 	ASSERT(cache_block->bcb_state == S_CLEAN_INVALIDATE_END ||
 	       cache_block->bcb_state == S_DIRTY_INVALIDATE_END);
 	BT_TRACE(BT_LEVEL_TRACE2, bc, wi, cache_block, NULL, NULL,

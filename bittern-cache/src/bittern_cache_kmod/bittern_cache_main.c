@@ -79,7 +79,7 @@ void cached_dev_bypass_endio(struct bio *cloned_bio, int err)
 
 	work_item_free(bc, wi);
 
-	err = inject_error(bc, EI_MAIN_0, err);
+	err = inject_error_e(bc, EI_MAIN_0, err);
 	if (err != 0) {
 		ASSERT(err < 0);
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
@@ -438,7 +438,47 @@ void cache_state_machine(struct bittern_cache *bc,
 		 bc, wi, cache_block, wi->wi_original_bio, wi->wi_cloned_bio,
 		 "enter, err=%d",
 		 err);
-	err = inject_error(bc, EI_MAIN_1, err);
+
+	/*
+	 * only do error injection for non-initial states
+	 */
+	switch (cache_block->bcb_state) {
+	case S_CLEAN_READ_HIT_CPF_CACHE_END:
+	case S_DIRTY_READ_HIT_CPF_CACHE_END:
+	case S_CLEAN_READ_MISS_CPF_DEVICE_END:
+	case S_CLEAN_READ_MISS_CPT_CACHE_END:
+	case S_DIRTY_WRITE_MISS_CPT_CACHE_END:
+	case S_CLEAN_WRITE_MISS_CPT_DEVICE_END:
+	case S_CLEAN_WRITE_HIT_CPT_DEVICE_END:
+	case S_CLEAN_WRITE_MISS_CPT_CACHE_END:
+	case S_CLEAN_WRITE_HIT_CPT_CACHE_END:
+	case S_CLEAN_P_WRITE_HIT_CPT_DEVICE_END:
+	case S_CLEAN_P_WRITE_HIT_CPT_CACHE_END:
+	case S_DIRTY_P_WRITE_HIT_CPT_CACHE_START: /* not an initial state */
+	case S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_START: /* not an initial state */
+	case S_DIRTY_WRITE_HIT_CPT_CACHE_END:
+	case S_C2_DIRTY_WRITE_HIT_CPT_CACHE_END:
+	case S_DIRTY_P_WRITE_HIT_CPT_CACHE_END:
+	case S_C2_DIRTY_P_WRITE_HIT_CPT_CACHE_END:
+	case S_CLEAN_P_WRITE_MISS_CPF_DEVICE_END:
+	case S_DIRTY_P_WRITE_MISS_CPF_DEVICE_END:
+	case S_CLEAN_P_WRITE_MISS_CPT_DEVICE_END:
+	case S_CLEAN_P_WRITE_MISS_CPT_CACHE_END:
+	case S_DIRTY_P_WRITE_MISS_CPT_CACHE_END:
+	case S_DIRTY_WRITEBACK_CPF_CACHE_END:
+	case S_DIRTY_WRITEBACK_INV_CPF_CACHE_END:
+	case S_DIRTY_WRITEBACK_CPT_DEVICE_END:
+	case S_DIRTY_WRITEBACK_INV_CPT_DEVICE_END:
+	case S_DIRTY_WRITEBACK_UPD_METADATA_END:
+	case S_DIRTY_WRITEBACK_INV_UPD_METADATA_END:
+	case S_CLEAN_INVALIDATE_END:
+	case S_DIRTY_INVALIDATE_END:
+		err = inject_error_e(bc, EI_MAIN_1, err);
+		break;
+	default:
+		break;
+	}
+
 	if (err != 0) {
 		/*
 		 * This is generic state machine code, so the actual error
@@ -1676,8 +1716,8 @@ static inline void cache_update_pending(struct bittern_cache *bc,
  */
 void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 {
-	struct bio *cloned_bio;
-	struct work_item *wi;
+	struct bio *cloned_bio = NULL;
+	struct work_item *wi = NULL;
 	uint64_t tstamp = current_kernel_time_nsec();
 
 	ASSERT(bc != NULL);
@@ -1691,12 +1731,11 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 	M_ASSERT(!in_softirq());
 	M_ASSERT(!in_irq());
 
-	wi = work_item_allocate(bc,
-				NULL,
-				bio,
-				(WI_FLAG_BIO_CLONED | WI_FLAG_XID_NEW));
-	if (inject_error(bc, EI_MAIN_2, 0))
-		wi = NULL;
+	if (!inject_error(bc, EI_MAIN_2))
+		wi = work_item_allocate(bc,
+					NULL,
+					bio,
+					(WI_FLAG_BIO_CLONED | WI_FLAG_XID_NEW));
 	if (wi == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot allocate work_item for %s bypass",
@@ -1732,9 +1771,8 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 	/*
 	 * clone bio
 	 */
-	cloned_bio = bio_clone(bio, GFP_NOIO);
-	if (inject_error(bc, EI_MAIN_3, 0))
-		cloned_bio = NULL;
+	if (!inject_error(bc, EI_MAIN_3))
+		cloned_bio = bio_clone(bio, GFP_NOIO);
 	if (cloned_bio == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot clone bio for %s bypass",
@@ -1853,7 +1891,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 				bio,
 				(WI_FLAG_BIO_CLONED |
 				 WI_FLAG_XID_NEW));
-	if (inject_error(bc, EI_MAIN_4, 0))
+	if (inject_error(bc, EI_MAIN_4))
 		wi = NULL;
 	if (wi == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
@@ -1885,7 +1923,7 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 				 cache_block,
 				 cloned_cache_block,
 				 &wi->wi_pmem_ctx);
-	ret = inject_error(bc, EI_MAIN_5, ret);
+	ret = inject_error_e(bc, EI_MAIN_5, ret);
 	if (ret != 0) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot setup pmem_context for %s hit",
@@ -2031,7 +2069,7 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 				bio,
 				(WI_FLAG_BIO_CLONED |
 				 WI_FLAG_XID_NEW));
-	if (inject_error(bc, EI_MAIN_6, 0))
+	if (inject_error(bc, EI_MAIN_6))
 		wi = NULL;
 	if (wi == NULL) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
@@ -2063,7 +2101,7 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
 				 cache_block,
 				 NULL,
 				 &wi->wi_pmem_ctx);
-	ret = inject_error(bc, EI_MAIN_7, ret);
+	ret = inject_error_e(bc, EI_MAIN_7, ret);
 	if (ret != 0) {
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot setup pmem_context for %s miss",

@@ -59,6 +59,7 @@ int pmem_allocate_papi_block(struct bittern_cache *bc,
 	/*TODO_ADD_ERROR_INJECTION*/
 	if (pa->papi_make_request_wq == NULL) {
 		printk_err("%s: alloc workqueue failed\n", bc->bc_name);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		return -ENOMEM;
 	}
 
@@ -151,6 +152,7 @@ int pmem_read_sync_block(struct bittern_cache *bc,
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot allocate_buffer_vaddr");
 		printk_err("%s: cannot allocate buffer_vaddr\n", bc->bc_name);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		ret = -ENOMEM;
 		goto done;
 	}
@@ -168,6 +170,7 @@ int pmem_read_sync_block(struct bittern_cache *bc,
 			     "cannot allocate synchronous context");
 		printk_err("%s: cannot allocate synchronous context\n",
 			   bc->bc_name);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		ret = -ENOMEM;
 		goto done;
 	}
@@ -180,6 +183,7 @@ int pmem_read_sync_block(struct bittern_cache *bc,
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot allocate bio struct");
 		printk_err("%s: cannot allocate bio struct\n", bc->bc_name);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		ret = -ENOMEM;
 		goto done;
 	}
@@ -274,6 +278,7 @@ int pmem_write_sync_block(struct bittern_cache *bc,
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot allocate_buffer_vaddr");
 		printk_err("%s: cannot allocate buffer_vaddr\n", bc->bc_name);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		ret = -ENOMEM;
 		goto done;
 	}
@@ -301,6 +306,7 @@ int pmem_write_sync_block(struct bittern_cache *bc,
 			     "cannot allocate synchronous context");
 		printk_err("%s: cannot allocate synchronous context\n",
 			   bc->bc_name);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		ret = -ENOMEM;
 		goto done;
 	}
@@ -313,6 +319,7 @@ int pmem_write_sync_block(struct bittern_cache *bc,
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "cannot allocate bio struct");
 		printk_err("%s: cannot allocate bio struct\n", bc->bc_name);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		ret = -ENOMEM;
 		goto done;
 	}
@@ -417,6 +424,7 @@ void pmem_do_make_request_block(struct bittern_cache *bc,
 	/*TODO_ADD_ERROR_INJECTION*/
 	if (bio == NULL) {
 		printk_err("%s: failed to allocate bio struct\n", bc->bc_name);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
 			     "failed to allocate bio struct");
 		/*
@@ -1158,6 +1166,7 @@ static void pmem_data_put_page_write_endio(struct pmem_context *pmem_ctx,
 			     cache_state_to_str(ctx->ma_metadata_state),
 			     err);
 		printk_err("%s: put_page failed err=%d\n", bc->bc_name, err);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 
 		pmem_clear_dbi(dbi_data);
 

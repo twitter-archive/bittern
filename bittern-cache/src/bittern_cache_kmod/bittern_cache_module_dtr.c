@@ -140,10 +140,7 @@ void cache_dtr_pre(struct dm_target *ti)
 
 	printk_info("updating pmem headers\n");
 	ret = pmem_header_update(bc, 1);
-	printk_info("done updating pmem headers\n");
-	M_ASSERT(ret == 0);
-
-	printk_info("exit\n");
+	printk_info("done updating pmem headers, ret=%d\n", ret);
 }
 
 /*

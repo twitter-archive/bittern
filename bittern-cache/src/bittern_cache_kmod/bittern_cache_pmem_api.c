@@ -145,6 +145,7 @@ int pmem_context_setup(struct bittern_cache *bc,
 			     "kmem_cache_alloc kmem_slab failed");
 		printk_err("%s: kmem_cache_alloc kmem_slab failed\n",
 			   bc->bc_name);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		return -ENOMEM;
 	}
 
@@ -1001,6 +1002,7 @@ int pmem_header_initialize(struct bittern_cache *bc)
 		printk_err("%s: pmem_write_sync header0 failed, ret=%d\n",
 			   bc->bc_name,
 			   ret);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		return ret;
 	}
 
@@ -1023,6 +1025,7 @@ int pmem_header_initialize(struct bittern_cache *bc)
 		printk_err("%s: pmem_write_sync header0 failed, ret=%d\n",
 			   bc->bc_name,
 			   ret);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		return ret;
 	}
 
@@ -1059,6 +1062,7 @@ int pmem_metadata_initialize(struct bittern_cache *bc, unsigned int block_id)
 			   bc->bc_name,
 			   block_id);
 		kmem_free(pmbm, sizeof(struct pmem_block_metadata));
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		return -ENOMEM;
 	}
 
@@ -1089,6 +1093,7 @@ int pmem_metadata_initialize(struct bittern_cache *bc, unsigned int block_id)
 			   bc->bc_name,
 			   block_id,
 			   ret);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 		return ret;
 	}
 
@@ -1134,6 +1139,7 @@ int pmem_header_update(struct bittern_cache *bc, int update_both)
 			printk_err("%s: pmem_write_sync header0 failed, ret=%d\n",
 				   bc->bc_name,
 				   ret);
+			bc->error_state = ES_ERROR_FAIL_ALL;
 			return ret;
 		}
 	}
@@ -1156,6 +1162,7 @@ int pmem_header_update(struct bittern_cache *bc, int update_both)
 			printk_err("%s: pmem_write_sync header1 failed, ret=%d\n",
 				   bc->bc_name,
 				   ret);
+			bc->error_state = ES_ERROR_FAIL_ALL;
 			return ret;
 		}
 	}
@@ -1372,6 +1379,7 @@ int pmem_metadata_sync_read(struct bittern_cache *bc,
 		printk_err("%s: pmem_read_sync failed, ret=%d\n",
 			   bc->bc_name,
 			   ret);
+		bc->error_state = ES_ERROR_FAIL_ALL;
 	}
 
 	return ret;

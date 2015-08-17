@@ -51,8 +51,8 @@
 
 #include "bittern_cache_linux.h"
 
-#define BITTERN_CACHE_VERSION "1.0.4"
-#define BITTERN_CACHE_CODENAME "master-plumber"
+#define BITTERN_CACHE_VERSION "1.0.5"
+#define BITTERN_CACHE_CODENAME "plumbers"
 
 #include "bittern_cache_todo.h"
 

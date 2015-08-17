@@ -2257,6 +2257,12 @@ int bittern_cache_map(struct dm_target *ti, struct bio *bio)
 
 	ASSERT((bio->bi_rw & REQ_WRITE_SAME) == 0);
 
+	if (bc->error_state != ES_NOERROR) {
+		/* error state, bailout with error */
+		bio_endio(bio, -EIO);
+		return DM_MAPIO_SUBMITTED;
+	}
+
 	/* do this here (not workfunc) so to increment these counters once */
 	if (bio_is_discard_request(bio)) {
 		atomic_inc(&bc->bc_discard_requests);

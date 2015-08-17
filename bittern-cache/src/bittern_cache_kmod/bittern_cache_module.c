@@ -374,6 +374,22 @@ static int control_tree_walk(struct bittern_cache *bc, int value)
 	return 0;
 }
 
+/*! only allow setting of error state. do not allow reset. */
+static int param_set_error_state(struct bittern_cache *bc, int value)
+{
+	M_ASSERT(value == ES_ERROR_FAIL_ALL);
+	bc->error_state = value;
+	printk_info("%s: set error_state=%d\n",
+		    bc->bc_name,
+		    bc->error_state);
+	return 0;
+}
+
+static int param_get_error_state(struct bittern_cache *bc)
+{
+	return (int)bc->error_state;
+}
+
 static int control_dump_blocks_clean(struct bittern_cache *bc, int value)
 {
 	return cache_dump_blocks(bc, "clean", value);
@@ -625,6 +641,17 @@ struct cache_conf_param_entry cache_conf_param_list[] = {
 		.cache_conf_max = 1,
 		.cache_conf_setup_function = param_set_verifier_bugon_on_errors,
 		.cache_conf_show_function = param_get_verifier_bugon_on_errors,
+	},
+	/*
+	 * error state
+	 */
+	{
+		.cache_conf_name = "error_state",
+		.cache_conf_type = CONF_TYPE_INT,
+		.cache_conf_min = ES_ERROR_FAIL_ALL,
+		.cache_conf_max = ES_ERROR_FAIL_ALL,
+		.cache_conf_setup_function = param_set_error_state,
+		.cache_conf_show_function = param_get_error_state,
 	},
 	/*
 	 * control function -- invalidate cache blocks.
@@ -1108,6 +1135,10 @@ ssize_t cache_op_show_info(struct bittern_cache *bc, char *result)
 	       bc->bc_name,
 	       (uint64_t)(bc->bc_kmem_map),
 	       (uint64_t)(bc->bc_kmem_threads));
+	DMEMIT("%s: info: error_state=%d error_count=%d\n",
+	       bc->bc_name,
+	       bc->error_state,
+	       atomic_read(&bc->error_count));
 	return sz;
 }
 

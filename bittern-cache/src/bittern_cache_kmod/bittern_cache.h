@@ -51,8 +51,8 @@
 
 #include "bittern_cache_linux.h"
 
-#define BITTERN_CACHE_VERSION "0.28.7"
-#define BITTERN_CACHE_CODENAME "klamath"
+#define BITTERN_CACHE_VERSION "1.0.3"
+#define BITTERN_CACHE_CODENAME "master-plumber"
 
 #include "bittern_cache_todo.h"
 
@@ -417,6 +417,20 @@ struct pmem_api {
 	const struct cache_papi_interface *papi_interface;
 };
 
+/*! error state */
+enum error_state {
+	/*! all is good */
+	ES_NOERROR = 0,
+	/*! error state - fail all requests */
+	ES_ERROR_FAIL_ALL,
+	/*! error state - fail all read requests */
+	ES_ERROR_FAIL_READS,
+};
+
+/*!
+ * The mother of all structures.
+ * All of Bittern state is declared directly here or pointed by here.
+ */
 struct bittern_cache {
 	int bc_magic1;
 
@@ -435,6 +449,11 @@ struct bittern_cache {
 	uint64_t bc_cached_device_size_bytes;
 	/*! size of cached device in mbytes */
 	uint64_t bc_cached_device_size_mbytes;
+
+	/*! error state */
+	enum error_state error_state;
+	/*! error count */
+	atomic_t error_count;
 
 	/*! cache replacement mode (RANDOM, FIFO, LRU) */
 	int bc_replacement_mode;
@@ -1097,6 +1116,9 @@ static inline const char *cache_mode_to_str(struct bittern_cache *bc)
 	       (__bc)->bc_cache_mode_writeback == 1);			\
 	ASSERT((__bc)->bc_enable_req_fua == false ||			\
 	       (__bc)->bc_enable_req_fua == true);			\
+	ASSERT((__bc)->error_state == ES_NOERROR ||			\
+	       (__bc)->error_state == ES_ERROR_FAIL_ALL ||		\
+	       (__bc)->error_state == ES_ERROR_FAIL_READS);		\
 })
 
 #define ASSERT_BITTERN_CACHE(__bc) ({                                                               \

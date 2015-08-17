@@ -116,7 +116,8 @@ static inline void atomic64_set_if_higher(atomic64_t *v, long long new)
 				__stringify(__assert_expr__));              \
 		BUG();                                                      \
 		/* should never reach this */                               \
-		for (;;) ;                                                  \
+		for (;;)                                                    \
+			;                                                   \
 	}                                                                   \
 } while (0)
 

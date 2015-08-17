@@ -866,6 +866,7 @@ struct work_item *work_item_allocate(struct bittern_cache *bc,
 	ASSERT(wi->wi_io_xid != 0);
 	wi->wi_cache = bc;
 	INIT_LIST_HEAD(&wi->wi_pending_io_list);
+	INIT_LIST_HEAD(&wi->devio_pending_list);
 
 	pmem_context_initialize(&wi->wi_pmem_ctx);
 
@@ -1025,34 +1026,18 @@ void __cache_verify_hash_data_buffer(struct bittern_cache *bc,
 }
 
 /*! endio function used by @ref cached_dev_do_make_request */
-static void cached_dev_make_request_endio(struct bio *bio, int err)
+void cached_dev_make_request_endio(struct work_item *wi,
+				   struct bio *bio,
+				   int err)
 {
 	struct bittern_cache *bc;
 	struct cache_block *cache_block;
-	struct work_item *wi;
 	struct bio *original_bio;
 	bool is_original_bio;
 
-	ASSERT(bio != NULL);
 	wi = bio->bi_private;
-	ASSERT(wi != NULL);
-
 	bc = wi->wi_cache;
-	ASSERT_BITTERN_CACHE(bc);
-
 	cache_block = wi->wi_cache_block;
-	ASSERT_WORK_ITEM(wi, bc);
-	ASSERT_CACHE_BLOCK(cache_block, bc);
-	ASSERT(cache_block->bcb_xid != 0);
-	ASSERT(cache_block->bcb_xid == wi->wi_io_xid);
-	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
-	M_ASSERT(bio == wi->wi_cloned_bio);
-	ASSERT(bio_data_dir(bio) == READ ||
-	       bio_data_dir(bio) == WRITE);
-	ASSERT(cache_block->bcb_xid != 0);
-	ASSERT(cache_block->bcb_xid == wi->wi_io_xid);
-	ASSERT_CACHE_STATE(cache_block);
-	ASSERT(is_sector_number_valid(cache_block->bcb_sector));
 
 	is_original_bio = (bio == wi->wi_original_bio);
 	original_bio = wi->wi_original_bio;
@@ -1065,6 +1050,7 @@ static void cached_dev_make_request_endio(struct bio *bio, int err)
 	else
 		cache_timer_add(&bc->bc_timer_cached_device_writes,
 				wi->wi_ts_physio);
+
 	if (is_original_bio) {
 		M_ASSERT(wi->wi_cloned_bio != NULL);
 		M_ASSERT(wi->wi_original_bio == wi->wi_cloned_bio);
@@ -1158,19 +1144,6 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 	}
 
 	if (datadir == WRITE) {
-#if 0
-		/*
-		 * Turn off issuing of REQ_FUA until hang problem is fixed.
-		 */
-		/*
-		 * Always set REQ_FUA unless disabled for all writes,
-		 * writeback, invalidation and write-through operations.
-		 */
-		M_ASSERT(bc->bc_enable_req_fua == false ||
-			 bc->bc_enable_req_fua == true);
-		if (bc->bc_enable_req_fua)
-			bio->bi_rw |= REQ_FUA;
-#endif
 		bio_set_data_dir_write(bio);
 	} else {
 		bio_set_data_dir_read(bio);
@@ -1178,8 +1151,6 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 
 	bio->bi_iter.bi_sector = cache_block->bcb_sector;
 	bio->bi_iter.bi_size = PAGE_SIZE;
-	bio->bi_bdev = bc->bc_dev->bdev;
-	bio->bi_end_io = cached_dev_make_request_endio;
 	bio->bi_private = wi;
 	bio->bi_vcnt = 1;
 	bio->bi_io_vec[0].bv_page = pmem_context_data_page(&wi->wi_pmem_ctx);
@@ -1194,7 +1165,8 @@ void cached_dev_do_make_request(struct bittern_cache *bc,
 	atomic_inc(&bc->bc_make_request_count);
 
 	wi->wi_ts_physio = current_kernel_time_nsec();
-	generic_make_request(bio);
+
+	cached_devio_make_request(bc, wi, bio);
 }
 
 static void cached_dev_make_request_worker(struct work_struct *work)

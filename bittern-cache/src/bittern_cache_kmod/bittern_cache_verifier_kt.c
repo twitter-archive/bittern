@@ -75,7 +75,7 @@ int cache_block_verify_data(struct bittern_cache *bc,
 	bio_set_data_dir_read(bio);
 	bio->bi_iter.bi_sector = cache_block->bcb_sector;
 	bio->bi_iter.bi_size = PAGE_SIZE;
-	bio->bi_bdev = bc->bc_dev->bdev;
+	bio->bi_bdev = bc->devio.dm_dev->bdev;
 	bio->bi_end_io = cache_block_verify_data_enbio;
 	bio->bi_private = (void *)&bcontext;
 	bio->bi_io_vec[0].bv_page = virtual_to_page(buf);

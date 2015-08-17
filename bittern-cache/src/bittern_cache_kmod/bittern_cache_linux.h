@@ -36,6 +36,9 @@
 #define jiffies_to_secs(__jiffies) \
 	((unsigned long)(jiffies_to_msecs(__jiffies)) / 1000UL)
 
+/* percent macro: this calculates _a % of _b (result undefined if _b is zero) */
+#define PERCENT_OF(_a, _b) ({ ((_a) * 100) / (_b); })
+
 #define RB_NON_EMPTY_NODE(__node) (!RB_EMPTY_NODE(__node))
 #define RB_NON_EMPTY_ROOT(__root) (!RB_EMPTY_ROOT(__root))
 
@@ -46,6 +49,8 @@
 #define bio_set_data_dir_read(__bio) ((__bio)->bi_rw &= ~1)
 #define data_dir_read(__bi_rw) (((__bi_rw) & 1) == READ)
 #define data_dir_write(__bi_rw) (((__bi_rw) & 1) == WRITE)
+#define bio_data_dir_read(__bio) (((__bio)->bi_rw & 1) == READ)
+#define bio_data_dir_write(__bio) (((__bio)->bi_rw & 1) == WRITE)
 
 /*!
  * Atomically compares "new" with "v".

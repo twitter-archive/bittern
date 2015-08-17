@@ -344,6 +344,43 @@ do_get() {
 	__cache_device_size=$(get_cache_info in_use_cache_size)
 	__cache_device_size=$(($__cache_device_size / 1024))
 	__cache_device_size=$(($__cache_device_size / 1024))
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 4b90819c9f92e855c24c8d0b8d0f5a4bf0c3c47f
+	echo "	 cache_device_size = $__cache_device_size mbytes"
+	echo "error_state:"
+	echo "	error_state = $(get_cache_conf error_state)"
+	echo "cache blocks:"
+	echo "	 current_clean_blocks = $(get_cache_stats valid_clean_cache_entries)"
+	echo "	 current_dirty_blocks = $(get_cache_stats valid_dirty_cache_entries)"
+	echo "	 current_invalid_blocks = $(get_cache_stats invalid_cache_entries)"
+	echo "cache mode:"
+	echo "	 cache_mode = $(get_cache_mode cache_mode)"
+	echo "replacement algorithm:"
+	echo "	 replacement = $(get_replacement replacement)"
+	echo "cache conf parameters:"
+	echo "	 devio_worker_delay = $(get_cache_conf devio_worker_delay)"
+	echo "	 devio_fua_insert = $(get_cache_conf devio_fua_insert)"
+	echo "	 max_pending_requests = $(get_cache_conf max_pending_requests)"
+	echo "	 bgwriter_conf_flush_on_exit = $(get_cache_conf bgwriter_conf_flush_on_exit)"
+	echo "	 bgwriter_conf_greedyness = $(get_cache_conf bgwriter_conf_greedyness)"
+	echo "	 bgwriter_conf_max_queue_depth_pct = $(get_cache_conf bgwriter_conf_max_queue_depth_pct)"
+	echo "	 bgwriter_conf_cluster_size = $(get_cache_conf bgwriter_conf_cluster_size)"
+	echo "	 invalidator_conf_min_invalid_count = $(get_cache_conf invalidator_conf_min_invalid_count)"
+	echo "	 enable_extra_checksum_check = $(get_cache_conf enable_extra_checksum_check)"
+	echo "debug parameters:"
+	echo "	 trace = $(get_cache_trace trace)"
+	echo "sequential read bypass:"
+	echo "	 read_bypass_enabled = $(get_cache_sequential read_bypass_enabled)"
+	echo "	 read_bypass_threshold = $(get_cache_sequential read_bypass_threshold)"
+	echo "	 read_bypass_timeout = $(get_cache_sequential read_bypass_timeout)"
+	echo "sequential write bypass:"
+	echo "	 write_bypass_enabled = $(get_cache_sequential write_bypass_enabled)"
+	echo "	 write_bypass_threshold = $(get_cache_sequential write_bypass_threshold)"
+	echo "	 write_bypass_timeout = $(get_cache_sequential write_bypass_timeout)"
+<<<<<<< HEAD
+=======
 	echo "	cache_device_size = $__cache_device_size mbytes"
 
 	echo "error_state:"
@@ -383,6 +420,9 @@ do_get() {
 	echo "	write_bypass_threshold = $(get_cache_sequential write_bypass_threshold)"
 	echo "	write_bypass_timeout = $(get_cache_sequential write_bypass_timeout)"
 
+>>>>>>> master
+=======
+>>>>>>> 4b90819c9f92e855c24c8d0b8d0f5a4bf0c3c47f
 	echo "verifier thread:"
 	__verifier_running=$(get_cache_verifier running)
 	echo "	running = $__verifier_running"
@@ -562,6 +602,14 @@ do_set() {
 	"bgwriter_conf_cluster_size")
 		do_set_check_value
 		set_cache_conf bgwriter_conf_cluster_size $VALUE_OPTION
+		;;
+	"devio_worker_delay")
+		do_set_check_value
+		set_cache_conf devio_worker_delay $VALUE_OPTION
+		;;
+	"devio_fua_insert")
+		do_set_check_value
+		set_cache_conf devio_fua_insert $VALUE_OPTION
 		;;
 	"invalidator_conf_min_invalid_count")
 		do_set_check_value

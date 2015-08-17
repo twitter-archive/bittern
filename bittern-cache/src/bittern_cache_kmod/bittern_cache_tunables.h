@@ -135,23 +135,20 @@
  * maximum pending requests - we will never have more than max pending requests
  * queued the max is the lowest of the two numbers below
  */
-#define CACHE_MIN_MAX_PENDING_REQUESTS 50
-#define CACHE_DEFAULT_MAX_PENDING_REQUESTS 400
-#define CACHE_MAX_MAX_PENDING_REQUESTS 500
-
-/*
- * bgwriter tunables
- */
-/* expressed as percentage of max pending requests */
-#define CACHE_BGWRITER_MIN_QUEUE_DEPTH_PCT 20
+#define CACHE_MIN_MAX_PENDING_REQUESTS 10
+#define CACHE_DEFAULT_MAX_PENDING_REQUESTS 100
+#define CACHE_MAX_MAX_PENDING_REQUESTS 1000
 
 /* expressed as percentage of max pending requests */
-#define CACHE_BGWRITER_MAX_QUEUE_DEPTH_PCT 90
+#define CACHE_BGWRITER_MIN_QUEUE_DEPTH_PCT 10
 
 /* expressed as percentage of max pending requests */
-#define CACHE_BGWRITER_DEFAULT_QUEUE_DEPTH_PCT 50
+#define CACHE_BGWRITER_MAX_QUEUE_DEPTH_PCT 100
 
-/*
+/* expressed as percentage of max pending requests */
+#define CACHE_BGWRITER_DEFAULT_QUEUE_DEPTH_PCT 90
+
+/*!
  * default cluster size amount, that is, the number of blocks
  * which the bgwriter will try to write out in a sequential batch.
  * the exact number is not hugely important right now, but eventually
@@ -162,21 +159,18 @@
  *
  * cluster size of 1 essentially turns off sequential batching.
  */
-#define CACHE_BGWRITER_MIN_CLUSTER_SIZE 1
-#define CACHE_BGWRITER_DEFAULT_CLUSTER_SIZE 1
-#define CACHE_BGWRITER_MAX_CLUSTER_SIZE 32
+#define CACHE_BGWRITER_MIN_CLUSTER_SIZE 1 /* no clustering */
+#define CACHE_BGWRITER_DEFAULT_CLUSTER_SIZE 64 /* 256 kbytes */
+#define CACHE_BGWRITER_MAX_CLUSTER_SIZE 512 /* 2048 mbytes */
 
-/*
- * invalidator tunables
- */
-#define S_INVALIDATOR_MIN_INVALID_COUNT \
-	(CACHE_MAX_MAX_PENDING_REQUESTS * 2)
+/*! bgwriter policy */
+#define CACHE_BGWRITER_DEFAULT_POLICY	"classic"
+/* #define CACHE_BGWRITER_DEFAULT_POLICY	"default" */
 
-#define S_INVALIDATOR_DEFAULT_INVALID_COUNT \
-	(S_INVALIDATOR_MIN_INVALID_COUNT + 4000)
-
-#define S_INVALIDATOR_MAX_INVALID_COUNT \
-	(S_INVALIDATOR_MIN_INVALID_COUNT + 10000)
+/*! lowest minimum number of invalid blocks allowed */
+#define INVALIDATOR_MIN_INVALID_COUNT (CACHE_MAX_MAX_PENDING_REQUESTS * 2)
+#define INVALIDATOR_DEFAULT_INVALID_COUNT (INVALIDATOR_MIN_INVALID_COUNT + 10000)
+#define INVALIDATOR_MAX_INVALID_COUNT (INVALIDATOR_MIN_INVALID_COUNT + 30000)
 
 /*
  * we need a minimal amount of allocatable page pool buffers.
@@ -205,5 +199,15 @@
  *   crc32c checksums so with 100 megabytes we track 100 gbytes
  */
 #define CACHE_MAX_TRACK_HASH_CHECKSUMS                (1000UL * 1024UL * 1024UL)
+
+/*! how often dev worker runs */
+#define CACHED_DEV_WORKER_DELAY_MIN 1
+#define CACHED_DEV_WORKER_DELAY_DEFAULT 1
+#define CACHED_DEV_WORKER_DELAY_MAX 100
+
+/*! how often FUA is inserted in the write stream */
+#define CACHED_DEV_FUA_INSERT_MIN 10
+#define CACHED_DEV_FUA_INSERT_DEFAULT 500
+#define CACHED_DEV_FUA_INSERT_MAX 5000
 
 #endif /* BITTERN_CACHE_TUNABLES_H */

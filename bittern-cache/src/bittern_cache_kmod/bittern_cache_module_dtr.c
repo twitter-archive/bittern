@@ -143,6 +143,14 @@ void cache_dtr_pre(struct dm_target *ti)
 	printk_info("done updating pmem headers\n");
 	M_ASSERT(ret == 0);
 
+	printk_info("cancelling dev_flush delayed_work\n");
+	cancel_delayed_work(&bc->devio.flush_delayed_work);
+	printk_info("flushing dev_flush workqueue\n");
+	M_ASSERT(bc->devio.flush_wq != NULL);
+	flush_workqueue(bc->devio.flush_wq);
+	printk_info("destroying dev_flush workqueue\n");
+	destroy_workqueue(bc->devio.flush_wq);
+
 	printk_info("exit\n");
 }
 
@@ -368,10 +376,10 @@ void cache_dtr(struct dm_target *ti)
 	M_ASSERT(bc->bc_kmem_threads != NULL);
 	kmem_cache_destroy(bc->bc_kmem_threads);
 
-	printk_info("dm_put_device\n");
-	dm_put_device(ti, bc->bc_dev);
+	printk_info("dm_put_device devio.dm_dev\n");
+	dm_put_device(ti, bc->devio.dm_dev);
 
-	printk_info("dm_put_device cache\n");
+	printk_info("dm_put_device bc_cache_dev\n");
 	dm_put_device(ti, bc->bc_cache_dev);
 
 #ifdef ENABLE_TRACK_CRC32C

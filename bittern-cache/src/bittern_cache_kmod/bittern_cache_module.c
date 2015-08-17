@@ -272,19 +272,30 @@ static const char *param_show_replacement_mode(struct bittern_cache *bc)
 	return cache_replacement_mode_to_str(bc->bc_replacement_mode);
 }
 
-static int param_set_enable_req_fua(struct bittern_cache *bc, int value)
+static int param_set_dev_worker_delay(struct bittern_cache *bc, int value)
 {
-	ASSERT(value == false || value == true);
-	bc->bc_enable_req_fua = (bool)value;
-	printk_info("%s: set enable_req_fua=%d\n",
-		    bc->bc_name,
-		    bc->bc_enable_req_fua);
+	if (value == 0)
+		value = CACHED_DEV_WORKER_DELAY_DEFAULT;
+	bc->devio.conf_worker_delay = value;
 	return 0;
 }
 
-static int param_get_enable_req_fua(struct bittern_cache *bc)
+static int param_get_dev_worker_delay(struct bittern_cache *bc)
 {
-	return (int)bc->bc_enable_req_fua;
+	return (int)bc->devio.conf_worker_delay;
+}
+
+static int param_set_dev_fua_insert(struct bittern_cache *bc, int value)
+{
+	if (value == 0)
+		value = CACHED_DEV_FUA_INSERT_DEFAULT;
+	bc->devio.conf_fua_insert = value;
+	return 0;
+}
+
+static int param_get_dev_fua_insert(struct bittern_cache *bc)
+{
+	return (int)bc->devio.conf_fua_insert;
 }
 
 static int param_set_verifier_running(struct bittern_cache *bc, int value)
@@ -442,8 +453,8 @@ struct cache_conf_param_entry cache_conf_param_list[] = {
 	{
 		.cache_conf_name = "bgwriter_conf_greedyness",
 		.cache_conf_type = CONF_TYPE_INT,
-		.cache_conf_min = 20,
-		.cache_conf_max = -20,
+		.cache_conf_min = -20,
+		.cache_conf_max = 20,
 		.cache_conf_setup_function = set_bgwriter_conf_greedyness,
 		.cache_conf_show_function = show_bgwriter_conf_greedyness,
 	},
@@ -475,8 +486,8 @@ struct cache_conf_param_entry cache_conf_param_list[] = {
 	{
 		.cache_conf_name = "invalidator_conf_min_invalid_count",
 		.cache_conf_type = CONF_TYPE_INT,
-		.cache_conf_min = S_INVALIDATOR_MIN_INVALID_COUNT,
-		.cache_conf_max = S_INVALIDATOR_MAX_INVALID_COUNT,
+		.cache_conf_min = INVALIDATOR_MIN_INVALID_COUNT,
+		.cache_conf_max = INVALIDATOR_MAX_INVALID_COUNT,
 		.cache_conf_setup_function = cache_calculate_min_invalid,
 		.cache_conf_show_function = show_cache_min_invalid,
 	},
@@ -575,15 +586,26 @@ struct cache_conf_param_entry cache_conf_param_list[] = {
 		.cache_conf_show_function_str = param_show_replacement_mode,
 	},
 	/*
-	 * enable_req_fua
+	 * devio_worker_delay
 	 */
 	{
-		.cache_conf_name = "enable_req_fua",
+		.cache_conf_name = "devio_worker_delay",
 		.cache_conf_type = CONF_TYPE_INT,
-		.cache_conf_min = 0,
-		.cache_conf_max = 1,
-		.cache_conf_setup_function = param_set_enable_req_fua,
-		.cache_conf_show_function = param_get_enable_req_fua,
+		.cache_conf_min = CACHED_DEV_WORKER_DELAY_MIN,
+		.cache_conf_max = CACHED_DEV_WORKER_DELAY_MAX,
+		.cache_conf_setup_function = param_set_dev_worker_delay,
+		.cache_conf_show_function = param_get_dev_worker_delay,
+	},
+	/*
+	 * devio_fua_insert
+	 */
+	{
+		.cache_conf_name = "devio_fua_insert",
+		.cache_conf_type = CONF_TYPE_INT,
+		.cache_conf_min = CACHED_DEV_FUA_INSERT_MIN,
+		.cache_conf_max = CACHED_DEV_FUA_INSERT_MAX,
+		.cache_conf_setup_function = param_set_dev_fua_insert,
+		.cache_conf_show_function = param_get_dev_fua_insert,
 	},
 	/*
 	 * verifier params
@@ -885,10 +907,23 @@ ssize_t cache_op_show_stats_extra(struct bittern_cache *bc,
 	       atomic_read(&bc->bc_dirty_write_clone_alloc_ok),
 	       atomic_read(&bc->bc_dirty_write_clone_alloc_fail),
 	       list_empty(&bc->bc_pending_requests_list));
-	DMEMIT("%s: stats_extra: bc_make_request_count=%u bc_make_request_wq_count=%u\n",
+	DMEMIT("%s: stats_extra: make_request_count=%u make_request_wq_count=%u\n",
 	       bc->bc_name,
 	       atomic_read(&bc->bc_make_request_count),
 	       atomic_read(&bc->bc_make_request_wq_count));
+	DMEMIT("%s: stats_extra: dev_pending_count=%d dev_flush_pending_count=%d dev_pure_flush_pending_count=%d\n",
+	       bc->bc_name,
+	       bc->devio.pending_count,
+	       bc->devio.flush_pending_count,
+	       bc->devio.pure_flush_pending_count);
+	DMEMIT("%s: stats_extra: dev_pure_flush_total_count=%llu dev_flush_flush_total_count=%llu\n",
+	       bc->bc_name,
+	       bc->devio.pure_flush_total_count,
+	       bc->devio.flush_total_count);
+	DMEMIT("%s: stats_extra: dev_gennum=%llu dev_gennum_flush=%llu\n",
+	       bc->bc_name,
+	       bc->devio.gennum,
+	       bc->devio.gennum_flush);
 	return sz;
 }
 
@@ -1425,8 +1460,6 @@ ssize_t cache_op_show_timers(struct bittern_cache *bc, char *result)
 	       T_FMT_ARGS(bc, bc_timer_read_dirty_hits),
 	       T_FMT_ARGS(bc, bc_timer_write_dirty_hits));
 	DMEMIT("%s: timers: "
-	       T_FMT_STRING("cached_device_reads") " "
-	       T_FMT_STRING("cached_device_writes") " "
 	       T_FMT_STRING("writebacks") " "
 	       T_FMT_STRING("invalidations") " "
 	       T_FMT_STRING("pending_queue") " "
@@ -1434,13 +1467,20 @@ ssize_t cache_op_show_timers(struct bittern_cache *bc, char *result)
 	       T_FMT_STRING("deferred_wait_page") " "
 	       "\n",
 	       bc->bc_name,
-	       T_FMT_ARGS(bc, bc_timer_cached_device_reads),
-	       T_FMT_ARGS(bc, bc_timer_cached_device_writes),
 	       T_FMT_ARGS(bc, bc_timer_writebacks),
 	       T_FMT_ARGS(bc, bc_timer_invalidations),
 	       T_FMT_ARGS(bc, bc_timer_pending_queue),
 	       T_FMT_ARGS(bc, bc_deferred_wait_busy.bc_defer_timer),
 	       T_FMT_ARGS(bc, bc_deferred_wait_page.bc_defer_timer));
+	DMEMIT("%s: timers: "
+	       T_FMT_STRING("cached_device_reads") " "
+	       T_FMT_STRING("cached_device_writes") " "
+	       T_FMT_STRING("cached_device_flushes") " "
+	       "\n",
+	       bc->bc_name,
+	       T_FMT_ARGS(bc, bc_timer_cached_device_reads),
+	       T_FMT_ARGS(bc, bc_timer_cached_device_writes),
+	       T_FMT_ARGS(bc, bc_timer_cached_device_flushes));
 	DMEMIT("%s: timers: " T_FMT_STRING("resource_alloc_reads") " " T_FMT_STRING("resource_alloc_writes") "\n",
 	       bc->bc_name,
 	       T_FMT_ARGS(bc, bc_timer_resource_alloc_reads),
@@ -1905,7 +1945,7 @@ int bittern_cache_iterate_devices(struct dm_target *ti,
 	printk_info("bc=%p, ti=%p, fn=%p, data=%p\n", bc, ti, fn, data);
 	ASSERT_BITTERN_CACHE(bc);
 
-	return (*fn) (ti, bc->bc_dev, 0, ti->len, data);
+	return (*fn) (ti, bc->devio.dm_dev, 0, ti->len, data);
 }
 
 void bittern_cache_io_hints(struct dm_target *ti, struct queue_limits *lim)
@@ -1991,13 +2031,13 @@ void bittern_cache_status(struct dm_target *ti, status_type_t type,
 	case STATUSTYPE_INFO:
 		DMEMIT("%u %u %u %p", atomic_read(&bc->bc_pending_requests),
 		       atomic_read(&bc->bc_read_requests),
-		       atomic_read(&bc->bc_write_requests), bc->bc_dev);
+		       atomic_read(&bc->bc_write_requests), bc->devio.dm_dev);
 		break;
 
 	case STATUSTYPE_TABLE:
 		DMEMIT("%u %u %u %p", atomic_read(&bc->bc_pending_requests),
 		       atomic_read(&bc->bc_read_requests),
-		       atomic_read(&bc->bc_write_requests), bc->bc_dev);
+		       atomic_read(&bc->bc_write_requests), bc->devio.dm_dev);
 		break;
 	}
 }

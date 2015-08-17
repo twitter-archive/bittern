@@ -36,6 +36,7 @@ M_SOURCE_FILES = bittern_cache_module.c \
 			bittern_cache_module_dtr.c \
 			bittern_cache_main.c \
 			bittern_cache_main_subr.c \
+			bittern_cache_cached_devio.c \
 			bittern_cache_sm_read.c \
 			bittern_cache_sm_write.c \
 			bittern_cache_sm_pwrite.c \
@@ -43,7 +44,6 @@ M_SOURCE_FILES = bittern_cache_module.c \
 			bittern_cache_sm_invalidate.c \
 			bittern_cache_getput.c \
 			bittern_cache_bgwriter_policy.c \
-			bittern_cache_bgwriter_policy_experimental.c \
 			bittern_cache_bgwriter_kt.c \
 			bittern_cache_invalidator_kt.c \
 			bittern_cache_pmem_api.c \
@@ -67,6 +67,7 @@ bittern_cache-objs := bittern_cache_module.o \
 			bittern_cache_module_dtr.o \
 			bittern_cache_main.o \
 			bittern_cache_main_subr.o \
+			bittern_cache_cached_devio.o \
 			bittern_cache_sm_read.o \
 			bittern_cache_sm_write.o \
 			bittern_cache_sm_pwrite.o \
@@ -74,7 +75,6 @@ bittern_cache-objs := bittern_cache_module.o \
 			bittern_cache_sm_invalidate.o \
 			bittern_cache_getput.o \
 			bittern_cache_bgwriter_policy.o \
-			bittern_cache_bgwriter_policy_experimental.o \
 			bittern_cache_bgwriter_kt.o \
 			bittern_cache_invalidator_kt.o \
 			bittern_cache_pmem_api.o \

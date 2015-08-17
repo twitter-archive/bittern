@@ -1179,9 +1179,18 @@ static void pmem_header_update_worker(struct work_struct *work)
 	ASSERT_BITTERN_CACHE(bc);
 	M_ASSERT(bc->bc_pmem_update_workqueue != NULL);
 
-	BT_TRACE(BT_LEVEL_TRACE2, bc, NULL, NULL, NULL, NULL, "bc=%p", bc);
-	ret = pmem_header_update(bc, 0);
-	M_ASSERT_FIXME(ret == 0);
+	if (bc->error_state == ES_NOERROR) {
+		BT_TRACE(BT_LEVEL_TRACE2, bc, NULL, NULL, NULL, NULL, "bc=%p", bc);
+		ret = pmem_header_update(bc, 0);
+
+		/* should make this a common function */
+		if (ret != 0) {
+			printk_err("%s: cannot update header: %d. will fail all future requests\n",
+				   bc->bc_name,
+				   ret);
+			bc->error_state = ES_ERROR_FAIL_ALL;
+		}
+	}
 
 	schedule_delayed_work(&bc->bc_pmem_update_work,
 			      msecs_to_jiffies(30000));

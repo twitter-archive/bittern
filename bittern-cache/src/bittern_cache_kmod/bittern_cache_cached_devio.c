@@ -117,7 +117,7 @@ static void cached_devio_flush_end_bio(struct bio *bio, int err)
 
 	bio_put(bio);
 
-	/*TODO_ADD_ERROR_INJECTION*/
+#warning "add error injection here when done merging with error handling"
 	cached_devio_flush_end_bio_process(flush_meta->bc,
 					   flush_meta->gennum,
 					   err);
@@ -149,25 +149,33 @@ void cached_devio_flush_delayed_worker(struct work_struct *work)
 	ASSERT_BITTERN_CACHE(bc);
 
 	flush_meta = kmem_alloc(sizeof(struct flush_meta), GFP_NOIO);
-	M_ASSERT_FIXME(flush_meta != NULL);
-	flush_meta->bc = bc;
-
-	bio = bio_alloc(GFP_NOIO, 1);
-#if 0
-	/*TODO_ADD_ERROR_INJECTION*/
-	if (bio == NULL) {
-		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, cache_block, NULL, NULL,
-			     "cannot allocate bio, wi=%p",
-			     wi);
-		printk_err("%s: cannot allocate bio\n", bc->bc_name);
+#warning "add error injection here when done merging with error handling"
+	if (flush_meta == NULL) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot allocate flush_meta");
+		printk_err("%s: cannot allocate flush_meta\n", bc->bc_name);
+		kmem_free(flush_meta, sizeof(struct flush_meta));
 		/*
 		 * Allocation failed, bubble up error to state machine.
 		 */
-		cache_state_machine(bc, wi, -ENOMEM);
+		cached_devio_flush_end_bio_process(bc, 0, -ENOMEM);
 		return;
 	}
-#endif
-	M_ASSERT_FIXME(bio != NULL);
+	flush_meta->bc = bc;
+
+	bio = bio_alloc(GFP_NOIO, 1);
+#warning "add error injection here when done merging with error handling"
+	if (bio == NULL) {
+		BT_DEV_TRACE(BT_LEVEL_ERROR, bc, NULL, NULL, NULL, NULL,
+			     "cannot allocate bio");
+		printk_err("%s: cannot allocate bio\n", bc->bc_name);
+		kmem_free(flush_meta, sizeof(struct flush_meta));
+		/*
+		 * Allocation failed, bubble up error to state machine.
+		 */
+		cached_devio_flush_end_bio_process(bc, 0, -ENOMEM);
+		return;
+	}
 
 	bio->bi_rw |= REQ_FLUSH | REQ_FUA;
 	bio_set_data_dir_write(bio);

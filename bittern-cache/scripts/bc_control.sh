@@ -345,7 +345,12 @@ do_get() {
 	__cache_device_size=$(($__cache_device_size / 1024))
 	__cache_device_size=$(($__cache_device_size / 1024))
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 4b90819c9f92e855c24c8d0b8d0f5a4bf0c3c47f
 	echo "	 cache_device_size = $__cache_device_size mbytes"
+	echo "error_state:"
+	echo "	error_state = $(get_cache_conf error_state)"
 	echo "cache blocks:"
 	echo "	 current_clean_blocks = $(get_cache_stats valid_clean_cache_entries)"
 	echo "	 current_dirty_blocks = $(get_cache_stats valid_dirty_cache_entries)"
@@ -374,6 +379,7 @@ do_get() {
 	echo "	 write_bypass_enabled = $(get_cache_sequential write_bypass_enabled)"
 	echo "	 write_bypass_threshold = $(get_cache_sequential write_bypass_threshold)"
 	echo "	 write_bypass_timeout = $(get_cache_sequential write_bypass_timeout)"
+<<<<<<< HEAD
 =======
 	echo "	cache_device_size = $__cache_device_size mbytes"
 
@@ -415,6 +421,8 @@ do_get() {
 	echo "	write_bypass_timeout = $(get_cache_sequential write_bypass_timeout)"
 
 >>>>>>> master
+=======
+>>>>>>> 4b90819c9f92e855c24c8d0b8d0f5a4bf0c3c47f
 	echo "verifier thread:"
 	__verifier_running=$(get_cache_verifier running)
 	echo "	running = $__verifier_running"

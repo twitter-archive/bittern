@@ -114,8 +114,33 @@ void cache_bgwriter_compute_policy_old_default(struct bittern_cache *bc)
 void cache_bgwriter_compute_policy_classic(struct bittern_cache *bc)
 {
 	int dirty_pct;
-	int queue_depth_pct, min_age_s;
 	unsigned int valid_entries_dirty, total_entries;
+
+	/* writeback queue_depth indexed by percent dirty */
+	static int queue_depth[] = {
+		2,	/* 0% */
+		2,	/* 5% */
+		2,	/* 10% */
+		2,	/* 15% */
+		2,	/* 20% */
+		5,	/* 25% */
+		5,	/* 30% */
+		5,	/* 35% */
+		5,	/* 40% */
+		10,	/* 45% */
+		15,	/* 50% */
+		20,	/* 55% */
+		25,	/* 60% */
+		30,	/* 65% */
+		35,	/* 70% */
+		40,	/* 75% */
+		45,	/* 80% */
+		50,	/* 85% */
+		75,	/* 90% */
+		100,	/* 95% */
+		150,	/* 100% */
+                250,    /* 105% */
+	};
 
 	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
@@ -125,198 +150,62 @@ void cache_bgwriter_compute_policy_classic(struct bittern_cache *bc)
 	dirty_pct = T_PCT(total_entries, valid_entries_dirty);
 	ASSERT(dirty_pct <= 100);
 
-	bc->bc_bgwriter_curr_max_queue_depth =
-	    PERCENT_OF(bc->bc_bgwriter_conf_max_queue_depth_pct,
-			   bc->bc_max_pending_requests);
+	bc->bc_bgwriter_curr_max_queue_depth = (bc->bc_max_pending_requests * bc->bc_bgwriter_conf_max_queue_depth_pct) / 100;
 	bc->bc_bgwriter_curr_rate_per_sec = 0;
 	bc->bc_bgwriter_curr_min_age_secs = 0;
-
-	if (dirty_pct > 95) {
-		queue_depth_pct = 80;
-		min_age_s = 1;
-	} else if (dirty_pct > 90) {
-		queue_depth_pct = 85;
-		min_age_s = 1;
-	} else if (dirty_pct > 80) {
-		queue_depth_pct = 70;
-		min_age_s = 1;
-	} else if (dirty_pct > 70) {
-		queue_depth_pct = 50;
-		min_age_s = 2;
-	} else if (dirty_pct > 60) {
-		queue_depth_pct = 45;
-		min_age_s = 4;
-	} else if (dirty_pct > 50) {
-		queue_depth_pct = 40;
-		min_age_s = 5;
-	} else if (dirty_pct > 40) {
-		queue_depth_pct = 30;
-		min_age_s = 20;
-	} else if (dirty_pct > 30) {
-		queue_depth_pct = 15;
-		min_age_s = 20;
-	} else if (dirty_pct > 20) {
-		queue_depth_pct = 10;
-		min_age_s = 20;
-	} else {
-		queue_depth_pct = 5;
-		min_age_s = 30;
-	}
-
-	bc->bc_bgwriter_curr_queue_depth =
-			PERCENT_OF(queue_depth_pct,
-				   bc->bc_bgwriter_curr_max_queue_depth);
-	bc->bc_bgwriter_curr_min_age_secs = min_age_s;
+	bc->bc_bgwriter_curr_queue_depth = (queue_depth[dirty_pct / 5] * bc->bc_bgwriter_curr_max_queue_depth) / 100;
+	bc->bc_bgwriter_curr_min_age_secs = 4;
 }
 
-#undef BITTERN_CACHE_ALLOW_EXPERIMENTAL_POLICIES
+void cache_bgwriter_compute_policy_dirty_ratio(struct bittern_cache *bc)
+{
+	int dirty_pct;
+	unsigned int valid_entries_dirty, total_entries;
+
+	/* writeback queue_depth indexed by percent dirty */
+	static int queue_depth[] = {
+		1,	/* 0% */
+		1,	/* 5% */
+		1,	/* 10% */
+		1,	/* 15% */
+		1,	/* 20% */
+		1,	/* 25% */
+		1,	/* 30% */
+		1,	/* 35% */
+		1,	/* 40% */
+		1,	/* 45% */
+		1,	/* 50% */
+		1,	/* 55% */
+		1,	/* 60% */
+		1,	/* 65% */
+		5,	/* 70% */
+		10,	/* 75% */
+		25,	/* 80% */
+		50,	/* 85% */
+		100,	/* 90% */
+		150,	/* 95% */
+		200,	/* 100% */
+                300,    /* 105% */
+	};
+
+	ASSERT(bc != NULL);
+	ASSERT_BITTERN_CACHE(bc);
+	valid_entries_dirty = atomic_read(&bc->bc_valid_entries_dirty);
+	total_entries = atomic_read(&bc->bc_total_entries);
+	ASSERT(valid_entries_dirty <= total_entries);
+	dirty_pct = T_PCT(total_entries, valid_entries_dirty);
+	ASSERT(dirty_pct <= 100);
+
+	bc->bc_bgwriter_curr_max_queue_depth = (bc->bc_max_pending_requests * bc->bc_bgwriter_conf_max_queue_depth_pct) / 100;
+	bc->bc_bgwriter_curr_rate_per_sec = 0;
+	bc->bc_bgwriter_curr_min_age_secs = 0;
+	bc->bc_bgwriter_curr_queue_depth = (queue_depth[dirty_pct / 5] * bc->bc_bgwriter_curr_max_queue_depth) / 100;
+	bc->bc_bgwriter_curr_min_age_secs = 4;
+}
+
+#define BITTERN_CACHE_ALLOW_EXPERIMENTAL_POLICIES
 #ifdef BITTERN_CACHE_ALLOW_EXPERIMENTAL_POLICIES
 
-/*! \todo need to update this code to handle _devio_ layer */
-void cache_bgwriter_compute_policy_aggressive(struct bittern_cache *bc)
-{
-	int dirty_pct, dirty_pct_f100;
-	unsigned int valid_entries_dirty, total_entries;
-
-	ASSERT(bc != NULL);
-	ASSERT_BITTERN_CACHE(bc);
-	valid_entries_dirty = atomic_read(&bc->bc_valid_entries_dirty);
-	total_entries = atomic_read(&bc->bc_total_entries);
-	ASSERT(valid_entries_dirty <= total_entries);
-	dirty_pct = T_PCT(total_entries, valid_entries_dirty);
-	dirty_pct_f100 = T_PCT_F100(total_entries, valid_entries_dirty);
-	ASSERT(dirty_pct <= 100);
-
-	bc->bc_bgwriter_curr_max_queue_depth =
-	    PERCENT_OF(bc->bc_bgwriter_conf_max_queue_depth_pct,
-			   bc->bc_max_pending_requests);
-	bc->bc_bgwriter_curr_rate_per_sec = 0;
-	bc->bc_bgwriter_curr_min_age_secs = 0;
-
-	if (dirty_pct > 95) {
-		bc->bc_bgwriter_curr_queue_depth =
-		    PERCENT_OF(50, bc->bc_bgwriter_curr_max_queue_depth);
-		if (bc->bc_bgwriter_curr_queue_depth < 20)
-			bc->bc_bgwriter_curr_queue_depth = 20;
-	} else if (dirty_pct > 90) {
-		bc->bc_bgwriter_curr_queue_depth =
-		    PERCENT_OF(30, bc->bc_bgwriter_curr_max_queue_depth);
-		if (bc->bc_bgwriter_curr_queue_depth < 10)
-			bc->bc_bgwriter_curr_queue_depth = 10;
-	} else if (dirty_pct > 80) {
-		bc->bc_bgwriter_curr_queue_depth =
-		    PERCENT_OF(10, bc->bc_bgwriter_curr_max_queue_depth);
-		if (bc->bc_bgwriter_curr_queue_depth < 10)
-			bc->bc_bgwriter_curr_queue_depth = 10;
-		bc->bc_bgwriter_curr_min_age_secs = 1;
-	} else if (dirty_pct > 70) {
-		bc->bc_bgwriter_curr_queue_depth =
-		    PERCENT_OF(5, bc->bc_bgwriter_curr_max_queue_depth);
-		if (bc->bc_bgwriter_curr_queue_depth < 5)
-			bc->bc_bgwriter_curr_queue_depth = 5;
-		bc->bc_bgwriter_curr_min_age_secs = 1;
-	} else if (dirty_pct > 60) {
-		bc->bc_bgwriter_curr_queue_depth =
-		    PERCENT_OF(4, bc->bc_bgwriter_curr_max_queue_depth);
-		if (bc->bc_bgwriter_curr_queue_depth < 4)
-			bc->bc_bgwriter_curr_queue_depth = 4;
-		bc->bc_bgwriter_curr_min_age_secs = 5;
-	} else if (dirty_pct > 50) {
-		bc->bc_bgwriter_curr_queue_depth =
-		    PERCENT_OF(3, bc->bc_bgwriter_curr_max_queue_depth);
-		if (bc->bc_bgwriter_curr_queue_depth < 3)
-			bc->bc_bgwriter_curr_queue_depth = 3;
-		bc->bc_bgwriter_curr_min_age_secs = 10;
-	} else if (dirty_pct > 40) {
-		bc->bc_bgwriter_curr_queue_depth =
-		    PERCENT_OF(2, bc->bc_bgwriter_curr_max_queue_depth);
-		if (bc->bc_bgwriter_curr_queue_depth < 2)
-			bc->bc_bgwriter_curr_queue_depth = 2;
-		bc->bc_bgwriter_curr_min_age_secs = 10;
-	} else if (dirty_pct > 30) {
-		bc->bc_bgwriter_curr_queue_depth = 2;
-		bc->bc_bgwriter_curr_rate_per_sec = 200;
-		bc->bc_bgwriter_curr_min_age_secs = 10;
-	} else if (dirty_pct > 20) {
-		bc->bc_bgwriter_curr_queue_depth = 1;
-		bc->bc_bgwriter_curr_rate_per_sec = 100;
-		bc->bc_bgwriter_curr_min_age_secs = 20;
-	} else {
-		bc->bc_bgwriter_curr_queue_depth = 1;
-		bc->bc_bgwriter_curr_rate_per_sec = 50;
-		bc->bc_bgwriter_curr_min_age_secs = 30;
-	}
-}
-
-/*! \todo need to update this code to handle _devio_ layer */
-void cache_bgwriter_compute_policy_queue_depth(struct bittern_cache *bc)
-{
-	int dirty_pct, dirty_pct_f100;
-	unsigned int valid_entries_dirty, total_entries;
-	int queue_depth_non_writeback;
-
-	ASSERT(bc != NULL);
-	ASSERT_BITTERN_CACHE(bc);
-	valid_entries_dirty = atomic_read(&bc->bc_valid_entries_dirty);
-	total_entries = atomic_read(&bc->bc_total_entries);
-	ASSERT(valid_entries_dirty <= total_entries);
-	dirty_pct = T_PCT(total_entries, valid_entries_dirty);
-	dirty_pct_f100 = T_PCT_F100(total_entries, valid_entries_dirty);
-	ASSERT(dirty_pct <= 100);
-
-	/*
-	 * because we compute this based on the value of two independently
-	 * updated atomic variables, we expect that sometimes the value will
-	 * drop below zero.
-	 */
-	queue_depth_non_writeback =
-	    atomic_read(&bc->bc_pending_requests) -
-	    atomic_read(&bc->bc_pending_writeback_requests);
-	queue_depth_non_writeback += atomic_read(&bc->bc_deferred_requests);
-	if (queue_depth_non_writeback < 0)
-		queue_depth_non_writeback = 0;
-
-	bc->bc_bgwriter_curr_max_queue_depth =
-	    PERCENT_OF(bc->bc_bgwriter_conf_max_queue_depth_pct,
-			   bc->bc_max_pending_requests);
-	bc->bc_bgwriter_curr_rate_per_sec = 0;
-	bc->bc_bgwriter_curr_min_age_secs = 0;
-
-	if (dirty_pct > 95) {
-		bc->bc_bgwriter_curr_queue_depth =
-		    PERCENT_OF(70, bc->bc_bgwriter_curr_max_queue_depth);
-	} else if (dirty_pct > 90) {
-		bc->bc_bgwriter_curr_queue_depth =
-		    PERCENT_OF(60, bc->bc_bgwriter_curr_max_queue_depth);
-	} else if (dirty_pct > 85) {
-		bc->bc_bgwriter_curr_queue_depth =
-		    PERCENT_OF(40, bc->bc_bgwriter_curr_max_queue_depth);
-	} else if (dirty_pct > 80) {
-		bc->bc_bgwriter_curr_queue_depth =
-		    PERCENT_OF(20, bc->bc_bgwriter_curr_max_queue_depth);
-	} else if (dirty_pct > 75) {
-		bc->bc_bgwriter_curr_queue_depth =
-		    PERCENT_OF(10, bc->bc_bgwriter_curr_max_queue_depth);
-		bc->bc_bgwriter_curr_min_age_secs = 1;
-	} else if (dirty_pct > 50) {
-		bc->bc_bgwriter_curr_queue_depth = 2;
-		bc->bc_bgwriter_curr_min_age_secs = 1;
-	} else if (dirty_pct > 40) {
-		bc->bc_bgwriter_curr_queue_depth = 1;
-		bc->bc_bgwriter_curr_min_age_secs = 5;
-	} else if (dirty_pct > 30) {
-		bc->bc_bgwriter_curr_queue_depth = 1;
-		bc->bc_bgwriter_curr_min_age_secs = 10;
-	} else if (dirty_pct > 20) {
-		bc->bc_bgwriter_curr_queue_depth = 1;
-		bc->bc_bgwriter_curr_min_age_secs = 20;
-	} else {
-		bc->bc_bgwriter_curr_queue_depth = 1;
-		bc->bc_bgwriter_curr_min_age_secs = 30;
-	}
-}
-
-/*! \todo need to update this code to handle _devio_ layer */
 void
 cache_bgwriter_compute_policy_queue_depth_adaptive(struct bittern_cache *bc)
 {
@@ -514,28 +403,22 @@ struct cache_bgwriter_policy {
 	},
 	/*! old default writeback policy (before REQ_FUA|REQ_FLUSH) */
 	{
-		"old_default",
+		"old-default",
 		cache_bgwriter_compute_policy_old_default,
 		NULL,
 	},
-#ifdef BITTERN_CACHE_ALLOW_EXPERIMENTAL_POLICIES
 	/*! experimental, use at your own risk and peril */
 	{
-		"exp/aggressive",
-		cache_bgwriter_compute_policy_aggressive,
-		NULL,
+		"dirty-ratio",
+		cache_bgwriter_compute_policy_dirty_ratio,
+		cache_bgwriter_compute_policy_dirty_ratio,
 	},
+#ifdef BITTERN_CACHE_ALLOW_EXPERIMENTAL_POLICIES
 	/*! experimental, use at your own risk and peril */
 	{
 		"exp/queue-depth-adaptive",
 		cache_bgwriter_compute_policy_queue_depth_adaptive,
 		cache_bgwriter_compute_policy_queue_depth_adaptive,
-	},
-	/*! experimental, use at your own risk and peril */
-	{
-		"exp/queue-depth",
-		cache_bgwriter_compute_policy_queue_depth,
-		cache_bgwriter_compute_policy_queue_depth,
 	},
 #endif /*BITTERN_CACHE_ALLOW_EXPERIMENTAL_POLICIES*/
 };
@@ -638,15 +521,16 @@ void cache_bgwriter_compute_policy_common(struct bittern_cache *bc)
 
 	/* override parameters and flush out quickly if in write-thru */
 	if (is_cache_mode_writethru(bc)) {
-		bc->bc_bgwriter_curr_max_queue_depth =
-		    PERCENT_OF(bc->bc_bgwriter_conf_max_queue_depth_pct,
-				   bc->bc_max_pending_requests);
+		bc->bc_bgwriter_conf_cluster_size =
+			CACHE_BGWRITER_MAX_CLUSTER_SIZE;
+		bc->bc_bgwriter_conf_greedyness = 0;
+		bc->bc_bgwriter_conf_max_queue_depth_pct =
+			CACHE_BGWRITER_MAX_QUEUE_DEPTH_PCT;
 		bc->bc_bgwriter_curr_queue_depth =
-		    PERCENT_OF
-		    (CACHE_BGWRITER_DEFAULT_QUEUE_DEPTH_PCT,
-		     bc->bc_bgwriter_curr_max_queue_depth);
-		if (bc->bc_bgwriter_curr_queue_depth == 0)
-			bc->bc_bgwriter_curr_queue_depth = 1;
+			PERCENT_OF(bc->bc_bgwriter_conf_max_queue_depth_pct,
+				   bc->bc_max_pending_requests);
+		bc->bc_bgwriter_curr_max_queue_depth =
+			bc->bc_max_pending_requests;
 		bc->bc_bgwriter_curr_rate_per_sec = 0;
 		bc->bc_bgwriter_curr_min_age_secs = 0;
 	}

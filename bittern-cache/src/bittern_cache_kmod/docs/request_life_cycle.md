@@ -88,7 +88,7 @@ The other reason why the maximum number of pending requests is limited is
 to avoid having to allocate too many page buffers for intermediate copies.
 
 Either via @ref cache_map, or via deferred thread handling
-@ref cache_handle_deferred, @ref cache_map_workfunc
+@ref handle_deferred, @ref cache_map_workfunc
 is eventually called:
 
 ~~~~~~~~~~~~~~

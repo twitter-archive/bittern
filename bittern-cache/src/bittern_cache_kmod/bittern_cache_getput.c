@@ -985,7 +985,7 @@ void cache_move_to_invalid(struct bittern_cache *bc,
 	 * we are not really completing a request here, but we are freeing up
 	 * resources which may be needed by the deferred thread.
 	 */
-	cache_wakeup_deferred(bc);
+	wakeup_deferred(bc);
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, cache_block, NULL, NULL, "exit");
 }
@@ -1045,5 +1045,5 @@ void cache_move_to_clean(struct bittern_cache *bc,
 	/*
 	 * wakeup possible waiters
 	 */
-	cache_wakeup_deferred(bc);
+	wakeup_deferred(bc);
 }

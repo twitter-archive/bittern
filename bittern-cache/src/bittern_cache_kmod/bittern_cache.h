@@ -51,7 +51,7 @@
 
 #include "bittern_cache_linux.h"
 
-#define BITTERN_CACHE_VERSION "1.0.3"
+#define BITTERN_CACHE_VERSION "1.0.4"
 #define BITTERN_CACHE_CODENAME "master-plumber"
 
 #include "bittern_cache_todo.h"
@@ -385,42 +385,16 @@ struct seq_io_bypass {
 	uint64_t lru_hit_depth_count;
 };
 
+/*! holds queue of deferred requests */
 struct deferred_queue {
-	/*
-	 * task ptr
-	 */
-	struct task_struct *bc_defer_task;
-	/*
-	 * generation number (not used in busy queues)
-	 */
-	atomic_t bc_defer_gennum;
-	/*
-	 * deferred thread waits on this queue for deferred requests to
-	 * execute
-	 */
-	wait_queue_head_t bc_defer_wait;
-	/*
-	 * protects all struct members except the fields above
-	 */
-	spinlock_t bc_defer_lock;
-	struct bio_list bc_defer_list;
-
-	volatile unsigned int bc_defer_curr_count;
-	unsigned int bc_defer_requeue_count;
-	unsigned int bc_defer_max_count;
-	unsigned int bc_defer_no_work_count;
-	unsigned int bc_defer_work_count;
-	unsigned int bc_defer_loop_count;
-	/*
-	 * when we queue requests, or we know there are resources,
-	 * we increment the gennum above. this gennum is the current gennum.
-	 * so we use this for the waiting condition which shows new work:
-	 *
-	 * bc_defer_curr_gennum != atomic_read(bc_defer_gennum)
-	 *
-	 */
-	unsigned int bc_defer_curr_gennum;
-	struct cache_timer bc_defer_timer;
+	struct bio_list list;
+	volatile unsigned int curr_count;
+	unsigned int requeue_count;
+	unsigned int max_count;
+	unsigned int no_work_count;
+	unsigned int work_count;
+	struct cache_timer timer;
+	uint64_t tstamp;
 };
 
 struct pmem_api {
@@ -783,10 +757,15 @@ struct bittern_cache {
 	atomic_t bc_cache_transitions_counters[__TS_NUM];
 	atomic_t bc_cache_states_counters[__CACHE_STATES_NUM];
 
+	/*! synchronizes access to both deferred queues */
+	spinlock_t defer_lock;
 	/*! deferred queue, cases 1 and 2. see @ref (doxy_deferredqueues.md) */
-	struct deferred_queue bc_deferred_wait_busy;
+	struct deferred_queue defer_busy;
 	/*! deferred queue, cases 3 and 4. see @ref (doxy_deferredqueues.md) */
-	struct deferred_queue bc_deferred_wait_page;
+	struct deferred_queue defer_page;
+	/*! deferred queue workqueue */
+	struct workqueue_struct *defer_wq;
+	struct work_struct defer_work;
 
 	/*
 	 * background writer kernel thread to writeback dirty blocks
@@ -1048,11 +1027,15 @@ struct bittern_cache {
  */
 static inline bool can_schedule_map_request(struct bittern_cache *bc)
 {
-	unsigned int avail_reserved;
 	bool avail, can_queue;
 
-	avail_reserved = bc->bc_max_pending_requests + INVALIDATOR_MIN_INVALID_COUNT;
+#if 0
+	unsigned int avail_reserved;
+	avail_reserved = bc->bc_max_pending_requests;
 	avail = atomic_read(&bc->bc_invalid_entries) > avail_reserved;
+#else
+	avail = atomic_read(&bc->bc_invalid_entries) > 0;
+#endif
 	can_queue = atomic_read(&bc->bc_pending_requests) < bc->bc_max_pending_requests;
 	return avail && can_queue;
 }
@@ -1205,11 +1188,12 @@ extern struct cache_block *cache_rb_last(struct bittern_cache *bc);
 
 #include "bittern_cache_main.h"
 
-extern int cache_deferred_busy_kthread(void *__bc);
-extern int cache_deferred_page_kthread(void *__bc);
 extern int cache_bgwriter_kthread(void *__bc);
 extern int cache_invalidator_kthread(void *__bc);
 extern int cache_invalidator_has_work_schmitt(struct bittern_cache *bc);
+
+/*! worker used to issue explicit flushes */
+extern void cache_deferred_worker(struct work_struct *work);
 
 /*! return bgwriter current policy name */
 extern const char *cache_bgwriter_policy(struct bittern_cache *bc);

@@ -309,6 +309,6 @@ void sm_pwrite_miss_copy_to_cache_end(struct bittern_cache *bc,
 	/*
 	 * wakeup possible waiters
 	 */
-	cache_wakeup_deferred(bc);
+	wakeup_deferred(bc);
 	bio_endio(bio, 0);
 }

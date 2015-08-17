@@ -99,6 +99,10 @@ $0: --set bgwriter_conf_cluster_size --value [1 .. 32] (default 1)
 	A higher value will decrease the overall seek penalty for writebacks,
 	while at the possible expense of the cache block replacement.
 
+$0: --set bgwriter_conf_policy --value [classic|aggressive] (default classic)
+	Set bgwriter policy used to determine queue depth and other writeback
+	parameters.
+
 $0: --set read_bypass_enabled --value [0,1] (default 0 : enabled)
 $0: --set write_bypass_enabled --value [0,1] (default 0 : enabled)
 	To enable sequential read_bypass or write_bypass, set value to 1.
@@ -192,6 +196,16 @@ $0 --set writethrough
 $0 --set trace --value tracemask
 	Set tracing options. For debugging purposes.
 
+$0 --set dump_devio_pending --value dump_offset
+$0 --set dump_blocks_clean --value dump_offset
+$0 --set dump_blocks_dirty --value dump_offset
+$0 --set dump_blocks_busy --value dump_offset
+$0 --set dump_blocks_pending --value dump_offset
+$0 --set dump_blocks_deferred --value dump_offset
+$0 --set dump_blocks_deferred_busy --value dump_offset
+$0 --set dump_blocks_deferred_page --value dump_offset
+	Dump content of various queues. For debugging purposes.
+
 EOF
 }
 
@@ -211,7 +225,7 @@ VALUE_OPTION=""
 LIST_OPTION=""
 CACHE_NAME=""
 SYSFS_PATH=""
-FORCE_OPTION=""
+FORCE=""
 ARGS_O="hgs:v:lf"
 ARGS_L="help,get,set:,value:,list,force"
 ARGS=$(getopt -o $ARGS_O -l $ARGS_L -n "bc_control.sh" -- "$@");
@@ -231,7 +245,7 @@ do
 		;;
 	-f|--force)
 		shift
-		FORCE_OPTION="yes"
+		FORCE="yes"
 		;;
 	-l|--list)
 		shift
@@ -335,22 +349,16 @@ set_cache_conf() {
 #
 do_get() {
 	echo "cache info:"
-	echo "	internal_cache_name = $(get_cache_info cache_name)"
-	echo "	external_cache_name = $CACHE_NAME"
-	echo "	dev_mapper_name = $DEV_MAPPER_NAME"
-	echo "	sysfs_path = $SYSFS_PATH"
-	echo "	cache_device_name = $(get_cache_info cache_device_name)"
-	echo "	cached_device_name = $(get_cache_info cached_device_name)"
+	echo "	 internal_cache_name = $(get_cache_info cache_name)"
+	echo "	 external_cache_name = $CACHE_NAME"
+	echo "	 dev_mapper_name = $DEV_MAPPER_NAME"
+	echo "	 sysfs_path = $SYSFS_PATH"
+	echo "	 cache_device_name = $(get_cache_info cache_device_name)"
+	echo "	 cached_device_name = $(get_cache_info cached_device_name)"
 	__cache_device_size=$(get_cache_info in_use_cache_size)
 	__cache_device_size=$(($__cache_device_size / 1024))
 	__cache_device_size=$(($__cache_device_size / 1024))
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 4b90819c9f92e855c24c8d0b8d0f5a4bf0c3c47f
 	echo "	 cache_device_size = $__cache_device_size mbytes"
-	echo "error_state:"
-	echo "	error_state = $(get_cache_conf error_state)"
 	echo "cache blocks:"
 	echo "	 current_clean_blocks = $(get_cache_stats valid_clean_cache_entries)"
 	echo "	 current_dirty_blocks = $(get_cache_stats valid_dirty_cache_entries)"
@@ -367,6 +375,7 @@ do_get() {
 	echo "	 bgwriter_conf_greedyness = $(get_cache_conf bgwriter_conf_greedyness)"
 	echo "	 bgwriter_conf_max_queue_depth_pct = $(get_cache_conf bgwriter_conf_max_queue_depth_pct)"
 	echo "	 bgwriter_conf_cluster_size = $(get_cache_conf bgwriter_conf_cluster_size)"
+	echo "	 bgwriter_policy = $(get_cache_conf bgwriter_conf_policy)"
 	echo "	 invalidator_conf_min_invalid_count = $(get_cache_conf invalidator_conf_min_invalid_count)"
 	echo "	 enable_extra_checksum_check = $(get_cache_conf enable_extra_checksum_check)"
 	echo "debug parameters:"
@@ -379,61 +388,17 @@ do_get() {
 	echo "	 write_bypass_enabled = $(get_cache_sequential write_bypass_enabled)"
 	echo "	 write_bypass_threshold = $(get_cache_sequential write_bypass_threshold)"
 	echo "	 write_bypass_timeout = $(get_cache_sequential write_bypass_timeout)"
-<<<<<<< HEAD
-=======
-	echo "	cache_device_size = $__cache_device_size mbytes"
-
-	echo "error_state:"
-	echo "	error_state = $(get_cache_conf error_state)"
-
-	echo "cache blocks:"
-	echo "	current_clean_blocks = $(get_cache_stats valid_clean_cache_entries)"
-	echo "	current_dirty_blocks = $(get_cache_stats valid_dirty_cache_entries)"
-	echo "	current_invalid_blocks = $(get_cache_stats invalid_cache_entries)"
-
-	echo "cache mode:"
-	echo "	cache_mode = $(get_cache_mode cache_mode)"
-
-	echo "replacement algorithm:"
-	echo "	replacement = $(get_replacement replacement)"
-
-	echo "cache conf parameters:"
-	echo "	enable_req_fua = $(get_cache_conf enable_req_fua)"
-	echo "	max_pending_requests = $(get_cache_conf max_pending_requests)"
-	echo "	bgwriter_conf_flush_on_exit = $(get_cache_conf bgwriter_conf_flush_on_exit)"
-	echo "	bgwriter_conf_greedyness = $(get_cache_conf bgwriter_conf_greedyness)"
-	echo "	bgwriter_conf_max_queue_depth_pct = $(get_cache_conf bgwriter_conf_max_queue_depth_pct)"
-	echo "	bgwriter_conf_cluster_size = $(get_cache_conf bgwriter_conf_cluster_size)"
-	echo "	invalidator_conf_min_invalid_count = $(get_cache_conf invalidator_conf_min_invalid_count)"
-	echo "	enable_extra_checksum_check = $(get_cache_conf enable_extra_checksum_check)"
-
-	echo "debug parameters:"
-	echo "	trace = $(get_cache_trace trace)"
-
-	echo "sequential read bypass:"
-	echo "	read_bypass_enabled = $(get_cache_sequential read_bypass_enabled)"
-	echo "	read_bypass_threshold = $(get_cache_sequential read_bypass_threshold)"
-	echo "	read_bypass_timeout = $(get_cache_sequential read_bypass_timeout)"
-
-	echo "sequential write bypass:"
-	echo "	write_bypass_enabled = $(get_cache_sequential write_bypass_enabled)"
-	echo "	write_bypass_threshold = $(get_cache_sequential write_bypass_threshold)"
-	echo "	write_bypass_timeout = $(get_cache_sequential write_bypass_timeout)"
-
->>>>>>> master
-=======
->>>>>>> 4b90819c9f92e855c24c8d0b8d0f5a4bf0c3c47f
 	echo "verifier thread:"
 	__verifier_running=$(get_cache_verifier running)
-	echo "	running = $__verifier_running"
-	echo "	errors = $(get_cache_verifier verify_errors)"
+	echo "	 running = $__verifier_running"
+	echo "	 errors = $(get_cache_verifier verify_errors)"
 	if [ $__verifier_running -ne 0 ]
 	then
-		echo "	verified = $(get_cache_verifier blocks_verified)"
-		echo "	not_verified_invalid = $(get_cache_verifier blocks_not_verified_invalid)"
-		echo "	not_verified_dirty = $(get_cache_verifier blocks_not_verified_dirty)"
-		echo "	not_verified_busy = $(get_cache_verifier blocks_not_verified_busy)"
-		echo "	scans = $(get_cache_verifier scans)"
+		echo "	 verified = $(get_cache_verifier blocks_verified)"
+		echo "	 not_verified_invalid = $(get_cache_verifier blocks_not_verified_invalid)"
+		echo "	 not_verified_dirty = $(get_cache_verifier blocks_not_verified_dirty)"
+		echo "	 not_verified_busy = $(get_cache_verifier blocks_not_verified_busy)"
+		echo "	 scans = $(get_cache_verifier scans)"
 	fi
 }
 
@@ -603,6 +568,10 @@ do_set() {
 		do_set_check_value
 		set_cache_conf bgwriter_conf_cluster_size $VALUE_OPTION
 		;;
+	"bgwriter_conf_policy")
+		do_set_check_value
+		set_cache_conf bgwriter_conf_policy $VALUE_OPTION
+		;;
 	"devio_worker_delay")
 		do_set_check_value
 		set_cache_conf devio_worker_delay $VALUE_OPTION
@@ -653,10 +622,14 @@ do_set() {
 		do_set_check_value
 		set_cache_conf trace $VALUE_OPTION
 		;;
-	"error_state")
+	"dump_devio_pending")
 		do_set_check_value
-		set_cache_conf error_state $VALUE_OPTION
-		;;
+		set_cache_conf trace $VALUE_OPTION
+                ;;
+	dump_blocks_*)
+		do_set_check_value
+		set_cache_conf $__set_option $VALUE_OPTION
+                ;;
 	*)
 		echo $0: unrecognized "--set" option
 		exit 1
@@ -670,15 +643,18 @@ do_set() {
 check_set_priv() {
 	local __set_option=$*
 	case "$__set_option" in
-	"error_state"|"disable_req_fua")
-		if [ -z "$FORCE_OPTION" ]
+	"disable_req_fua")
+		if [ -z "$FORCE" ]
 		then
 cat<<EOF
 
 $0: $CACHE_NAME:
 
-	This is a very dangerour option and should only be used if you truly
-	understand it. If you still want to proceed, use --force.
+	Disabling the issue of REQ_FUA is **** VERY DANGEROUS ****.
+	It should only be done if you truly understand it. If you are
+	in doubt, please do not do it, as it could lead to data
+	corruption.
+	If you still still want to proceed, use --force
 
 EOF
 			exit 1

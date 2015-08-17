@@ -74,7 +74,7 @@ void cached_dev_bypass_endio(struct bio *cloned_bio, int err)
 	atomic_inc(&bc->bc_completed_requests);
 
 	/* wakeup possible waiters */
-	cache_wakeup_deferred(bc);
+	wakeup_deferred(bc);
 
 	cache_timer_add(&bc->bc_timer_cached_device_reads,
 				wi->wi_ts_physio);
@@ -818,14 +818,14 @@ void cache_state_machine(struct bittern_cache *bc,
 
 		/*
 		 * clean invalidation (wt/wb):  VALID_CLEAN -->
-		 *                              VALID_CLEAN_INVALIDATE_START,
-		 *                              VALID_CLEAN_INVALIDATE_END,
-		 *                              INVALID
+		 *			      VALID_CLEAN_INVALIDATE_START,
+		 *			      VALID_CLEAN_INVALIDATE_END,
+		 *			      INVALID
 		 *
 		 * dirty invalidation (wb):     VALID_DIRTY -->
-		 *                              VALID_DIRTY_INVALIDATE_START,
-		 *                              VALID_DIRTY_INVALIDATE_END,
-		 *                              INVALID
+		 *			      VALID_DIRTY_INVALIDATE_START,
+		 *			      VALID_DIRTY_INVALIDATE_END,
+		 *			      INVALID
 		 *
 		 * VALID_CLEAN -->
 		 * VALID_CLEAN_INVALIDATE_START
@@ -1734,7 +1734,8 @@ void cache_map_workfunc_handle_bypass(struct bittern_cache *bc, struct bio *bio)
 int cache_map_workfunc_hit(struct bittern_cache *bc,
 			   struct cache_block *cache_block,
 			   struct bio *bio,
-			   bool do_writeback)
+			   bool do_writeback,
+			   struct deferred_queue *old_queue)
 {
 	struct work_item *wi;
 	struct cache_block *cloned_cache_block = NULL;
@@ -1785,9 +1786,10 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
 			/*
 			 * defer request
 			 */
-			cache_queue_to_deferred(bc,
-						&bc->bc_deferred_wait_page,
-						bio);
+			queue_to_deferred(bc,
+						&bc->defer_page,
+						bio,
+						old_queue);
 			BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
 				 "write-hit-no-clone-deferring");
 			return 0;
@@ -1903,7 +1905,9 @@ int cache_map_workfunc_hit(struct bittern_cache *bc,
  * Handle resource busy case (we have a cache hit, but the cache block
  * is in use). All we can do is queue to deferred for later execution.
  */
-void cache_map_workfunc_resource_busy(struct bittern_cache *bc, struct bio *bio)
+void cache_map_workfunc_resource_busy(struct bittern_cache *bc,
+				      struct bio *bio,
+				      struct deferred_queue *old_queue)
 {
 	/*
 	 * here we are either in a process or kernel thread context,
@@ -1917,7 +1921,7 @@ void cache_map_workfunc_resource_busy(struct bittern_cache *bc, struct bio *bio)
 		atomic_inc(&bc->bc_write_hits_busy);
 	else
 		atomic_inc(&bc->bc_read_hits_busy);
-	cache_queue_to_deferred(bc, &bc->bc_deferred_wait_busy, bio);
+	queue_to_deferred(bc, &bc->defer_busy, bio, old_queue);
 }
 
 /*!
@@ -2029,7 +2033,9 @@ void cache_map_workfunc_miss(struct bittern_cache *bc,
  * Handle complete miss case (not only we have a cache miss, we also
  * do not have a cache block). No choice but defer the IO request.
  */
-void cache_map_workfunc_no_resources(struct bittern_cache *bc, struct bio *bio)
+void cache_map_workfunc_no_resources(struct bittern_cache *bc,
+				     struct bio *bio,
+				     struct deferred_queue *old_queue)
 {
 
 	/*
@@ -2046,7 +2052,7 @@ void cache_map_workfunc_no_resources(struct bittern_cache *bc, struct bio *bio)
 		atomic_inc(&bc->bc_write_misses_busy);
 	else
 		atomic_inc(&bc->bc_read_misses_busy);
-	cache_queue_to_deferred(bc, &bc->bc_deferred_wait_page, bio);
+	queue_to_deferred(bc, &bc->defer_page, bio, old_queue);
 }
 
 /*!
@@ -2058,7 +2064,9 @@ void cache_map_workfunc_no_resources(struct bittern_cache *bc, struct bio *bio)
  * RAID compatibility. It should not matter, but we need to document it and
  * also document how to fix it if it turns out it matters.
  */
-int cache_map_workfunc(struct bittern_cache *bc, struct bio *bio)
+int cache_map_workfunc(struct bittern_cache *bc,
+		       struct bio *bio,
+		       struct deferred_queue *old_queue)
 {
 	struct cache_block *cache_block;
 	int ret;
@@ -2089,7 +2097,7 @@ int cache_map_workfunc(struct bittern_cache *bc, struct bio *bio)
 		/*
 		 * wakeup possible waiters
 		 */
-		cache_wakeup_deferred(bc);
+		wakeup_deferred(bc);
 		bio_endio(bio, 0);
 		return 1;
 	}
@@ -2180,7 +2188,8 @@ int cache_map_workfunc(struct bittern_cache *bc, struct bio *bio)
 		return cache_map_workfunc_hit(bc,
 					      cache_block,
 					      bio,
-					      do_writeback);
+					      do_writeback,
+					      old_queue);
 
 	case CACHE_GET_RET_HIT_BUSY:
 		/*
@@ -2188,7 +2197,7 @@ int cache_map_workfunc(struct bittern_cache *bc, struct bio *bio)
 		 * We found a cache block but it's busy, need to defer.
 		 */
 		ASSERT(cache_block == NULL);
-		cache_map_workfunc_resource_busy(bc, bio);
+		cache_map_workfunc_resource_busy(bc, bio, old_queue);
 		return 0;
 
 	case CACHE_GET_RET_MISS_INVALID_IDLE:
@@ -2214,7 +2223,7 @@ int cache_map_workfunc(struct bittern_cache *bc, struct bio *bio)
 			cache_map_workfunc_handle_bypass(bc, bio);
 			return 1;
 		}
-		cache_map_workfunc_no_resources(bc, bio);
+		cache_map_workfunc_no_resources(bc, bio, old_queue);;
 		return 0;
 
 	case CACHE_GET_RET_INVALID:
@@ -2286,7 +2295,10 @@ int bittern_cache_map(struct dm_target *ti, struct bio *bio)
 		 * note this is the only case in which we do not bump up the
 		 * pending request count.
 		 */
-		cache_queue_to_deferred(bc, &bc->bc_deferred_wait_page, bio);
+		queue_to_deferred(bc,
+					&bc->defer_page,
+					bio,
+					NULL);
 
 		return DM_MAPIO_SUBMITTED;
 	}
@@ -2296,7 +2308,7 @@ int bittern_cache_map(struct dm_target *ti, struct bio *bio)
 	 * it's possible that cache_map_workfunc may have to defer it,
 	 * but here we don't care, we are return DM_MAPIO_SUBMITTED anyway.
 	 */
-	cache_map_workfunc(bc, bio);
+	cache_map_workfunc(bc, bio, NULL);
 
 	return DM_MAPIO_SUBMITTED;
 }
@@ -2305,90 +2317,97 @@ int bittern_cache_map(struct dm_target *ti, struct bio *bio)
  * waiter thread for busy deferred queues relies on bc_pending_requests
  * being incremented before we call this.
  */
-void cache_wakeup_deferred(struct bittern_cache *bc)
+void wakeup_deferred(struct bittern_cache *bc)
 {
+	unsigned long flags;
+
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-		 "deferred_requests=%d, defer_wait_busy.curr_count=%d, defer_wait_page.curr_count=%d",
+		 "deferred_requests=%d, defer_busy.curr_count=%d, defer_page.curr_count=%d",
 		 atomic_read(&bc->bc_deferred_requests),
-		 bc->bc_deferred_wait_busy.bc_defer_curr_count,
-		 bc->bc_deferred_wait_page.bc_defer_curr_count);
-	if (bc->bc_deferred_wait_busy.bc_defer_curr_count != 0) {
-		atomic_inc(&bc->bc_deferred_wait_busy.bc_defer_gennum);
-		wake_up_interruptible(&bc->bc_deferred_wait_busy.bc_defer_wait);
-	}
-	if (bc->bc_deferred_wait_page.bc_defer_curr_count != 0) {
-		atomic_inc(&bc->bc_deferred_wait_page.bc_defer_gennum);
-		wake_up_interruptible(&bc->bc_deferred_wait_page.bc_defer_wait);
-	}
+		 bc->defer_busy.curr_count,
+		 bc->defer_page.curr_count);
+
+	spin_lock_irqsave(&bc->defer_lock, flags);
+
+	if (bc->defer_busy.curr_count != 0 ||
+	    bc->defer_page.curr_count != 0)
+		queue_work(bc->defer_wq, &bc->defer_work);
+
+	spin_unlock_irqrestore(&bc->defer_lock, flags);
 }
 
-/*! queue a request for deferred execution */
-void cache_queue_to_deferred(struct bittern_cache *bc,
-			     struct deferred_queue *queue,
-			     struct bio *bio)
+/*!
+ * Queue a request for deferred execution.
+ * This function is called by the map() function in order to queue
+ * a request which cannot be satisfied immediately. The deferred worker
+ * @ref cache_deferred_worker can also call this function if it finds
+ * that the block is busy. In this latter case it needs to avoid waking
+ * up itself again to avoid a infinite loop, which is why the old_queue
+ * needs to be passed as parameter.
+ */
+void queue_to_deferred(struct bittern_cache *bc,
+		       struct deferred_queue *queue,
+		       struct bio *bio,
+		       struct deferred_queue *old_queue)
 {
 	unsigned long flags;
 	int val;
 
-	/*
-	 * here we are either in a process or kernel thread context,
-	 * i.e., we can sleep during resource allocation if needed.
-	 */
-	M_ASSERT(!in_softirq());
-	M_ASSERT(!in_irq());
+	ASSERT(queue == &bc->defer_busy || queue == &bc->defer_page);
+	ASSERT(old_queue == &bc->defer_busy ||
+	       old_queue == &bc->defer_page ||
+	       old_queue == NULL);
 
-	ASSERT(queue == &bc->bc_deferred_wait_busy ||
-	       queue == &bc->bc_deferred_wait_page);
+	spin_lock_irqsave(&bc->defer_lock, flags);
 
-	spin_lock_irqsave(&queue->bc_defer_lock, flags);
+	queue->tstamp = current_kernel_time_nsec();
 	/* bio_list_add adds to tail */
-	bio_list_add(&queue->bc_defer_list, bio);
+	bio_list_add(&queue->list, bio);
 	atomic_inc(&bc->bc_total_deferred_requests);
 	val = atomic_inc_return(&bc->bc_deferred_requests);
 	atomic_set_if_higher(&bc->bc_highest_deferred_requests, val);
-	queue->bc_defer_curr_count++;
-	if (queue->bc_defer_curr_count > queue->bc_defer_max_count)
-		queue->bc_defer_max_count = queue->bc_defer_curr_count;
-	spin_unlock_irqrestore(&queue->bc_defer_lock, flags);
+	queue->curr_count++;
+	if (queue->curr_count > queue->max_count)
+		queue->max_count = queue->curr_count;
+
+	spin_unlock_irqrestore(&bc->defer_lock, flags);
+
+	if (queue != old_queue)
+		queue_work(bc->defer_wq, &bc->defer_work);
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-		 "%s: deferred_gennum=%d/%d",
-		 (queue == &bc->bc_deferred_wait_busy ? "busy" : "page"),
-		 queue->bc_defer_curr_gennum,
-		 atomic_read(&queue->bc_defer_gennum));
-
-	atomic_inc(&queue->bc_defer_gennum);
-	wake_up_interruptible(&queue->bc_defer_wait);
+		 "%s",
+		 (queue == &bc->defer_busy ? "busy" : "page"));
 }
 
-struct bio *cache_dequeue_from_deferred(struct bittern_cache *bc,
-					struct deferred_queue *queue)
+struct bio *dequeue_from_deferred(struct bittern_cache *bc,
+				  struct deferred_queue *queue)
 {
 	unsigned long flags;
 	struct bio *bio = NULL;
 
-	ASSERT(queue == &bc->bc_deferred_wait_busy ||
-	       queue == &bc->bc_deferred_wait_page);
+	ASSERT(queue == &bc->defer_busy ||
+	       queue == &bc->defer_page);
 
-	spin_lock_irqsave(&queue->bc_defer_lock, flags);
-	if (bio_list_non_empty(&queue->bc_defer_list)) {
-		bio = bio_list_pop(&queue->bc_defer_list);
+	spin_lock_irqsave(&bc->defer_lock, flags);
+
+	if (bio_list_non_empty(&queue->list)) {
+		bio = bio_list_pop(&queue->list);
 		ASSERT(bio != NULL);
 		ASSERT(atomic_read(&bc->bc_deferred_requests) > 0);
-		queue->bc_defer_curr_count--;
+		queue->curr_count--;
 		atomic_dec(&bc->bc_deferred_requests);
-		if (queue->bc_defer_curr_count == 0)
-			ASSERT(bio_list_empty(&queue->bc_defer_list));
+		if (queue->curr_count == 0)
+			ASSERT(bio_list_empty(&queue->list));
 	} else {
-		ASSERT(queue->bc_defer_curr_count == 0);
+		ASSERT(queue->curr_count == 0);
 	}
-	spin_unlock_irqrestore(&queue->bc_defer_lock, flags);
+
+	spin_unlock_irqrestore(&bc->defer_lock, flags);
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
-		 "%s: deferred_gennum=%d/%d",
-		 (queue == &bc->bc_deferred_wait_busy ? "busy" : "page"),
-		 queue->bc_defer_curr_gennum,
-		 atomic_read(&queue->bc_defer_gennum));
+		 "%s",
+		 (queue == &bc->defer_busy ? "busy" : "page"));
 	return bio;
 }
 
@@ -2396,241 +2415,118 @@ struct bio *cache_dequeue_from_deferred(struct bittern_cache *bc,
  * returns true if there is work to do and if there enough resources
  * to queue work from this queue.
  */
-bool cache_deferred_has_work(struct bittern_cache *bc,
-			     struct deferred_queue *queue)
+bool deferred_has_work(struct bittern_cache *bc,
+		       struct deferred_queue *queue)
 {
-	bool has_requests = queue->bc_defer_curr_count != 0;
+	bool has_requests = queue->curr_count != 0;
 	return has_requests && can_schedule_map_request(bc);
 }
 
 /*! handle one or more deferred requests on a given queue */
-int cache_handle_deferred(struct bittern_cache *bc,
-			  struct deferred_queue *queue)
+int __handle_deferred(struct bittern_cache *bc, struct deferred_queue *queue)
 {
-	int ret, count;
-	struct bio *bio = NULL;
+	int ret;
+	struct bio *bio;
 
-	ASSERT(queue == &bc->bc_deferred_wait_busy ||
-	       queue == &bc->bc_deferred_wait_page);
+	ASSERT(queue == &bc->defer_busy || queue == &bc->defer_page);
 
-	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-		 "enter: %s: deferred_gennum=%d/%d",
-		 (queue == &bc->bc_deferred_wait_busy ? "busy" : "page"),
-		 queue->bc_defer_curr_gennum,
-		 atomic_read(&queue->bc_defer_gennum));
+	bio = dequeue_from_deferred(bc, queue);
 
-	bio = cache_dequeue_from_deferred(bc, queue);
+	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
+		 "wait_%s: curr_c=%u, max_c=%u",
+		 (queue == &bc->defer_busy ? "busy" : "page"),
+		 queue->curr_count,
+		 queue->max_count);
+
 	if (bio == NULL) {
-		queue->bc_defer_no_work_count++;
-		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
-			 "nowork: wait_%s: curr_c=%u, max_c=%u",
-			 (queue ==
-			  &bc->bc_deferred_wait_busy ? "busy" : "page"),
-			 queue->bc_defer_curr_count,
-			 queue->bc_defer_max_count);
+		queue->no_work_count++;
 		return 0;
 	}
-
-	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
-		 "has request: wait_%s: curr_c=%u, max_c=%u",
-		 (queue == &bc->bc_deferred_wait_busy ? "busy" : "page"),
-		 queue->bc_defer_curr_count,
-		 queue->bc_defer_max_count);
-
-	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, bio, NULL,
-		 "after allocating vmalloc page: wait_%s: curr_c=%u, max_c=%u",
-		 (queue == &bc->bc_deferred_wait_busy ? "busy" : "page"),
-		 queue->bc_defer_curr_count,
-		 queue->bc_defer_max_count);
 
 	/*
 	 * Now try resubmit the request. It's possible that it will be requeued
 	 * again. In the latter case, make sure we don't wake up ourselves
 	 * again.
 	 */
-	ret = cache_map_workfunc(bc, bio);
-
-	if (ret == 0) {
-		queue->bc_defer_requeue_count++;
-		count = 0;
-	} else {
-		queue->bc_defer_work_count++;
-		count = 1;
-	}
+	ret = cache_map_workfunc(bc, bio, queue);
 
 	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-		 "wait_%s: curr_c=%u, max_c=%u, ret=%d, count=%d",
-		 (queue == &bc->bc_deferred_wait_busy ? "busy" : "pp"),
-		 queue->bc_defer_curr_count,
-		 queue->bc_defer_max_count,
-		 ret,
-		 count);
+		 "wait_%s: curr_c=%u, max_c=%u, ret=%d",
+		 (queue == &bc->defer_busy ? "busy" : "pp"),
+		 queue->curr_count,
+		 queue->max_count,
+		 ret);
 
-	return count;
+	if (ret == 0) {
+		queue->requeue_count++;
+		return 0;
+	} else {
+		queue->work_count++;
+		return 1;
+	}
 }
 
 /*! deferred io handler */
-void cache_deferred_io_handler(struct bittern_cache *bc,
-			       struct deferred_queue *queue)
+int handle_deferred(struct bittern_cache *bc, struct deferred_queue *queue)
 {
+	unsigned long flags;
+	int cc, count = 0;
+
 	ASSERT(bc != NULL);
 	ASSERT_BITTERN_CACHE(bc);
+
+	spin_lock_irqsave(&bc->defer_lock, flags);
+	if (queue->tstamp != 0) {
+		cache_timer_add(&queue->timer, queue->tstamp);
+		queue->tstamp = 0;
+	}
+	spin_unlock_irqrestore(&bc->defer_lock, flags);
+
 	/*
 	 * for as long as we have queued deferred requests and
 	 * we can requeue, then we need to do this
 	 */
-	while (cache_deferred_has_work(bc, queue)) {
-		int count;
+	while (deferred_has_work(bc, queue)) {
 
 		ASSERT(bc != NULL);
 		ASSERT_BITTERN_CACHE(bc);
 
-		count = cache_handle_deferred(bc, queue);
-
-		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-			 "%d: completed=%u, pending=%u, deferred=%u",
-			 count,
-			 atomic_read(&bc->bc_completed_requests),
-			 atomic_read(&bc->bc_pending_requests),
-			 atomic_read(&bc->bc_deferred_requests));
-		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-			 "%d: io_curr_count=%u",
-			 count, queue->bc_defer_curr_count);
-
-		if (count == 0)
+		cc = __handle_deferred(bc, queue);
+		count += cc;
+		if (cc == 0)
 			break;
 	}
-	queue->bc_defer_loop_count++;
+
+	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
+		 "%d: completed=%u, pending=%u, deferred=%u",
+		 count,
+		 atomic_read(&bc->bc_completed_requests),
+		 atomic_read(&bc->bc_pending_requests),
+		 atomic_read(&bc->bc_deferred_requests));
+	BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
+		 "%d: io_curr_count=%u",
+		 count, queue->curr_count);
+
+	return count;
 }
 
-/*!
- * kernel thread to handle
- * 1. i/o requests which are waiting for busy blocks (wait_busy)
- * 2. i/o requests which are waiting for free cache blocks (wait_free)
- *
- * see comment in bittern_cache.h for theory of operation of deferred kthread
- *
- * TODO: this function can be easily made common with the one below
- */
-int cache_deferred_busy_kthread(void *__bc)
+void cache_deferred_worker(struct work_struct *work)
 {
-	struct bittern_cache *bc = (struct bittern_cache *)__bc;
-	struct deferred_queue *queue;
+	struct bittern_cache *bc;
 
-	ASSERT(bc != NULL);
+	ASSERT(!in_irq());
+	ASSERT(!in_softirq());
+
+	bc = container_of(work, struct bittern_cache, defer_work);
 	ASSERT_BITTERN_CACHE(bc);
 
-	set_user_nice(current, CACHE_DEFERRED_IO_THREAD_NICE);
-	BT_TRACE(BT_LEVEL_TRACE0, bc, NULL, NULL, NULL, NULL,
-		 "enter, nice=%d", CACHE_DEFERRED_IO_THREAD_NICE);
-
-	queue = &bc->bc_deferred_wait_busy;
-	while (!kthread_should_stop()) {
-		ASSERT(bc != NULL);
-		ASSERT_BITTERN_CACHE(bc);
-
-		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-			 "kthread_should_stop()=%d", kthread_should_stop());
-
-		/*!
-		 * we get woken up every time an io request or a writeback
-		 * completes or a request is queued.
-		 *
-		 * we use completed requests here in liueu of the generation
-		 * number, the reason being we want to be awakened only if at
-		 * least one request completed from the last time we ran (that
-		 * is, we want to be waken up only if we know we can do work).
-		 *
-		 */
-		/*! \todo
-		 * should we have another field in
-		 * deferred_queue defer_queue struct to store
-		 *bc->bc_completed_requests? it'd really be more of a "looking
-		 * clean" thing than of any practical reason.
-		 *
-		 */
-		wait_event_interruptible(queue->bc_defer_wait,
-					 queue->bc_defer_curr_gennum !=
-					 atomic_read(&bc->bc_completed_requests)
-					 || kthread_should_stop());
-		if (signal_pending(current))
-			flush_signals(current);
-
-		queue->bc_defer_curr_gennum =
-		    atomic_read(&bc->bc_completed_requests);
-
-		cache_deferred_io_handler(bc, queue);
-
-		schedule();
-	}
-
-	BT_TRACE(BT_LEVEL_TRACE0, bc, NULL, NULL, NULL, NULL, "exit");
-	bc->bc_deferred_wait_busy.bc_defer_task = NULL;
-
 	/*
-	 * when we exit here there'd be no deferred requests anymore.
-	 * this relies on the fact that deferred requests can only be
-	 * pending if the device is still open.
+	 * Handle both deferred queues. Busy blocks have higher priority
+	 * as they are blocked by an existing request and not by a specific
+	 * resource.
 	 */
-	M_ASSERT(atomic_read(&bc->bc_deferred_requests) == 0);
-	return 0;
-}
 
-/*!
- * kernel thread to handle
- * 3. i/o requests which are waiting for a free buffer page (wait_page)
- * 4. i/o requests which are held for the pending queue to become un-saturated
- *    (wait_pending)
- *
- * see comment in bittern_cache.h for theory of operation of deferred kthread
- */
-int cache_deferred_page_kthread(void *__bc)
-{
-	struct bittern_cache *bc = (struct bittern_cache *)__bc;
-	struct deferred_queue *queue;
+	handle_deferred(bc, &bc->defer_busy);
 
-	ASSERT(bc != NULL);
-	ASSERT_BITTERN_CACHE(bc);
-
-	set_user_nice(current, CACHE_DEFERRED_IO_THREAD_NICE);
-	BT_TRACE(BT_LEVEL_TRACE0, bc, NULL, NULL, NULL, NULL,
-		 "enter, nice=%d", CACHE_DEFERRED_IO_THREAD_NICE);
-
-	queue = &bc->bc_deferred_wait_page;
-	while (!kthread_should_stop()) {
-		ASSERT(bc != NULL);
-		ASSERT_BITTERN_CACHE(bc);
-
-		BT_TRACE(BT_LEVEL_TRACE1, bc, NULL, NULL, NULL, NULL,
-			 "kthread_should_stop()=%d", kthread_should_stop());
-
-		/*
-		 * we get woken up every time an io request or a writeback
-		 * completes or a request is queued.
-		 */
-		wait_event_interruptible(queue->bc_defer_wait,
-					 queue->bc_defer_curr_gennum !=
-					 atomic_read(&queue->bc_defer_gennum)
-					 || kthread_should_stop());
-		if (signal_pending(current))
-			flush_signals(current);
-
-		queue->bc_defer_curr_gennum =
-			atomic_read(&queue->bc_defer_gennum);
-
-		cache_deferred_io_handler(bc, queue);
-
-		schedule();
-	}
-
-	BT_TRACE(BT_LEVEL_TRACE0, bc, NULL, NULL, NULL, NULL, "exit");
-	bc->bc_deferred_wait_page.bc_defer_task = NULL;
-
-	/*
-	 * when we exit here there'd be no deferred requests anymore.
-	 * this relies on the fact that deferred requests can only be
-	 * pending if the device is still open.
-	 */
-	M_ASSERT(atomic_read(&bc->bc_deferred_requests) == 0);
-	return 0;
+	handle_deferred(bc, &bc->defer_page);
 }

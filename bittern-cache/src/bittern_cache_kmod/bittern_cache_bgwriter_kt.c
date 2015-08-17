@@ -526,40 +526,27 @@ void cache_bgwriter_wait_io(struct bittern_cache *bc)
  */
 void cache_bgwriter_flush_dirty_blocks(struct bittern_cache *bc)
 {
-	/*
-	 * set writethrough mode
-	 * this will start flushing all the buffers very aggressively
-	 *
+	/*!
+	 * set writethrough mode.
+	 * this will start flushing all the buffers very aggressively.
 	 * as things stand now there seem to be no need for explicit
 	 * notification that we are exiting given there is no need to
 	 * do any special case from this.
-	 *
 	 * this function is only meant to be called by the _dtr() code,
 	 * as it changes the writeback state.
+	 * note that the only two meaningful variables to set are
+	 * @ref bc_cache_mode_writeback and @ref bc_max_pending_requests,
+	 * as the other meaningful parameters are set in
+	 * @ref cache_bgwriter_compute_policy_common.
 	 */
-
 	bc->bc_cache_mode_writeback = 0;
-
-	bc->bc_max_pending_requests = CACHE_MAX_MAX_PENDING_REQUESTS;
-
-	bc->bc_bgwriter_conf_greedyness = 0;
-	bc->bc_bgwriter_conf_cluster_size =
-	    CACHE_BGWRITER_MAX_CLUSTER_SIZE;
-	bc->bc_bgwriter_conf_max_queue_depth_pct =
-	    CACHE_BGWRITER_MAX_QUEUE_DEPTH_PCT;
-
-	bc->bc_cache_mode_writeback = 0;
-
-	/* FIXME: probably need to add memory barrier here */
+	bc->bc_max_pending_requests = CACHE_MAX_PENDING_REQUESTS_MAX;
 
 	printk_info("waiting for flush completion - dirty blocks = %u\n",
 		    atomic_read(&bc->bc_valid_entries_dirty));
 	while (atomic_read(&bc->bc_valid_entries_dirty) > 0) {
-		/* accuracy of ops/sec estimation depends on msleep() jitter */
 		unsigned int d = atomic_read(&bc->bc_valid_entries_dirty);
-		/*
-		 * FIXME: change msleep to event_wait on &bc->bc_bgwriter_wait
-		 */
+		/* using msleep instead of event wait so print flushing rate */
 		msleep(1000);
 		printk_info("flushing - dirty blocks = %u (%u/sec)\n",
 			    atomic_read(&bc->bc_valid_entries_dirty),
@@ -616,7 +603,7 @@ int cache_bgwriter_kthread(void *__bc)
 			 */
 			ASSERT(bc->bc_bgwriter_curr_queue_depth >= 1 &&
 			       bc->bc_bgwriter_curr_queue_depth <=
-			       CACHE_MAX_MAX_PENDING_REQUESTS);
+			       CACHE_MAX_PENDING_REQUESTS_MAX);
 			ASSERT(bc->bc_bgwriter_curr_rate_per_sec >= 0
 			       && bc->bc_bgwriter_curr_rate_per_sec <= 300);
 			ASSERT(bc->bc_bgwriter_curr_min_age_secs >= 0

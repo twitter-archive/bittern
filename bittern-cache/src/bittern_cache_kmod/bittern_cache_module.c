@@ -434,8 +434,8 @@ struct cache_conf_param_entry cache_conf_param_list[] = {
 	{
 		.cache_conf_name = "max_pending_requests",
 		.cache_conf_type = CONF_TYPE_INT,
-		.cache_conf_min = CACHE_MIN_MAX_PENDING_REQUESTS,
-		.cache_conf_max = CACHE_MAX_MAX_PENDING_REQUESTS,
+		.cache_conf_min = CACHE_MAX_PENDING_REQUESTS_MIN,
+		.cache_conf_max = CACHE_MAX_PENDING_REQUESTS_MAX,
 		.cache_conf_setup_function = cache_calculate_max_pending,
 		.cache_conf_show_function = show_max_pending,
 	},
@@ -924,6 +924,26 @@ ssize_t cache_op_show_stats_extra(struct bittern_cache *bc,
 	       bc->bc_name,
 	       bc->devio.gennum,
 	       bc->devio.gennum_flush);
+	DMEMIT("%s: stats_extra: defer_busy_curr_count=%u defer_busy_requeue_count=%u defer_busy_max_count=%u\n",
+	       bc->bc_name,
+	       bc->defer_busy.curr_count,
+	       bc->defer_busy.requeue_count,
+	       bc->defer_busy.max_count);
+	DMEMIT("%s: stats_extra: defer_busy_work_count=%u defer_busy_no_work_count=%u " T_FMT_STRING("defer_busy_timer") "\n",
+	       bc->bc_name,
+	       bc->defer_busy.work_count,
+	       bc->defer_busy.no_work_count,
+	       T_FMT_ARGS(bc, defer_busy.timer));
+	DMEMIT("%s: stats_extra: defer_page_curr_count=%u defer_page_requeue_count=%u defer_page_max_count=%u\n",
+	       bc->bc_name,
+	       bc->defer_page.curr_count,
+	       bc->defer_page.requeue_count,
+	       bc->defer_page.max_count);
+	DMEMIT("%s: stats_extra: defer_page_work_count=%u defer_page_no_work_count=%u " T_FMT_STRING("defer_page_timer") "\n",
+	       bc->bc_name,
+	       bc->defer_page.work_count,
+	       bc->defer_page.no_work_count,
+	       T_FMT_ARGS(bc, defer_page.timer));
 	return sz;
 }
 
@@ -1306,7 +1326,7 @@ ssize_t cache_op_show_redblack_info(struct bittern_cache *bc,
 ssize_t cache_op_show_kthreads(struct bittern_cache *bc, char *result)
 {
 	size_t sz = 0, maxlen = PAGE_SIZE;
-	struct deferred_queue *q;
+
 	DMEMIT("%s: kthreads: " KT_FMT_STRING "\n",
 	       bc->bc_name,
 	       KT_FMT_ARGS(bc, "verifier_task", bc_verifier_task));
@@ -1323,32 +1343,6 @@ ssize_t cache_op_show_kthreads(struct bittern_cache *bc, char *result)
 	       bc->bc_name,
 	       KT_FMT_ARGS(bc, "invalidator_task", bc_invalidator_task),
 	       bc->bc_invalidator_no_work_count, bc->bc_invalidator_work_count);
-	q = &bc->bc_deferred_wait_busy;
-	DMEMIT("%s: kthreads: " KT_FMT_STRING ": deferred_wait_busy_curr_count=%u deferred_wait_busy_requeue_count=%u deferred_wait_busy_max_count=%u deferred_wait_busy_no_work_count=%u deferred_wait_busy_work_count=%u deferred_wait_busy_loop_count=%u deferred_wait_busy_gennum=%u/%u\n",
-	       bc->bc_name,
-	       KT_FMT_ARGS(bc, "deferred_busy_task",
-			   bc_deferred_wait_busy.bc_defer_task),
-	       q->bc_defer_curr_count,
-	       q->bc_defer_requeue_count,
-	       q->bc_defer_max_count,
-	       q->bc_defer_no_work_count,
-	       q->bc_defer_work_count,
-	       q->bc_defer_loop_count,
-	       q->bc_defer_curr_gennum,
-	       atomic_read(&q->bc_defer_gennum));
-	q = &bc->bc_deferred_wait_page;
-	DMEMIT("%s: kthreads: " KT_FMT_STRING ": deferred_wait_page_curr_count=%u deferred_wait_page_requeue_count=%u deferred_wait_page_max_count=%u deferred_wait_page_no_work_count=%u deferred_wait_page_work_count=%u deferred_wait_page_loop_count=%u deferred_wait_page_gennum=%u/%u\n",
-	       bc->bc_name,
-	       KT_FMT_ARGS(bc, "deferred_page_task",
-			   bc_deferred_wait_page.bc_defer_task),
-	       q->bc_defer_curr_count,
-	       q->bc_defer_requeue_count,
-	       q->bc_defer_max_count,
-	       q->bc_defer_no_work_count,
-	       q->bc_defer_work_count,
-	       q->bc_defer_loop_count,
-	       q->bc_defer_curr_gennum,
-	       atomic_read(&q->bc_defer_gennum));
 	return sz;
 }
 
@@ -1470,8 +1464,8 @@ ssize_t cache_op_show_timers(struct bittern_cache *bc, char *result)
 	       T_FMT_ARGS(bc, bc_timer_writebacks),
 	       T_FMT_ARGS(bc, bc_timer_invalidations),
 	       T_FMT_ARGS(bc, bc_timer_pending_queue),
-	       T_FMT_ARGS(bc, bc_deferred_wait_busy.bc_defer_timer),
-	       T_FMT_ARGS(bc, bc_deferred_wait_page.bc_defer_timer));
+	       T_FMT_ARGS(bc, defer_busy.timer),
+	       T_FMT_ARGS(bc, defer_page.timer));
 	DMEMIT("%s: timers: "
 	       T_FMT_STRING("cached_device_reads") " "
 	       T_FMT_STRING("cached_device_writes") " "

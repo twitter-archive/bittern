@@ -118,8 +118,8 @@ void cache_dump_deferred(struct bittern_cache *bc,
 	printk_debug("dump_%s_start[start_offset=%u]\n", queue_name,
 		     start_offset);
 
-	spin_lock_irqsave(&queue->bc_defer_lock, flags);
-	bio_list_for_each(bio, &queue->bc_defer_list) {
+	spin_lock_irqsave(&bc->defer_lock, flags);
+	bio_list_for_each(bio, &queue->list) {
 		if (curr_offset++ < start_offset)
 			continue;
 		printk(KERN_DEBUG
@@ -134,7 +134,7 @@ void cache_dump_deferred(struct bittern_cache *bc,
 		if (++dump_count >= 10000)
 			break;
 	}
-	spin_unlock_irqrestore(&queue->bc_defer_lock, flags);
+	spin_unlock_irqrestore(&bc->defer_lock, flags);
 
 	printk_debug("dump_%s_done[start_offset=%u, current_offset=%u, dump_count=%u]\n",
 	     queue_name, start_offset, curr_offset, dump_count);
@@ -295,21 +295,21 @@ int cache_dump_blocks(struct bittern_cache *bc,
 		cache_dump_devio_pending(bc, dump_offset);
 	else if (strcmp(dump_op, "deferred") == 0) {
 		cache_dump_deferred(bc,
-				    &bc->bc_deferred_wait_busy,
+				    &bc->defer_busy,
 				    "deferred_wait_busy",
 				    dump_offset);
 		cache_dump_deferred(bc,
-				    &bc->bc_deferred_wait_page,
+				    &bc->defer_page,
 				    "deferred_wait_page",
 				    dump_offset);
 	} else if (strcmp(dump_op, "deferred_wait_busy") == 0)
 		cache_dump_deferred(bc,
-				    &bc->bc_deferred_wait_busy,
+				    &bc->defer_busy,
 				    "deferred_wait_busy",
 				    dump_offset);
 	else if (strcmp(dump_op, "deferred_wait_page") == 0)
 		cache_dump_deferred(bc,
-				    &bc->bc_deferred_wait_page,
+				    &bc->defer_page,
 				    "deferred_wait_page",
 				    dump_offset);
 	else

@@ -42,5 +42,23 @@ do
 	#replace_in_file _ENDIO _END $f
 	#replace_in_file UPDATE_METADATA UPD_METADATA $f
 	#replace_in_file _hit_clone_ _hit_ $f
-	replace_in_file bc_dev_ devio. $f
+	#replace_in_file bc_dev_ devio. $f
+	#replace_in_file bc_deferred_wait_busy defer_wait_busy $f
+	#replace_in_file bc_deferred_wait_page defer_wait_page $f
+	#replace_in_file bc_defer_list list $f
+	#replace_in_file bc_defer_curr_count curr_count $f
+	#replace_in_file bc_defer_requeue_count requeue_count $f
+	#replace_in_file bc_defer_max_count max_count $f
+	#replace_in_file bc_defer_no_work_count no_work_count $f
+	#replace_in_file bc_defer_work_count work_count $f
+	#replace_in_file bc_defer_loop_count loop_count $f
+	#replace_in_file bc_defer_timer timer $f
+	#replace_in_file bc_defer_tstamp tstamp $f
+	#replace_in_file cache_wakeup_deferred wakeup_deferred $f
+	#replace_in_file cache_queue_to_deferred queue_to_deferred $f
+	#replace_in_file cache_dequeue_from_deferred dequeue_from_deferred $f
+	#replace_in_file cache_deferred_has_work deferred_has_work $f
+	#replace_in_file cache_handle_deferred handle_deferred $f
+	replace_in_file defer_wait_busy defer_busy $f
+	replace_in_file defer_wait_page defer_page $f
 done

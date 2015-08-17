@@ -65,29 +65,21 @@ void cache_dtr_pre(struct dm_target *ti)
 	printk_info("stopped bgwriter task (task=%p): ret=%d\n",
 		    bc->bc_bgwriter_task, ret);
 
-	printk_info("stopping bc_deferred_wait_page.bc_defer_task (task=%p)\n",
-		    bc->bc_deferred_wait_page.bc_defer_task);
-	ret = kthread_stop(bc->bc_deferred_wait_page.bc_defer_task);
-	M_ASSERT(bc->bc_deferred_wait_page.bc_defer_task == NULL);
-	printk_info("stopped bc_deferred_wait_page.bc_defer_task (task=%p): %d\n",
-		    bc->bc_deferred_wait_page.bc_defer_task,
-		    ret);
+	/* there can be no pending deferred requests anymore */
+	M_ASSERT(atomic_read(&bc->bc_deferred_requests) == 0);
 
-	printk_info("stopping bc_deferred_wait_busy.bc_defer_task (task=%p)\n",
-		    bc->bc_deferred_wait_busy.bc_defer_task);
-	ret = kthread_stop(bc->bc_deferred_wait_busy.bc_defer_task);
-	M_ASSERT(bc->bc_deferred_wait_busy.bc_defer_task == NULL);
-	printk_info("stopped bc_deferred_wait_busy.bc_defer_task (task=%p): %d\n",
-		    bc->bc_deferred_wait_busy.bc_defer_task,
-		    ret);
+	M_ASSERT(bc->defer_wq != NULL);
+	flush_workqueue(bc->defer_wq);
+	printk_info("destroying deferred workqueue\n");
+	destroy_workqueue(bc->defer_wq);
 
 	printk_info("deferred_queues(%u/%u)\n",
-		    bc->bc_deferred_wait_busy.bc_defer_curr_count,
-		    bc->bc_deferred_wait_page.bc_defer_curr_count);
-	M_ASSERT(bc->bc_deferred_wait_busy.bc_defer_curr_count == 0);
-	M_ASSERT(bio_list_empty(&bc->bc_deferred_wait_busy.bc_defer_list));
-	M_ASSERT(bc->bc_deferred_wait_page.bc_defer_curr_count == 0);
-	M_ASSERT(bio_list_empty(&bc->bc_deferred_wait_page.bc_defer_list));
+		    bc->defer_busy.curr_count,
+		    bc->defer_page.curr_count);
+	M_ASSERT(bc->defer_busy.curr_count == 0);
+	M_ASSERT(bio_list_empty(&bc->defer_busy.list));
+	M_ASSERT(bc->defer_page.curr_count == 0);
+	M_ASSERT(bio_list_empty(&bc->defer_page.list));
 	printk_info("deferred_requests=%u\n",
 		    atomic_read(&bc->bc_deferred_requests));
 	M_ASSERT(atomic_read(&bc->bc_deferred_requests) == 0);

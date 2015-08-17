@@ -343,13 +343,14 @@ work_item_del_pending_io(struct bittern_cache *bc,
  * - cache invalidation
  * - freeing up buffers
  */
-extern void cache_wakeup_deferred(struct bittern_cache *bc);
+extern void wakeup_deferred(struct bittern_cache *bc);
 /*! queue request to deferred queue for execution in a thread context */
-extern void cache_queue_to_deferred(struct bittern_cache *bc,
+extern void queue_to_deferred(struct bittern_cache *bc,
 				    struct deferred_queue *queue,
-				    struct bio *bio);
-/*! dequeue request from deferred queue -- used by @ref cache_handle_deferred */
-extern struct bio *cache_dequeue_from_deferred(struct bittern_cache *bc,
+				    struct bio *bio,
+				    struct deferred_queue *old_queue);
+/*! dequeue request from deferred queue -- used by @ref handle_deferred */
+extern struct bio *dequeue_from_deferred(struct bittern_cache *bc,
 					       struct deferred_queue *queue);
 
 static inline bool bio_is_pureflush_request(struct bio *bio)

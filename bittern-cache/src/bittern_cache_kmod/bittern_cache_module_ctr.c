@@ -22,24 +22,20 @@
 int cache_calculate_max_pending(struct bittern_cache *bc, int max_requests)
 {
 	bc->bc_max_pending_requests = max_requests;
-	if (bc->bc_max_pending_requests <
-	    CACHE_MIN_MAX_PENDING_REQUESTS)
-		bc->bc_max_pending_requests =
-		    CACHE_MIN_MAX_PENDING_REQUESTS;
-	if (bc->bc_max_pending_requests >
-	    CACHE_MAX_MAX_PENDING_REQUESTS)
-		bc->bc_max_pending_requests = CACHE_MAX_MAX_PENDING_REQUESTS;
+	if (bc->bc_max_pending_requests < CACHE_MAX_PENDING_REQUESTS_MIN)
+		bc->bc_max_pending_requests = CACHE_MAX_PENDING_REQUESTS_MIN;
+	if (bc->bc_max_pending_requests > CACHE_MAX_PENDING_REQUESTS_MAX)
+		bc->bc_max_pending_requests = CACHE_MAX_PENDING_REQUESTS_MAX;
 	/*
 	 * this should not really happen in production, but it's useful for
 	 * test runs when we have a very small cache
 	 */
-	if (bc->bc_max_pending_requests >
-	    (bc->bc_papi.papi_hdr.lm_cache_blocks / 10))
-		bc->bc_max_pending_requests =
-		    bc->bc_papi.papi_hdr.lm_cache_blocks / 10;
+	if (bc->bc_max_pending_requests > (bc->bc_papi.papi_hdr.lm_cache_blocks / 10))
+		bc->bc_max_pending_requests = bc->bc_papi.papi_hdr.lm_cache_blocks / 10;
 	printk_info("max_requests=%u, minmax(%u,%u), lm_cache_blocks_slash_10=%u\n",
-		    max_requests, CACHE_MIN_MAX_PENDING_REQUESTS,
-		    CACHE_MAX_MAX_PENDING_REQUESTS,
+		    max_requests,
+		    CACHE_MAX_PENDING_REQUESTS_MIN,
+		    CACHE_MAX_PENDING_REQUESTS_MAX,
 		    (unsigned int)(bc->bc_papi.papi_hdr.lm_cache_blocks / 10));
 	ASSERT(bc->bc_max_pending_requests > 0);
 	return 0;
@@ -454,8 +450,7 @@ int cache_ctr_restore_or_init_block(struct bittern_cache *bc,
  * requests. Once the throughput of the cache device is saturated, there is no
  * further reason to increase parallelism.
  */
-#define RESTORE_WORKQUEUES		32
-#define RESTORE_WORKQUEUES_MODULO	RESTORE_WORKQUEUES
+#define RESTORE_WORKQUEUES		128
 #define RESTORE_WORKQUEUE_MAGIC	0xf10c7c34
 struct restore_workqueue {
 	unsigned int magic;
@@ -489,7 +484,7 @@ void cache_ctr_restore_or_init(struct bittern_cache *bc,
 
 	for (mod_base = 1;
 	     mod_base <= bc->bc_papi.papi_hdr.lm_cache_blocks;
-	     mod_base += RESTORE_WORKQUEUES_MODULO) {
+	     mod_base += RESTORE_WORKQUEUES) {
 		unsigned int block_id = mod_base + r_wq->modulo_offset;
 
 		if (block_id > bc->bc_papi.papi_hdr.lm_cache_blocks) {
@@ -942,8 +937,8 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	cache_timer_init(&bc->bc_timer_pending_queue);
 	cache_timer_init(&bc->bc_timer_resource_alloc_reads);
 	cache_timer_init(&bc->bc_timer_resource_alloc_writes);
-	cache_timer_init(&bc->bc_deferred_wait_busy.bc_defer_timer);
-	cache_timer_init(&bc->bc_deferred_wait_page.bc_defer_timer);
+	cache_timer_init(&bc->defer_busy.timer);
+	cache_timer_init(&bc->defer_page.timer);
 
 	bc->devio.conf_worker_delay = CACHED_DEV_WORKER_DELAY_DEFAULT;
 	bc->devio.conf_fua_insert = CACHED_DEV_FUA_INSERT_DEFAULT;
@@ -1077,14 +1072,17 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	 * this is also used very early
 	 * \todo should have its own init function for this
 	 */
-	atomic_set(&bc->bc_deferred_wait_busy.bc_defer_gennum, 0);
-	init_waitqueue_head(&bc->bc_deferred_wait_busy.bc_defer_wait);
-	spin_lock_init(&bc->bc_deferred_wait_busy.bc_defer_lock);
-	bio_list_init(&bc->bc_deferred_wait_busy.bc_defer_list);
-	atomic_set(&bc->bc_deferred_wait_page.bc_defer_gennum, 0);
-	init_waitqueue_head(&bc->bc_deferred_wait_page.bc_defer_wait);
-	spin_lock_init(&bc->bc_deferred_wait_page.bc_defer_lock);
-	bio_list_init(&bc->bc_deferred_wait_page.bc_defer_list);
+	spin_lock_init(&bc->defer_lock);
+	bio_list_init(&bc->defer_busy.list);
+	bio_list_init(&bc->defer_page.list);
+	bc->defer_wq = alloc_workqueue("dfr_wk:%s", WQ_UNBOUND, 1, bc->bc_name);
+	if (bc->defer_wq == NULL) {
+		ti->error = "cannot allocate dfr_wk workqueue";
+		printk_err("%s: cannot allocate dfr_wk workqueue\n",
+			   bc->bc_name);
+		goto bad_1;
+	}
+	INIT_WORK(&bc->defer_work, cache_deferred_worker);
 
 	/*
 	 * we do a header restore no matter what.
@@ -1139,7 +1137,7 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		goto bad_1;
 	}
 
-	cache_calculate_max_pending(bc, CACHE_DEFAULT_MAX_PENDING_REQUESTS);
+	cache_calculate_max_pending(bc, CACHE_MAX_PENDING_REQUESTS_DEFAULT);
 	M_ASSERT(bc->bc_max_pending_requests > 0);
 
 	printk_info("bc_empty_root=%d\n", RB_EMPTY_ROOT(&bc->bc_rb_root));
@@ -1326,26 +1324,6 @@ int cache_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	printk_info("verifier instantiated, task=%p\n", bc->bc_verifier_task);
 	wake_up_process(bc->bc_verifier_task);
 
-	bc->bc_deferred_wait_busy.bc_defer_task = kthread_create(
-					cache_deferred_busy_kthread,
-					bc,
-					"b_dfb/%s",
-					bc->bc_name);
-	M_ASSERT_FIXME(bc->bc_deferred_wait_busy.bc_defer_task != NULL);
-	printk_info("bc_deferred_wait_busy.bc_defer_task task=%p\n",
-		    bc->bc_deferred_wait_busy.bc_defer_task);
-	wake_up_process(bc->bc_deferred_wait_busy.bc_defer_task);
-
-	bc->bc_deferred_wait_page.bc_defer_task = kthread_create(
-					cache_deferred_page_kthread,
-					bc,
-					"b_dfp/%s",
-					bc->bc_name);
-	M_ASSERT_FIXME(bc->bc_deferred_wait_page.bc_defer_task != NULL);
-	printk_info("bc_deferred_wait_page.bc_defer_task task=%p\n",
-		    bc->bc_deferred_wait_page.bc_defer_task);
-	wake_up_process(bc->bc_deferred_wait_page.bc_defer_task);
-
 	bc->bc_bgwriter_task = kthread_create(cache_bgwriter_kthread,
 					      bc,
 					      "b_bgw/%s",
@@ -1384,6 +1362,12 @@ bad_1:
 		kmem_cache_destroy(bc->bc_kmem_map);
 	if (bc->bc_kmem_threads != NULL)
 		kmem_cache_destroy(bc->bc_kmem_threads);
+
+	if (bc->defer_wq != NULL) {
+		flush_workqueue(bc->defer_wq);
+		printk_info("destroying deferred workqueue\n");
+		destroy_workqueue(bc->defer_wq);
+	}
 
 	pmem_deallocate(bc);
 	printk_info("mem_info_deinitialize()\n");

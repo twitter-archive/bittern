@@ -3,23 +3,25 @@
   <!-- Navigation index tabs for HTML output -->
   <navindex>
     <tab type="mainpage" visible="yes" title=""/>
+    <tab type="usergroup" visible="yes" title="Introduction">
+      <tab type="user" title="Introduction to Bittern" url="md_docs_introduction_to_bittern.html"/>
+      <tab type="user" title="Getting Started" url="md_docs_getting_started.html"/>
+      <tab type="user" title="Release Notes" url="md_docs_release_notes.html"/>
+   </tab>
     <tab type="usergroup" title="Design Documentation">
-      <tab type="user" title="Introduction to Bittern" url="@ref introduction_to_bittern"/>
-      <tab type="user" title="Getting Started" url="@ref getting_started"/>
-      <tab type="user" title="Release Notes" url="@ref release_notes"/>
-      <tab type="user" title="Design Overview" url="@ref design_overview"/>
-      <tab type="user" title="Files Overview" url="@ref files_organization"/>
-      <tab type="user" title="Cache Layout" url="@ref cache_layout"/>
-      <tab type="user" title="Incore Layout" url="@ref incore_layout"/>
-      <tab type="user" title="Data Structures" url="@ref data_structures"/>
-      <tab type="user" title="PMEM API" url="@ref pmem_api"/>
-      <tab type="user" title="Request Life Cycle" url="@ref request_life_cycle"/>
-      <tab type="user" title="State Machine" url="@ref state_machine"/>
-      <tab type="user" title="Background Writer" url="@ref background_writer"/>
-      <tab type="user" title="Invalidator" url="@ref invalidator"/>
-      <tab type="user" title="LVM Integration" url="@ref lvm"/>
-      <tab type="user" title="Deferred Queues" url="@ref deferred_queues"/>
-      <tab type="user" title="Debugging, Tracing and Performance" url="@ref debugging_tracing_and_performance"/>
+      <tab type="user" title="Design Overview" url="md_docs_design_overview.html"/>
+      <tab type="user" title="Files Overview" url="md_docs_files_organization.html"/>
+      <tab type="user" title="Cache Layout" url="md_docs_cache_layout.html"/>
+      <tab type="user" title="Incore Layout" url="md_docs_incore_layout.html"/>
+      <tab type="user" title="Data Structures" url="md_docs_data_structures.html"/>
+      <tab type="user" title="PMEM API" url="md_docs_pmem_api.html"/>
+      <tab type="user" title="Request Life Cycle" url="md_docs_request_life_cycle.html"/>
+      <tab type="user" title="State Machine" url="md_docs_state_machine.html"/>
+      <tab type="user" title="Background Writer" url="md_docs_background_writer.html"/>
+      <tab type="user" title="Invalidator" url="md_docs_invalidator.html"/>
+      <tab type="user" title="LVM Integration" url="md_docs_lvm.html"/>
+      <tab type="user" title="Deferred Queues" url="md_docs_deferred_queues.html"/>
+      <tab type="user" title="Debugging, Tracing and Performance" url="md_docs_debugging_tracing_and_performance.html"/>
     </tab>
     <tab type="pages" visible="no" title="" intro=""/>
     <tab type="modules" visible="yes" title="" intro=""/>

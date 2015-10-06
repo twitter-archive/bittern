@@ -1,0 +1,14 @@
+diff --git a/bittern-cache/etc/rc.sysinit b/bittern-cache/etc/rc.sysinit
+index f51728a..83b392b 100755
+--- a/bittern-cache/etc/rc.sysinit
++++ b/bittern-cache/etc/rc.sysinit
+@@ -210,6 +210,9 @@ if [ -x /sbin/lvm ]; then
+ 	action $"Setting up Logical Volume Management:" /sbin/lvm vgchange -a ay --sysinit
+ fi
+ 
++# load bittern cache - needs to be done after udev and mdstart, but before file system checks
++/etc/init.d/bittern_cache initial-start
++
+ if [ -f /etc/crypttab ]; then
+     init_crypto 0
+ fi

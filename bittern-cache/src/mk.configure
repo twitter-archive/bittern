@@ -1,0 +1,226 @@
+#!/bin/bash
+#
+# Bittern Cache.
+#
+# Copyright(c) 2013, 2014, 2015, Twitter, Inc., All rights reserved.
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms and conditions of the GNU General Public License,
+# version 2, as published by the Free Software Foundation.
+#
+# This program is distributed in the hope it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# more details.
+#
+#
+
+if [ ! -r "./mk.configure" ]
+then
+        echo $0: need to run from the local directory
+        exit 1
+fi
+
+MK_CONFIG_FILE=bittern_cache_kmod/bittern_cache_config.h
+
+#
+# tracing and printk
+#
+BT_LEVEL_DEFAULT_0='#define        BT_LEVEL_DEFAULT     BT_LEVEL_DEFAULT_0'              # this is the default if not specified
+BT_LEVEL_DEFAULT=$BT_LEVEL_DEFAULT_0
+BT_LEVEL_DEFAULT_1='#define        BT_LEVEL_DEFAULT     BT_LEVEL_DEFAULT_1'
+BT_LEVEL_DEFAULT_2='#define        BT_LEVEL_DEFAULT     BT_LEVEL_DEFAULT_2'
+BT_LEVEL_DEFAULT_2_1='#define      BT_LEVEL_DEFAULT   BT_LEVEL_DEFAULT_2_1'
+BT_LEVEL_DEFAULT_2_2='#define      BT_LEVEL_DEFAULT   BT_LEVEL_DEFAULT_2_2'
+# The debug level we'd like to print information in. By default it is KERN_DEBUG
+PRINTK_DEBUG_DEFAULT_0='#define    PRINTK_DEBUG_DEFAULT     KERN_DEBUG'
+# On test builds (i.e. non-prod), we tend to log more.
+PRINTK_DEBUG_DEFAULT_1='#define    PRINTK_DEBUG_DEFAULT     KERN_INFO'
+PRINTK_DEBUG_DEFAULT=$PRINTK_DEBUG_DEFAULT_0
+#
+# assert
+#
+ASSERT_ENABLE='#define             ENABLE_ASSERT'
+ASSERT_DISABLE='// #undef          ENABLE_ASSERT'
+#
+# kmalloc debug - TBD
+#
+ENABLE_KMALLOC_DEBUG_0='#define    ENABLE_KMALLOC_DEBUG'
+ENABLE_KMALLOC_DEBUG='// #undef    ENABLE_KMALLOC_DEBUG'
+#
+# enable extra checksum check
+#
+ENABLE_EXTRA_CHECKSUM_CHECK_0='#define     ENABLE_EXTRA_CHECKSUM_CHECK'
+ENABLE_EXTRA_CHECKSUM_CHECK_1='// #undef     ENABLE_EXTRA_CHECKSUM_CHECK'
+ENABLE_EXTRA_CHECKSUM_CHECK=$ENABLE_EXTRA_CHECKSUM_CHECK_1
+#
+# track extra crc32c other than the ones in cache (this uses a lot of memory)
+#
+ENABLE_TRACK_CRC32C_0='#define     ENABLE_TRACK_CRC32C'
+ENABLE_TRACK_CRC32C_1='// #undef     ENABLE_TRACK_CRC32C'
+ENABLE_TRACK_CRC32C=$ENABLE_TRACK_CRC32C_1
+#
+# disable bt_dev_trace
+#
+DISABLE_BT_DEV_TRACE_0='#define                 DISABLE_BT_DEV_TRACE'
+DISABLE_BT_DEV_TRACE='// #undef                 DISABLE_BT_DEV_TRACE'
+#
+# disable bt_trace
+#
+DISABLE_BT_TRACE_0='#define                     DISABLE_BT_TRACE'
+DISABLE_BT_TRACE='// #undef                     DISABLE_BT_TRACE'
+
+usage() {
+        echo $0: usage:
+        echo $0: '       ' --enable-assert: enables assertions '(WARNING: significantly slows down cache operation)'
+        echo $0: '       ' --disable-assert: disables assertions
+        echo $0: '       ' --extra-trace1: enable trace level 1_0
+        echo $0: '       ' --extra-trace2: enable trace level 2_0
+        echo $0: '       ' --extra-trace22: enable trace level 2_2
+        echo $0: '       ' --extra-kern-info: change trace level from debug to info
+        echo $0: '       ' --disable-bt-dev-trace: completely disable bt_dev_trace
+        echo $0: '       ' --disable-bt-trace: completely disable bt_trace
+        echo $0: '       ' --enable-kmalloc-debug: enable kmalloc debug
+        echo $0: '       ' --enable-periodic-tree-walk: enable periodic tree walk
+        echo $0: '       ' --enable-extra-checksum-check: enable extra checksum check
+        echo $0: '       ' --disable-extra-checksum-check: disable extra checksum check
+        echo $0: '       ' --enable-track-crc32c: enable additional crc32c checksum tracking '(WARNING: uses a lot of memory)'
+        echo $0: '       ' --disable-track-crc32c: disable additional crc32c checksum tracking
+        echo $0: '       ' --developer: developer options
+        echo $0: '       ' --testing: testing options
+        echo $0: '       ' --production: production options
+}
+
+__assert_option_specified="no"
+__double_buffering_option_specified="no"
+ARGS=$(getopt -o "" -l "enable-assert,disable-assert,extra-trace1,extra-trace2,extra-trace22,extra-kern-info,enable-kmalloc-debug,enable-periodic-tree-walk,enable-track-crc32c,disable-track-crc32c,enable-extra-checksum-check,disable-extra-checksum-check,disable-bt-dev-trace,disable-bt-trace,developer,testing,production,help,h" -n "mk.configure" -- "$@");
+__status=$?
+if [ $__status -ne 0 ]
+then
+        exit 1
+fi
+eval set -- "$ARGS";
+while true
+do
+        case "$1" in
+        --enable-assert)
+                ASSERT_DEFAULT=$ASSERT_ENABLE
+                __assert_option_specified="yes"
+                shift
+                ;;
+        --disable-assert)
+                ASSERT_DEFAULT=$ASSERT_DISABLE
+                __assert_option_specified="yes"
+                shift
+                ;;
+        --extra-trace1)
+                BT_LEVEL_DEFAULT=$BT_LEVEL_DEFAULT_1
+                shift
+                ;;
+        --extra-trace2)
+                BT_LEVEL_DEFAULT=$BT_LEVEL_DEFAULT_2
+                shift
+                ;;
+        --extra-trace22)
+                BT_LEVEL_DEFAULT=$BT_LEVEL_DEFAULT_2_2
+                shift
+                ;;
+        --extra-kern-info)
+                PRINTK_DEBUG_DEFAULT=$PRINTK_DEBUG_DEFAULT_1
+                shift
+                ;;
+        --enable-kmalloc-debug)
+                ENABLE_KMALLOC_DEBUG=$ENABLE_KMALLOC_DEBUG_0
+                shift
+                ;;
+        --enable-track-crc32c)
+                ENABLE_TRACK_CRC32C=$ENABLE_TRACK_CRC32C_0
+                shift
+                ;;
+        --disable-track-crc32c)
+                ENABLE_TRACK_CRC32C=$ENABLE_TRACK_CRC32C_1
+                shift
+                ;;
+        --enable-extra-checksum-check)
+                ENABLE_EXTRA_CHECKSUM_CHECK=$ENABLE_EXTRA_CHECKSUM_CHECK_0
+                shift
+                ;;
+        --disable-extra-checksum-check)
+                ENABLE_EXTRA_CHECKSUM_CHECK=$ENABLE_EXTRA_CHECKSUM_CHECK_1
+                shift
+                ;;
+        --disable-bt-dev-trace)
+                DISABLE_BT_DEV_TRACE=$DISABLE_BT_DEV_TRACE_0
+                shift
+                ;;
+        --disable-bt-trace)
+                DISABLE_BT_TRACE=$DISABLE_BT_TRACE_0
+                shift
+                ;;
+        --developer)
+                ASSERT_DEFAULT=$ASSERT_ENABLE
+                __assert_option_specified="yes"
+                __double_buffering_option_specified="yes"
+                ENABLE_KMALLOC_DEBUG=$ENABLE_KMALLOC_DEBUG_0
+                ENABLE_EXTRA_CHECKSUM_CHECK=$ENABLE_EXTRA_CHECKSUM_CHECK_0
+                # eventually disable
+                ENABLE_TRACK_CRC32C=$ENABLE_TRACK_CRC32C_0
+                shift
+                ;;
+        --testing)
+                ASSERT_DEFAULT=$ASSERT_ENABLE
+                __assert_option_specified="yes"
+                __double_buffering_option_specified="yes"
+                ENABLE_EXTRA_CHECKSUM_CHECK=$ENABLE_EXTRA_CHECKSUM_CHECK_0
+                # eventually disable
+                ENABLE_TRACK_CRC32C=$ENABLE_TRACK_CRC32C_0
+                shift
+                ;;
+        --production)
+                ASSERT_DEFAULT=$ASSERT_DISABLE
+                __assert_option_specified="yes"
+                __double_buffering_option_specified="yes"
+                DISABLE_BT_DEV_TRACE=$DISABLE_BT_DEV_TRACE_0
+                DISABLE_BT_TRACE=$DISABLE_BT_TRACE_0
+                # eventually disable this for NVDIMM-type of device
+                ENABLE_EXTRA_CHECKSUM_CHECK=$ENABLE_EXTRA_CHECKSUM_CHECK_0
+                # eventually disable
+                # ENABLE_TRACK_CRC32C=$ENABLE_TRACK_CRC32C_0
+                shift
+                ;;
+        --h|--help)
+                usage
+                exit
+                ;;
+        --)
+                break
+                ;;
+        esac
+done
+
+if [ $__assert_option_specified != "yes" ]
+then
+        echo $0: --enable-assert or --disable-assert is required
+        exit 1
+fi
+
+echo $0: writing configuration options to $MK_CONFIG_FILE
+
+rm -f $MK_CONFIG_FILE
+echo '/*'                                               >> $MK_CONFIG_FILE
+echo ' * this file autogenerated on ' `date`            >> $MK_CONFIG_FILE
+echo ' * do not modify'                                 >> $MK_CONFIG_FILE
+echo ' */'                                              >> $MK_CONFIG_FILE
+echo '#ifndef __BITTERN_CACHE_CONFIG__'                 >> $MK_CONFIG_FILE
+echo '#define __BITTERN_CACHE_CONFIG__'                 >> $MK_CONFIG_FILE
+echo $ASSERT_DEFAULT                                    >> $MK_CONFIG_FILE
+echo $BT_LEVEL_DEFAULT                                  >> $MK_CONFIG_FILE
+echo $PRINTK_DEBUG_DEFAULT                              >> $MK_CONFIG_FILE
+echo $ENABLE_KMALLOC_DEBUG                              >> $MK_CONFIG_FILE
+echo $ENABLE_TRACK_CRC32C                               >> $MK_CONFIG_FILE
+echo $ENABLE_EXTRA_CHECKSUM_CHECK                       >> $MK_CONFIG_FILE
+echo $DISABLE_BT_DEV_TRACE                              >> $MK_CONFIG_FILE
+echo $DISABLE_BT_TRACE                                  >> $MK_CONFIG_FILE
+echo '#endif /*__BITTERN_CACHE_CONFIG__*/'              >> $MK_CONFIG_FILE
+
+cat $MK_CONFIG_FILE

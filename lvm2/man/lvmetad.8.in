@@ -1,0 +1,71 @@
+.TH LVMETAD 8 "LVM TOOLS #VERSION#" "Red Hat Inc" \" -*- nroff -*-
+.SH NAME
+lvmetad \(em LVM metadata cache daemon
+.SH SYNOPSIS
+.B lvmetad
+.RB [ \-l
+.RI { all | wire | debug }]
+.RB [ \-p
+.IR pidfile_path ]
+.RB [ \-s
+.IR socket_path ]
+.RB [ \-f ]
+.RB [ \-h ]
+.RB [ \-V ]
+.RB [ \-? ]
+.SH DESCRIPTION
+lvmetad is a metadata caching daemon for LVM. The daemon receives notifications
+from udev rules (which must be installed for LVM to work correctly when lvmetad
+is in use). Through these notifications, lvmetad has an up-to-date and
+consistent image of the volume groups available in the system.
+
+lvmetad is used by LVM only if it is enabled in \fBlvm.conf\fP(5) by specifying the
+\fBglobal/use_lvmetad\fP setting. If this is not defined in the LVM configuration
+explicitly then default setting is used instead (see the output of
+\fBlvm dumpconfig \-\-type default global/use_lvmetad\fP command).
+.SH OPTIONS
+
+To run the daemon in a test environment both the pidfile_path and the
+socket_path should be changed from the defaults.
+.TP
+.B \-f
+Don't fork, but run in the foreground.
+.TP
+.BR \-h ", " \-?
+Show help information.
+.TP
+.IR \fB\-l " {" all | wire | debug }
+Select the type of log messages to generate.
+Messages are logged by syslog.  
+Additionally, when \-f is given they are also sent to standard error.
+Since release 2.02.98, there are two classes of messages: wire and debug.
+Selecting 'all' supplies both and is equivalent to a comma-separated list
+\-l wire,debug.
+Prior to release 2.02.98, repeating \-d from 1 to 3 times, viz. \-d, \-dd, \-ddd,
+increased the detail of messages.
+.TP
+.B \-p \fIpidfile_path
+Path to the pidfile. This overrides both the built-in default
+(#DEFAULT_PID_DIR#/lvmetad.pid) and the environment variable
+\fBLVM_LVMETAD_PIDFILE\fP.  This file is used to prevent more
+than one instance of the daemon running simultaneously.
+.TP
+.B \-s \fIsocket_path
+Path to the socket file. This overrides both the built-in default
+(#DEFAULT_RUN_DIR#/lvmetad.socket) and the environment variable
+\fBLVM_LVMETAD_SOCKET\fP.  To communicate successfully with lvmetad,
+all LVM2 processes should use the same socket path.
+.TP
+.B \-V
+Display the version of lvmetad daemon.
+.SH ENVIRONMENT VARIABLES
+.TP
+.B LVM_LVMETAD_PIDFILE
+Path for the pid file.
+.TP
+.B LVM_LVMETAD_SOCKET 
+Path for the socket file.
+
+.SH SEE ALSO
+.BR lvm (8),
+.BR lvm.conf (5)

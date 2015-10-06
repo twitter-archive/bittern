@@ -1,0 +1,7 @@
+#
+# rules specific to this directory
+#
+Module.symvers
+bittern_cache_git_info.c
+bittern_cache_config.h
+doxygen.docs

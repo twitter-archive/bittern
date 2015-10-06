@@ -1,0 +1,246 @@
+#!/bin/bash
+#
+# description: starts and stops bittern_cache
+#
+#
+# Copyright (C) 2014 Fio Cattaneo <fio@twitter.com> <fio@cattaneo.us>, Twitter, Inc. All Rights Reserved.
+#
+# This file is released under the GPLv2 license.
+#
+
+ERRORS=""
+
+# Source function library.
+. /etc/init.d/functions
+
+# No conf file directory, bail out.
+if [ ! -d /etc/bittern.conf.d ] ; then exit 0; fi
+
+logmessage() {
+        logger -is -p syslog.info -- $0: $*
+}
+
+child_status_report() {
+        pids=$(jobs -p)
+        for pid in $pids; do
+                wait $pid
+                status=$?
+                if [ $status -ne 0 ]
+                then
+                        logmessage FAILURE: $pid exited with status code $status
+                        ERRORS="$ERRORS $pid exited with $status"
+                fi
+        done
+}
+
+clean_env_variables() {
+        # Clean the variables that may have been defined in previous
+        # config file and aren't defined in the one we are trying to
+        # process.
+
+        unset BITTERN_CACHE_DEVICE \
+                BITTERN_CACHE_NAME \
+                BITTERN_CACHE_TYPE \
+                BITTERN_CACHED_DEVICE \
+                ENABLED
+
+
+}
+
+verify_conf_files() {
+        conf_file_list="$*"
+        good_conf_files=""
+        for conf_file in $conf_file_list; do
+                if [ ! -r $conf_file ]
+                then
+                        continue
+                fi
+
+                clean_env_variables
+                . $conf_file
+
+                #
+                # verify we have everything we need here
+                # collect all failure to ease debugging.
+                #
+                MISSING_ARGS=""
+                # verify whether we have everything we need here.
+                if [ -z $BITTERN_CACHED_DEVICE ]
+                then
+                        MISSING_ARGS="$MISSING_ARGS \$BITTERN_CACHED_DEVICE"
+                fi
+
+                if [ -z $BITTERN_CACHE_NAME ]
+                then
+                    MISSING_ARGS="$MISSING_ARGS \$BITTERN_CACHE_NAME"
+                fi
+
+                if [ -z $BITTERN_CACHE_DEVICE ]
+                then
+                    MISSING_ARGS="$MISSING_ARGS \$BITTERN_CACHE_DEVICE"
+                fi
+                if [ ! -z "$MISSING_ARGS"]
+                then
+                    logmessage ERROR: missing parameters $MISSING_ARGS in $conf_file
+                    logmessage ERROR: Skipping $conf_file
+                    continue
+                fi
+                good_conf_files="$good_conf_files $conf_file"
+        done
+        echo $good_conf_files
+}
+
+start() {
+
+        #
+        # load kernel modules
+        #
+        insert_modules
+
+        logmessage start
+
+        PIDS=""
+        good_conf_files=$(verify_conf_files "/etc/bittern.conf.d/*conf")
+        for conf_file in $good_conf_files; do
+                start_cache $conf_file
+        done
+
+        logmessage waiting for bc_setup processes to finish:
+        logmessage "$TASKS"
+	child_status_report
+}
+
+insert_modules() {
+        INSMOD_ARGUMENTS="--ignore-already-loaded"
+        logmessage /sbin/bittern_cache/scripts/bc_insmod.sh $INSMOD_ARGUMENTS
+        /sbin/bittern_cache/scripts/bc_insmod.sh $INSMOD_ARGUMENTS
+        __status=$?
+        if [ $__status -ne 0 ]
+        then
+                exit $__status
+        fi
+}
+
+
+start_cache() {
+        conf_file=$1
+
+        clean_env_variables
+        . $conf_file
+
+        sleep 1
+
+        #
+        # setup cache
+        #
+        SETUP_ARGUMENTS="-d $BITTERN_CACHED_DEVICE -n $BITTERN_CACHE_NAME --ignore-already-setup"
+        if [ ! -z "$BITTERN_CACHE_DEVICE" ]
+        then
+                SETUP_ARGUMENTS="$SETUP_ARGUMENTS -c $BITTERN_CACHE_DEVICE"
+        fi
+        CACHE_OPERATION="restore"
+        SETUP_ARGUMENTS="$SETUP_ARGUMENTS --cache-operation $CACHE_OPERATION"
+        logmessage /sbin/bittern_cache/scripts/bc_setup.sh $SETUP_ARGUMENTS
+        /sbin/bittern_cache/scripts/bc_setup.sh $SETUP_ARGUMENTS &
+	pid=$!
+	PIDS="$PIDS $pid"
+        TASKS="$TASKS               $pid   .../bc_setup.sh $SETUP_ARGUMENTS"
+}
+
+flush_cache() {
+        cache_name=$1
+        /sbin/bittern_cache/scripts/bc_control.sh --set writethrough $cache_name
+        /sbin/bittern_cache/scripts/bc_control.sh --set flush $cache_name
+}
+
+stop() {
+        logmessage stop
+        #
+        # remove cache
+        #
+        logmessage stop: unloading cache
+        PIDS=""
+        for conf in /etc/bittern.conf.d/*.conf; do
+                clean_env_variables
+                . $conf
+                if [ -z $ENABLED ]
+                then
+                        continue
+                fi
+                REMOVE_ARGUMENTS="--ignore-already-removed $BITTERN_CACHE_NAME"
+                logmessage /sbin/bittern_cache/scripts/bc_remove.sh $REMOVE_ARGUMENTS
+                bash -c "sleep 1 && /sbin/bittern_cache/scripts/bc_remove.sh $REMOVE_ARGUMENTS" &
+                pid=$!
+		PIDS="$PIDS $pid"
+                TASKS="$TASKS          $pid: bc_remove.sh $REMOVE_ARGUMENTS"
+        done
+        logmessage "waiting for bc_remove task(s) to finish: $PIDS"
+        logmessage $TASKS
+	child_status_report
+        remove_modules
+}
+
+remove_modules() {
+        logmessage stop: unloading all drivers
+        #
+        # remove kernel modules
+        #
+
+        RMMOD_ARGUMENTS="--ignore-already-removed"
+        logmessage /sbin/bittern_cache/scripts/bc_rmmod.sh $RMMOD_ARGUMENTS
+        /sbin/bittern_cache/scripts/bc_rmmod.sh $RMMOD_ARGUMENTS
+        __status=$?
+        if [ $__status -ne 0 ]
+        then
+                exit $__status
+        fi
+}
+
+cache_status() {
+        conf_file=$1
+        clean_env_variables
+        . $conf_file
+        logmessage BITTERN_CACHE_TYPE=$BITTERN_CACHE_TYPE
+        logmessage BITTERN_PMEM_PROVIDER=$BITTERN_PMEM_PROVIDER
+        logmessage BITTERN_PMEM_PROVIDER_PERSISTENCE_BROKEN=$BITTERN_PMEM_PROVIDER_PERSISTENCE_BROKEN
+        logmessage BITTERN_CACHE_NAME=$BITTERN_CACHE_NAME
+        logmessage BITTERN_CACHED_DEVICE=$BITTERN_CACHED_DEVICE
+        /sbin/bittern_cache/scripts/bc_status.sh $BITTERN_CACHE_NAME
+}
+
+status() {
+        for conf_file in /etc/bittern.conf.d/*.conf; do
+                cache_status $conf_file
+        done
+}
+
+if [ `id -u` -ne 0 ]
+then
+        logmessage must be root
+        exit 1
+fi
+
+# See how we were called.
+case "$1" in
+start)
+        start
+        ;;
+stop)
+        stop
+        ;;
+status)
+        status
+        ;;
+*)
+        echo $"Usage: $0 {start|stop|status}"
+        exit 2
+esac
+
+if [ -z "$ERRORS" ]; then
+        exit 0
+fi
+logmessage Some errors occured
+logmessage $TASKS
+logmessage $ERRORS
+
+exit 10
